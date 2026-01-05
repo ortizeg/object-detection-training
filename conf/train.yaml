@@ -1,0 +1,25 @@
+defaults:
+  - _self_
+  - models: RFDETRSmall
+
+training:
+  epochs: 100
+  batch_size: 8
+  num_workers: 4
+  lr: 1e-4
+  lr_encoder: 1.5e-4
+  grad_accum_steps: 2
+  amp: true
+  early_stopping: true
+  early_stopping_patience: 10
+  use_ema: true
+  ema_decay: 0.9999
+  # distributed training parameters
+  device: 'cuda'
+  world_size: 1
+  dist_url: 'env://'
+  tensorboard: true
+  eval: true
+  dataset_dir: "/path/to/dataset"  # You should override this with your dataset path
+  output_dir: null
+  pretrain_weights: null

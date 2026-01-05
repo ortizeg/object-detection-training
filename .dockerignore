@@ -1,0 +1,8 @@
+.git
+.pixi
+.pytest_cache
+.vscode
+outputs
+__pycache__
+*.pyc
+.DS_Store
