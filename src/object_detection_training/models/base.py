@@ -298,9 +298,20 @@ class BaseDetectionModel(L.LightningModule):
         # Convert targets to metrics format
         formatted_targets = []
         for target in targets:
+            # Targets are normalized cxcywh, metric expects xyxy
+            boxes = target["boxes"]
+            if boxes.numel() > 0:
+                # cxcywh -> xyxy
+                cx, cy, w, h = boxes.unbind(-1)
+                x1 = cx - 0.5 * w
+                y1 = cy - 0.5 * h
+                x2 = cx + 0.5 * w
+                y2 = cy + 0.5 * h
+                boxes = torch.stack([x1, y1, x2, y2], dim=-1)
+
             formatted_targets.append(
                 {
-                    "boxes": target["boxes"],
+                    "boxes": boxes,
                     "labels": target["labels"],
                 }
             )
@@ -425,9 +436,20 @@ class BaseDetectionModel(L.LightningModule):
 
         formatted_targets = []
         for target in targets:
+            # Targets are normalized cxcywh, metric expects xyxy
+            boxes = target["boxes"]
+            if boxes.numel() > 0:
+                # cxcywh -> xyxy
+                cx, cy, w, h = boxes.unbind(-1)
+                x1 = cx - 0.5 * w
+                y1 = cy - 0.5 * h
+                x2 = cx + 0.5 * w
+                y2 = cy + 0.5 * h
+                boxes = torch.stack([x1, y1, x2, y2], dim=-1)
+
             formatted_targets.append(
                 {
-                    "boxes": target["boxes"],
+                    "boxes": boxes,
                     "labels": target["labels"],
                 }
             )

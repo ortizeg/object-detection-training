@@ -18,21 +18,15 @@ from object_detection_training.utils.hydra import register
 # Model checkpoint URLs for download
 CHECKPOINT_URLS = {
     "nano": (
-        "https://github.com/jahongir7174/RF-DETR/releases/download/v1.0/"
-        "rfdetr_resnet18_vd_coco.pth"
+        "https://storage.googleapis.com/rfdetr/nano_coco/checkpoint_best_regular.pth"
     ),
     "small": (
-        "https://github.com/jahongir7174/RF-DETR/releases/download/v1.0/"
-        "rfdetr_resnet34_vd_coco.pth"
+        "https://storage.googleapis.com/rfdetr/small_coco/checkpoint_best_regular.pth"
     ),
     "medium": (
-        "https://github.com/jahongir7174/RF-DETR/releases/download/v1.0/"
-        "rfdetr_resnet50_vd_coco.pth"
+        "https://storage.googleapis.com/rfdetr/medium_coco/checkpoint_best_regular.pth"
     ),
-    "large": (
-        "https://github.com/jahongir7174/RF-DETR/releases/download/v1.0/"
-        "rfdetr_resnet101_vd_coco.pth"
-    ),
+    "large": "https://storage.googleapis.com/rfdetr/rf-detr-large.pth",
 }
 
 

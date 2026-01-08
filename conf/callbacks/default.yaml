@@ -22,16 +22,16 @@ ema:
   decay: 0.9999
   warmup_steps: 2000
 
-onnx_export:
-  _target_: object_detection_training.callbacks.onnx_export.ONNXExportCallback
-  output_dir: onnx
-  export_best: true
-  export_final: true
-  export_all_checkpoints: false
-  opset_version: 17
-  simplify: true
-  input_height: 640
-  input_width: 640
+# onnx_export:
+#   _target_: object_detection_training.callbacks.onnx_export.ONNXExportCallback
+#   output_dir: onnx
+#   export_best: true
+#   export_final: true
+#   export_all_checkpoints: false
+#   opset_version: 17
+#   simplify: true
+#   input_height: 640
+#   input_width: 640
 
 model_info:
   _target_: object_detection_training.callbacks.model_info.ModelInfoCallback
