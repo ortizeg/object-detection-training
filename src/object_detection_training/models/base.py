@@ -13,6 +13,9 @@ import torch
 from loguru import logger
 from torchmetrics.detection import MeanAveragePrecision
 
+from object_detection_training.metrics.curves import compute_detection_curves
+from object_detection_training.utils.plotting import save_detection_curves_plots
+
 
 class BaseDetectionModel(L.LightningModule):
     """
@@ -27,10 +30,10 @@ class BaseDetectionModel(L.LightningModule):
         num_classes: int = 80,
         learning_rate: float = 1e-4,
         weight_decay: float = 1e-4,
-        lr_encoder: Optional[float] = None,
         warmup_epochs: int = 5,
         use_ema: bool = True,
         ema_decay: float = 0.9999,
+        output_dir: str = "outputs",
     ):
         """
         Initialize the base detection model.
@@ -39,19 +42,19 @@ class BaseDetectionModel(L.LightningModule):
             num_classes: Number of detection classes.
             learning_rate: Base learning rate.
             weight_decay: Weight decay for optimizer.
-            lr_encoder: Learning rate for encoder/backbone (if different).
             warmup_epochs: Number of warmup epochs.
             use_ema: Whether to use EMA for model weights.
             ema_decay: Decay factor for EMA.
+            output_dir: Base directory for outputting results (metrics/images).
         """
         super().__init__()
         self.num_classes = num_classes
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
-        self.lr_encoder = lr_encoder or learning_rate
         self.warmup_epochs = warmup_epochs
         self.use_ema = use_ema
         self.ema_decay = ema_decay
+        self.output_dir = Path(output_dir)
 
         self._export_mode = False
 
@@ -68,6 +71,11 @@ class BaseDetectionModel(L.LightningModule):
         )
 
         self.save_hyperparameters()
+
+    @abstractmethod
+    def configure_optimizers(self):
+        """Configure optimizers and schedulers."""
+        raise NotImplementedError
 
     @abstractmethod
     def forward(
@@ -349,75 +357,14 @@ class BaseDetectionModel(L.LightningModule):
         self.val_map.reset()
 
         # Compute and log curves (PR, F1)
-        # Only log if we have a WandB logger and it's strictly the main process
-        # to avoid duplicates
-        # But logging is usually handled by rank_0.
-        try:
-            import wandb
+        curves = compute_detection_curves(
+            self.val_preds_storage, self.val_targets_storage, self.num_classes
+        )
 
-            from object_detection_training.metrics.curves import (
-                compute_detection_curves,
-            )
+        epoch_dir = self.output_dir / f"epoch_{self.current_epoch:03d}"
+        metrics_dir = epoch_dir / "metrics"
 
-            curves = compute_detection_curves(
-                self.val_preds_storage, self.val_targets_storage, self.num_classes
-            )
-
-            for logger_inst in self.trainer.loggers:
-                if isinstance(logger_inst, L.pytorch.loggers.WandbLogger):
-                    # Log curves for each class
-                    for c_idx, curve_data in curves.items():
-                        c_name = (
-                            class_names[c_idx]
-                            if class_names and c_idx < len(class_names)
-                            else f"class_{c_idx}"
-                        )
-
-                        # Subsample for plotting if too large (WandB has limits)
-                        step = max(1, len(curve_data["scores"]) // 1000)
-                        indices = range(0, len(curve_data["scores"]), step)
-
-                        # Data for Custom Chart: Score, Precision, Recall, F1
-                        data = []
-                        for i in indices:
-                            data.append(
-                                [
-                                    curve_data["scores"][i],
-                                    curve_data["precision"][i],
-                                    curve_data["recall"][i],
-                                    curve_data["f1"][i],
-                                ]
-                            )
-
-                        # Create a WandB Table
-                        table = wandb.Table(
-                            data=data,
-                            columns=["confidence", "precision", "recall", "f1"],
-                        )
-
-                        # Log Precision-Recall Curve
-                        # Using raw table allows custom Vega plots, but `wandb.plot`
-                        # is easier. Interactive threshold plot: F1 vs Confidence
-                        logger_inst.experiment.log(
-                            {
-                                f"val/curves/{c_name}_pr": wandb.plot.line(
-                                    table,
-                                    "recall",
-                                    "precision",
-                                    title=f"PR Curve - {c_name}",
-                                ),
-                                f"val/curves/{c_name}_f1_conf": wandb.plot.line(
-                                    table,
-                                    "confidence",
-                                    "f1",
-                                    title=f"F1 vs Confidence - {c_name}",
-                                ),
-                            }
-                        )
-        except ImportError:
-            pass  # Skip if dependencies missing
-        except Exception as e:
-            logger.warning(f"Failed to log curves: {e}")
+        save_detection_curves_plots(curves, class_names, metrics_dir, metrics=metrics)
 
         # Clear storage
         self.val_preds_storage = []
@@ -484,104 +431,12 @@ class BaseDetectionModel(L.LightningModule):
         self.test_map.reset()
 
         # Log curves
-        try:
-            import wandb
+        curves = compute_detection_curves(
+            self.test_preds_storage, self.test_targets_storage, self.num_classes
+        )
 
-            from object_detection_training.metrics.curves import (
-                compute_detection_curves,
-            )
-
-            curves = compute_detection_curves(
-                self.test_preds_storage, self.test_targets_storage, self.num_classes
-            )
-
-            for logger_inst in self.trainer.loggers:
-                if isinstance(logger_inst, L.pytorch.loggers.WandbLogger):
-                    for c_idx, curve_data in curves.items():
-                        c_name = (
-                            class_names[c_idx]
-                            if class_names and c_idx < len(class_names)
-                            else f"class_{c_idx}"
-                        )
-
-                        step = max(1, len(curve_data["scores"]) // 1000)
-                        indices = range(0, len(curve_data["scores"]), step)
-                        data = []
-                        for i in indices:
-                            data.append(
-                                [
-                                    curve_data["scores"][i],
-                                    curve_data["precision"][i],
-                                    curve_data["recall"][i],
-                                    curve_data["f1"][i],
-                                ]
-                            )
-
-                        table = wandb.Table(
-                            data=data,
-                            columns=["confidence", "precision", "recall", "f1"],
-                        )
-
-                        logger_inst.experiment.log(
-                            {
-                                f"test/curves/{c_name}_pr": wandb.plot.line(
-                                    table,
-                                    "recall",
-                                    "precision",
-                                    title=f"PR Curve - {c_name}",
-                                ),
-                                f"test/curves/{c_name}_f1_conf": wandb.plot.line(
-                                    table,
-                                    "confidence",
-                                    "f1",
-                                    title=f"F1 vs Confidence - {c_name}",
-                                ),
-                            }
-                        )
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.warning(f"Failed to log curves: {e}")
+        metrics_dir = self.output_dir / "test_results" / "metrics"
+        save_detection_curves_plots(curves, class_names, metrics_dir, metrics=metrics)
 
         self.test_preds_storage = []
         self.test_targets_storage = []
-
-    def configure_optimizers(self):
-        """Configure optimizers and schedulers."""
-        # Separate parameters for encoder and decoder
-        encoder_params = []
-        other_params = []
-
-        for name, param in self.named_parameters():
-            if not param.requires_grad:
-                continue
-            if "backbone" in name or "encoder" in name:
-                encoder_params.append(param)
-            else:
-                other_params.append(param)
-
-        param_groups = [
-            {"params": other_params, "lr": self.learning_rate},
-            {"params": encoder_params, "lr": self.lr_encoder},
-        ]
-
-        optimizer = torch.optim.AdamW(
-            param_groups,
-            weight_decay=self.weight_decay,
-        )
-
-        # Learning rate scheduler with warmup
-        def lr_lambda(epoch):
-            if epoch < self.warmup_epochs:
-                return (epoch + 1) / self.warmup_epochs
-            return 1.0
-
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": {
-                "scheduler": scheduler,
-                "interval": "epoch",
-            },
-        }

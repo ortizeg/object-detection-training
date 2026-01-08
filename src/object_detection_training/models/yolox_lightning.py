@@ -94,6 +94,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         ema_decay: float = 0.9998,
         download_pretrained: bool = True,
         input_size: int = 640,
+        output_dir: str = "outputs",
     ):
         """
         Initialize YOLOX Lightning model.
@@ -109,6 +110,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             ema_decay: EMA decay factor.
             download_pretrained: Download pretrained weights if not available.
             input_size: Input image size.
+            output_dir: Base directory for outputting results.
         """
         super().__init__(
             num_classes=num_classes,
@@ -117,6 +119,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             warmup_epochs=warmup_epochs,
             use_ema=use_ema,
             ema_decay=ema_decay,
+            output_dir=output_dir,
         )
 
         self.variant = variant
@@ -300,6 +303,83 @@ class YOLOXLightningModel(BaseDetectionModel):
             )
 
         return predictions
+
+    def configure_optimizers(self):
+        """
+        Configure optimizer and learning rate scheduler.
+
+        Returns:
+            Optimizer and scheduler configuration.
+        """
+        # Separate parameters into groups
+        # (apply weight decay to weights, not biases/norm)
+        decay = []
+        no_decay = []
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+
+            if "bias" in name or "bn" in name or "norm" in name:
+                no_decay.append(param)
+            else:
+                decay.append(param)
+
+        # Configurable optimizer parameters
+        momentum = 0.9
+        nesterov = True
+
+        optimizer = torch.optim.SGD(
+            [
+                {"params": decay, "weight_decay": self.weight_decay},
+                {"params": no_decay, "weight_decay": 0.0},
+            ],
+            lr=self.learning_rate,
+            momentum=momentum,
+            nesterov=nesterov,
+        )
+
+        # Scheduler with warmup + cosine annealing
+        if self.trainer and hasattr(self.trainer, "estimated_stepping_batches"):
+            total_steps = self.trainer.estimated_stepping_batches
+        else:
+            # Fallback for testing or when trainer is not yet fully initialized
+            total_steps = 10000
+
+        # Avoid 0 total steps
+        total_steps = max(1, total_steps)
+
+        # Warmup scheduler
+        warmup_epochs = self.warmup_epochs
+        max_epochs = self.trainer.max_epochs if self.trainer else 100
+
+        # Calculate warmup steps
+        warmup_steps = int(total_steps * (warmup_epochs / max(1, max_epochs)))
+        warmup_steps = max(1, warmup_steps)
+
+        scheduler_warmup = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.001, end_factor=1.0, total_iters=warmup_steps
+        )
+
+        # Main scheduler (Cosine Annealing) - starts after warmup
+        main_steps = max(1, total_steps - warmup_steps)
+        scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=main_steps, eta_min=self.learning_rate * 0.05
+        )
+
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[scheduler_warmup, scheduler_cosine],
+            milestones=[warmup_steps],
+        )
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
 
 
 # Register model variants with Hydra

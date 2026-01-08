@@ -76,8 +76,10 @@ class ModelInfoCallback(L.Callback):
         # Log to trainer loggers
         for logger_inst in trainer.loggers:
             # WandB: Log as config/metadata
-            if hasattr(logger_inst, "experiment") and hasattr(
-                logger_inst.experiment, "config"
+            if (
+                hasattr(logger_inst, "experiment")
+                and hasattr(logger_inst.experiment, "config")
+                and hasattr(logger_inst.experiment.config, "update")
             ):
                 # Update config with model info
                 # We use the prefix "model_info" to group them

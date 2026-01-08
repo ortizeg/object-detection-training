@@ -80,6 +80,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         use_ema: bool = True,
         ema_decay: float = 0.9999,
         download_pretrained: bool = True,
+        output_dir: str = "outputs",
     ):
         """
         Initialize RFDETR Lightning model.
@@ -96,17 +97,19 @@ class RFDETRLightningModel(BaseDetectionModel):
             use_ema: Enable EMA.
             ema_decay: EMA decay factor.
             download_pretrained: Download pretrained weights if not available.
+            output_dir: Base directory for outputting results.
         """
         super().__init__(
             num_classes=num_classes,
             learning_rate=learning_rate,
-            lr_encoder=lr_encoder,
             weight_decay=weight_decay,
             warmup_epochs=warmup_epochs,
             use_ema=use_ema,
             ema_decay=ema_decay,
+            output_dir=output_dir,
         )
 
+        self.lr_encoder = lr_encoder
         self.variant = variant
         self.resolution = resolution
         self.pretrain_weights = pretrain_weights
@@ -326,6 +329,46 @@ class RFDETRLightningModel(BaseDetectionModel):
         )
 
         return str(output_path)
+
+    def configure_optimizers(self):
+        """Configure optimizers and schedulers."""
+        # Separate parameters for encoder and decoder
+        encoder_params = []
+        other_params = []
+
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if "backbone" in name or "encoder" in name:
+                encoder_params.append(param)
+            else:
+                other_params.append(param)
+
+        param_groups = [
+            {"params": other_params, "lr": self.learning_rate},
+            {"params": encoder_params, "lr": self.lr_encoder},
+        ]
+
+        optimizer = torch.optim.AdamW(
+            param_groups,
+            weight_decay=self.weight_decay,
+        )
+
+        # Learning rate scheduler with warmup
+        def lr_lambda(epoch):
+            if epoch < self.warmup_epochs:
+                return (epoch + 1) / self.warmup_epochs
+            return 1.0
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+            },
+        }
 
 
 # Register model variants with Hydra

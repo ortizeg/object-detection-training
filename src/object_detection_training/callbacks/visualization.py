@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import lightning as L
 import numpy as np
@@ -21,6 +21,7 @@ class VisualizationCallback(L.Callback):
     def __init__(
         self,
         num_samples: int = 10,
+        confidence_threshold: float = 0.3,
         output_dir: str = "outputs",
         mean: List[float] = [0.485, 0.456, 0.406],
         std: List[float] = [0.229, 0.224, 0.225],
@@ -46,6 +47,8 @@ class VisualizationCallback(L.Callback):
         # Annotators
         self.box_annotator = sv.BoxAnnotator()
         self.label_annotator = sv.LabelAnnotator()
+
+        self.confidence_threshold = confidence_threshold
 
     def _denormalize(self, tensor: torch.Tensor) -> np.ndarray:
         """Denormalize image tensor to numpy array [H, W, 3] (0-255)."""
@@ -100,10 +103,8 @@ class VisualizationCallback(L.Callback):
             return
 
         epoch = trainer.current_epoch
-        save_dir = self.output_dir / f"epoch_{epoch:03d}"
+        save_dir = self.output_dir / f"epoch_{epoch:03d}" / "images"
         save_dir.mkdir(parents=True, exist_ok=True)
-
-        log_images_data = []
 
         device = next(pl_module.parameters()).device
         pl_module.eval()
@@ -136,7 +137,9 @@ class VisualizationCallback(L.Callback):
                 )
 
                 # Filter by confidence? Default 0.3 for viz
-                # detections = detections[detections.confidence > 0.3]
+                detections = detections[
+                    detections.confidence > self.confidence_threshold
+                ]
 
                 # Draw Predictions
                 pred_image = image_np.copy()
@@ -145,17 +148,17 @@ class VisualizationCallback(L.Callback):
                 )
 
                 # Use class names for predictions too
-                pred_labels_list = None
+                pred_labels_list: Optional[List[str]] = None
                 if (
                     hasattr(trainer.datamodule, "class_names")
                     and trainer.datamodule.class_names
                 ):
                     try:
-                        pred_class_ids = preds["labels"].cpu().numpy().astype(int)
-                        pred_labels_list = [
-                            trainer.datamodule.class_names[class_id]
-                            for class_id in pred_class_ids
-                        ]
+                        if detections.class_id is not None:
+                            pred_labels_list = [
+                                trainer.datamodule.class_names[class_id]
+                                for class_id in detections.class_id
+                            ]
                     except IndexError:
                         pass
 
@@ -172,31 +175,6 @@ class VisualizationCallback(L.Callback):
                 img_id = sample["image_id"]
                 file_path = save_dir / f"val_img_{img_id}.jpg"
                 Image.fromarray(pred_image).save(file_path)
-
-                # Store raw images for table logging
-                log_images_data.append(pred_image)
-
-        # Log to WandB
-        # We assume WandB logger is present
-        for logger_inst in trainer.loggers:
-            if isinstance(logger_inst, L.pytorch.loggers.WandbLogger):
-                # Prepare table data for this epoch
-                # Columns: epoch, image_id, prediction
-                table_data = []
-                for sample, pred_img in zip(self.val_samples, log_images_data):
-                    table_data.append(
-                        [
-                            epoch,
-                            sample["image_id"],
-                            wandb.Image(pred_img, caption="Prediction"),
-                        ]
-                    )
-
-                # Log a new table for this epoch
-                # W&B UI allows using the step slider to view history
-                columns = ["epoch", "image_id", "prediction"]
-                table = wandb.Table(columns=columns, data=table_data)
-                logger_inst.experiment.log({"val_predictions": table})
 
     def on_test_epoch_start(
         self, trainer: L.Trainer, pl_module: L.LightningModule
@@ -215,7 +193,7 @@ class VisualizationCallback(L.Callback):
         if not self.test_samples:
             return
 
-        save_dir = self.output_dir / "test_results"
+        save_dir = self.output_dir / "test_results" / "images"
         save_dir.mkdir(parents=True, exist_ok=True)
 
         log_images = []
