@@ -13,7 +13,7 @@ defaults:
   - data: coco
   - trainer: default
   - callbacks: default
-  - logging: wandb
+  - logging: null
 
 # Hydra configuration
 hydra:

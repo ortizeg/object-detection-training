@@ -1,3 +1,7 @@
+defaults:
+  - base
+  - _self_
+
 # RFDETR Medium Model Configuration
 _target_: object_detection_training.models.rfdetr_lightning.RFDETRMediumModel
 num_classes: 80

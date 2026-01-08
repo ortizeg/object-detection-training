@@ -51,3 +51,4 @@ visualization:
   _target_: object_detection_training.callbacks.visualization.VisualizationCallback
   num_samples: 10
   output_dir: ${hydra:runtime.output_dir}/outputs
+  confidence_threshold: 0.3
