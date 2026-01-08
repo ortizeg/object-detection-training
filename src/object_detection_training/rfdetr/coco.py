@@ -19,6 +19,8 @@ COCO dataset which returns image_id for evaluation.
 Mostly copy-paste from
 https://github.com/pytorch/vision/blob/13b35ff/references/detection/coco_utils.py
 """
+from typing import Optional
+
 import pycocotools.mask as coco_mask
 import rfdetr.datasets.transforms as T
 import torch
@@ -31,6 +33,7 @@ __all__ = [
     "make_coco_transforms",
     "make_coco_transforms_square_div_64",
     "collate_fn",
+    "ConvertCoco",
 ]
 
 
@@ -79,11 +82,18 @@ def convert_coco_poly_to_mask(segmentations, height, width):
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):
-    def __init__(self, img_folder, ann_file, transforms, include_masks=False):
+    def __init__(
+        self,
+        img_folder,
+        ann_file,
+        transforms,
+        include_masks=False,
+        label_map: Optional[dict] = None,
+    ):
         super(CocoDetection, self).__init__(img_folder, ann_file)
         self._transforms = transforms
         self.include_masks = include_masks
-        self.prepare = ConvertCoco(include_masks=include_masks)
+        self.prepare = ConvertCoco(include_masks=include_masks, label_map=label_map)
 
     def __getitem__(self, idx):
         img, target = super(CocoDetection, self).__getitem__(idx)
@@ -96,8 +106,9 @@ class CocoDetection(torchvision.datasets.CocoDetection):
 
 
 class ConvertCoco(object):
-    def __init__(self, include_masks=False):
+    def __init__(self, include_masks=False, label_map: Optional[dict] = None):
         self.include_masks = include_masks
+        self.label_map = label_map
 
     def __call__(self, image, target):
         w, h = image.size
@@ -117,6 +128,8 @@ class ConvertCoco(object):
         boxes[:, 1::2].clamp_(min=0, max=h)
 
         classes = [obj["category_id"] for obj in anno]
+        if self.label_map:
+            classes = [self.label_map[c] for c in classes]
         classes = torch.tensor(classes, dtype=torch.int64)
 
         keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])

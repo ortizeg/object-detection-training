@@ -244,6 +244,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         self,
         outputs: Dict[str, torch.Tensor],
         original_sizes: Optional[List[Tuple[int, int]]] = None,
+        confidence_threshold: float = 0.0,
     ) -> List[Dict[str, torch.Tensor]]:
         """Convert model outputs to prediction format for metrics."""
         predictions = []
@@ -266,7 +267,7 @@ class RFDETRLightningModel(BaseDetectionModel):
             scores, labels = probs[..., :-1].max(-1)
 
             # Filter by score threshold
-            keep = scores > 0.1
+            keep = scores > confidence_threshold
             boxes = boxes[keep]
             scores = scores[keep]
             labels = labels[keep]

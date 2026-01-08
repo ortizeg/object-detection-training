@@ -116,6 +116,11 @@ class TrainTask(BaseTask):
         # Setup trainer with callbacks and loggers
         trainer_kwargs = {}
         if self.callbacks:
+            logger.info(f"Callbacks type: {type(self.callbacks)}")
+            if isinstance(self.callbacks, dict):
+                logger.info("Callbacks is a dict, converting to list values.")
+                self.callbacks = list(self.callbacks.values())
+            logger.info(f"Callbacks list: {self.callbacks}")
             trainer_kwargs["callbacks"] = self.callbacks
         if self.loggers:
             trainer_kwargs["logger"] = self.loggers

@@ -81,17 +81,46 @@ def save_detection_curves_plots(
         except (ValueError, TypeError):
             name = str(c_idx)
 
+        if c_idx == "overall":
+            name = "overall"
+
         # Get AP if available
         ap = None
         if metrics:
             # Check for map_per_class
+            # Check for map_per_class
             map_per_class = metrics.get("map_per_class")
-            if map_per_class is not None:
-                # Assuming map_per_class is a tensor or list aligned with class indices
-                if isinstance(map_per_class, torch.Tensor):
-                    ap = map_per_class[int(c_idx)].item()
-                elif isinstance(map_per_class, list):
-                    ap = map_per_class[int(c_idx)]
+            classes_tensor = metrics.get("classes")
+
+            if c_idx == "overall":
+                ap = metrics.get("map")
+            elif map_per_class is not None:
+                try:
+                    c_idx_int = int(c_idx)
+
+                    # If classes tensor is available, map class ID to index in
+                    # map_per_class
+                    if classes_tensor is not None:
+                        # Find where this class ID appears in the classes tensor
+                        matches = (classes_tensor == c_idx_int).nonzero(as_tuple=True)[
+                            0
+                        ]
+                        if len(matches) > 0:
+                            mapped_idx = matches[0].item()
+                            if isinstance(map_per_class, torch.Tensor):
+                                ap = map_per_class[mapped_idx].item()
+                            elif isinstance(map_per_class, list):
+                                ap = map_per_class[mapped_idx]
+                    else:
+                        # Fallback to direct indexing if classes tensor missing
+                        if isinstance(map_per_class, torch.Tensor):
+                            if c_idx_int < len(map_per_class):
+                                ap = map_per_class[c_idx_int].item()
+                        elif isinstance(map_per_class, list):
+                            if c_idx_int < len(map_per_class):
+                                ap = map_per_class[c_idx_int]
+                except (ValueError, TypeError):
+                    pass
 
         # PR Curve
         save_path = output_dir / f"{prefix}pr_curve_{name}.png"

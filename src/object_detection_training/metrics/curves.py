@@ -55,9 +55,6 @@ def compute_detection_curves(
         c_preds = class_preds[c]
         c_gts = class_gts[c]
 
-        if not c_preds:
-            continue
-
         # Count total ground truths
         n_pos = sum(len(g["boxes"]) for g in c_gts)
         if n_pos == 0:
@@ -137,6 +134,91 @@ def compute_detection_curves(
             "precision": precisions,
             "recall": recalls,
             "scores": scores,
+            "f1": 2 * (precisions * recalls) / (precisions + recalls + 1e-6),
+        }
+
+    # Compute Overall PR Curve (Micro-averaged across all classes)
+    all_flat_preds = []
+    total_n_pos = 0
+
+    # Collect all predictions and ground truths from all classes
+    for c in range(num_classes):
+        # We need to gather all preds for this class
+        c_preds = class_preds[c]
+        c_gts = class_gts[c]
+        total_n_pos += sum(len(g["boxes"]) for g in c_gts)
+
+        for p in c_preds:
+            img_id = p["image_id"]
+            for box, score in zip(p["boxes"], p["scores"]):
+                all_flat_preds.append(
+                    {
+                        "box": box,
+                        "score": score.item(),
+                        "image_id": img_id,
+                        "class_id": c,
+                    }
+                )
+
+    if all_flat_preds and total_n_pos > 0:
+        # Sort all preds globally by score
+        all_flat_preds.sort(key=lambda x: x["score"], reverse=True)
+
+        # Match (class-aware but global sorted)
+        # Note: In object detection, we usually aggregate TP/FP counts globally
+        # or macro-average. Here we do micro-average (treating every instance as
+        # part of one pool).
+        tps = []
+        fps = []
+        scores = []
+
+        # Reset matched GTs globally
+        global_seen_gts = {
+            c: {g["image_id"]: set() for g in class_gts[c]} for c in range(num_classes)
+        }
+        gts_by_class_image = {
+            c: {g["image_id"]: g["boxes"] for g in class_gts[c]}
+            for c in range(num_classes)
+        }
+
+        for p in all_flat_preds:
+            c = p["class_id"]
+            img_id = p["image_id"]
+            p_box = p["box"].unsqueeze(0)
+            score = p["score"]
+            scores.append(score)
+
+            matched = False
+            if c in gts_by_class_image and img_id in gts_by_class_image[c]:
+                gt_boxes = gts_by_class_image[c][img_id]
+                if len(gt_boxes) > 0:
+                    ious = box_iou(p_box, gt_boxes).squeeze(0)
+                    max_iou, max_idx = ious.max(0)
+                    max_idx = max_idx.item()
+
+                    if max_iou >= iou_threshold:
+                        if max_idx not in global_seen_gts[c][img_id]:
+                            tps.append(1)
+                            fps.append(0)
+                            global_seen_gts[c][img_id].add(max_idx)
+                            matched = True
+
+            if not matched:
+                tps.append(0)
+                fps.append(1)
+
+        tps = np.array(tps)
+        fps = np.array(fps)
+        tp_cumsum = np.cumsum(tps)
+        fp_cumsum = np.cumsum(fps)
+
+        recalls = tp_cumsum / total_n_pos
+        precisions = tp_cumsum / (tp_cumsum + fp_cumsum + 1e-6)
+
+        curves["overall"] = {
+            "precision": precisions,
+            "recall": recalls,
+            "scores": np.array(scores),
             "f1": 2 * (precisions * recalls) / (precisions + recalls + 1e-6),
         }
 

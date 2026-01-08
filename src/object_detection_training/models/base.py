@@ -99,6 +99,7 @@ class BaseDetectionModel(L.LightningModule):
         self,
         outputs: Dict[str, torch.Tensor],
         original_sizes: Optional[List[Tuple[int, int]]] = None,
+        confidence_threshold: float = 0.0,
     ) -> List[Dict[str, torch.Tensor]]:
         """
         Convert model outputs to prediction format.
@@ -106,6 +107,12 @@ class BaseDetectionModel(L.LightningModule):
         Args:
             outputs: Raw model outputs.
             original_sizes: Original image sizes for rescaling boxes.
+
+        Returns:
+        Args:
+            outputs: Raw model outputs.
+            original_sizes: Original image sizes for rescaling boxes.
+            confidence_threshold: Threshold for filtering predictions.
 
         Returns:
             List of prediction dictionaries with 'boxes', 'scores', 'labels'.
@@ -301,7 +308,7 @@ class BaseDetectionModel(L.LightningModule):
         outputs = self(images)
 
         # Convert to predictions format
-        preds = self.get_predictions(outputs)
+        preds = self.get_predictions(outputs, confidence_threshold=0.0)
 
         # Convert targets to metrics format
         formatted_targets = []
@@ -346,13 +353,28 @@ class BaseDetectionModel(L.LightningModule):
 
         # Log per-class mAP if available
         class_names = getattr(self.trainer.datamodule, "class_names", None)
-        if "map_per_class" in metrics and metrics["map_per_class"].numel() > 0:
-            for i, ap in enumerate(metrics["map_per_class"]):
-                if not torch.isnan(ap):
-                    name = f"class_{i}"
-                    if class_names and i < len(class_names):
-                        name = class_names[i]
-                    self.log(f"val/mAP_{name}", ap)
+        classes_tensor = metrics.get("classes")
+        map_per_class = metrics.get("map_per_class")
+
+        if class_names and map_per_class is not None:
+            for class_id, name in enumerate(class_names):
+                ap = torch.tensor(-1.0, device=self.device)
+                if classes_tensor is not None:
+                    # Find where this class ID appears in the classes tensor
+                    matches = (classes_tensor == class_id).nonzero(as_tuple=True)[0]
+                    if len(matches) > 0:
+                        ap = map_per_class[matches[0].item()]
+
+                self.log(f"val/mAP_{name}", ap)
+        elif map_per_class is not None:
+            # Fallback to whatever metrics returned
+            for i, ap in enumerate(map_per_class):
+                class_id = i
+                if classes_tensor is not None and i < len(classes_tensor):
+                    class_id = int(classes_tensor[i].item())
+
+                name = f"class_{class_id}"
+                self.log(f"val/mAP_{name}", ap)
 
         self.val_map.reset()
 
@@ -379,7 +401,7 @@ class BaseDetectionModel(L.LightningModule):
         images, targets = batch
         outputs = self(images)
 
-        preds = self.get_predictions(outputs)
+        preds = self.get_predictions(outputs, confidence_threshold=0.0)
 
         formatted_targets = []
         for target in targets:
@@ -420,13 +442,24 @@ class BaseDetectionModel(L.LightningModule):
         self.log("test/mAP_75", metrics["map_75"])
 
         class_names = getattr(self.trainer.datamodule, "class_names", None)
-        if "map_per_class" in metrics and metrics["map_per_class"].numel() > 0:
-            for i, ap in enumerate(metrics["map_per_class"]):
-                if not torch.isnan(ap):
-                    name = f"class_{i}"
-                    if class_names and i < len(class_names):
-                        name = class_names[i]
-                    self.log(f"test/mAP_{name}", ap)
+        classes_tensor = metrics.get("classes")
+        map_per_class = metrics.get("map_per_class")
+
+        if class_names and map_per_class is not None:
+            for class_id, name in enumerate(class_names):
+                ap = torch.tensor(-1.0, device=self.device)
+                if classes_tensor is not None:
+                    matches = (classes_tensor == class_id).nonzero(as_tuple=True)[0]
+                    if len(matches) > 0:
+                        ap = map_per_class[matches[0].item()]
+                self.log(f"test/mAP_{name}", ap)
+        elif map_per_class is not None:
+            for i, ap in enumerate(map_per_class):
+                class_id = i
+                if classes_tensor is not None and i < len(classes_tensor):
+                    class_id = int(classes_tensor[i].item())
+                name = f"class_{class_id}"
+                self.log(f"test/mAP_{name}", ap)
 
         self.test_map.reset()
 

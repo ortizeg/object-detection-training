@@ -85,6 +85,14 @@ class VisualizationCallback(L.Callback):
         self, trainer: L.Trainer, pl_module: L.LightningModule
     ) -> None:
         """Collect validation samples on first epoch."""
+        if trainer.datamodule:
+            class_names = getattr(trainer.datamodule, "class_names", "ATTR_MISSING")
+            logger.info(
+                f"Validation Epoch Start: Datamodule found. Classes: {class_names}"
+            )
+        else:
+            logger.info("Validation Epoch Start: No datamodule found in trainer.")
+
         if not self.val_samples:
             logger.info(
                 f"Collecting {self.num_samples} validation samples for visualization..."
@@ -117,7 +125,7 @@ class VisualizationCallback(L.Callback):
 
                 # Model forward
                 outputs = pl_module(batch_imgs)
-                preds = pl_module.get_predictions(outputs)[0]
+                preds = pl_module.get_predictions(outputs, confidence_threshold=0.01)[0]
 
                 # Denormalize image for drawing
                 image_np = self._denormalize(img_tensor.cpu())
@@ -136,6 +144,22 @@ class VisualizationCallback(L.Callback):
                     class_id=preds["labels"].cpu().numpy().astype(int),
                 )
 
+                # Debug logging
+                if len(detections.confidence) > 0:
+                    max_conf = detections.confidence.max()
+                    logger.info(
+                        f"Image {sample.get('image_id')}: Max confidence = \
+                            {max_conf:.4f}"
+                    )
+                    logger.info(
+                        f"Image {sample.get('image_id')}: Boxes range = \
+                            {pred_boxes_abs.min():.1f} - {pred_boxes_abs.max():.1f}"
+                    )
+                else:
+                    logger.info(
+                        f"Image {sample.get('image_id')}: No raw detections found."
+                    )
+
                 # Filter by confidence? Default 0.3 for viz
                 detections = detections[
                     detections.confidence > self.confidence_threshold
@@ -147,20 +171,31 @@ class VisualizationCallback(L.Callback):
                     scene=pred_image, detections=detections
                 )
 
-                # Use class names for predictions too
+                # Use class names for predictions
+                # We prioritize class names from datamodule
                 pred_labels_list: Optional[List[str]] = None
-                if (
-                    hasattr(trainer.datamodule, "class_names")
-                    and trainer.datamodule.class_names
-                ):
-                    try:
-                        if detections.class_id is not None:
-                            pred_labels_list = [
-                                trainer.datamodule.class_names[class_id]
-                                for class_id in detections.class_id
-                            ]
-                    except IndexError:
-                        pass
+                class_names = getattr(trainer.datamodule, "class_names", None)
+
+                if class_names is None:
+                    logger.info(f"trainer.datamodule: {trainer.datamodule}")
+                    if trainer.datamodule:
+                        logger.info(f"datamodule attributes: {dir(trainer.datamodule)}")
+
+                if class_names and detections.class_id is not None:
+                    pred_labels_list = []
+                    for class_id in detections.class_id:
+                        cid_int = int(class_id)
+                        name = (
+                            class_names[cid_int]
+                            if cid_int < len(class_names)
+                            else f"class_{cid_int}"
+                        )
+                        pred_labels_list.append(name)
+
+                # Fallback labels if names not available
+                if pred_labels_list is None:
+                    # supervision default is to show class_id if labels=None
+                    pass
 
                 if pred_labels_list:
                     pred_image = self.label_annotator.annotate(
@@ -204,23 +239,55 @@ class VisualizationCallback(L.Callback):
             for sample in self.test_samples:
                 img_tensor = sample["image"].to(device)
                 outputs = pl_module(img_tensor.unsqueeze(0))
-                preds = pl_module.get_predictions(outputs)[0]
+                preds = pl_module.get_predictions(outputs, confidence_threshold=0.0)[0]
 
                 image_np = self._denormalize(img_tensor.cpu())
+                img_h, img_w = image_np.shape[:2]
+
+                # Scale boxes to absolute pixel coordinates
+                pred_boxes = preds["boxes"].cpu().numpy()
+                scale = np.array([img_w, img_h, img_w, img_h])
+                pred_boxes_abs = pred_boxes * scale
 
                 detections = sv.Detections(
-                    xyxy=preds["boxes"].cpu().numpy(),
+                    xyxy=pred_boxes_abs,
                     confidence=preds["scores"].cpu().numpy(),
                     class_id=preds["labels"].cpu().numpy().astype(int),
                 )
+
+                # Filter by confidence for test viz as well (using 0.3 as default)
+                detections = detections[
+                    detections.confidence > self.confidence_threshold
+                ]
 
                 annotated_image = image_np.copy()
                 annotated_image = self.box_annotator.annotate(
                     scene=annotated_image, detections=detections
                 )
-                annotated_image = self.label_annotator.annotate(
-                    scene=annotated_image, detections=detections
-                )
+
+                # Fetch class names
+                pred_labels_list = None
+                class_names = getattr(trainer.datamodule, "class_names", None)
+                if class_names:
+                    pred_labels_list = []
+                    for cid, conf in zip(detections.class_id, detections.confidence):
+                        cid_int = int(cid)
+                        if cid_int < len(class_names):
+                            name = class_names[cid_int]
+                        else:
+                            name = f"unknown_{cid_int}"
+                        pred_labels_list.append(f"{name} {conf:.2f}")
+
+                if pred_labels_list:
+                    annotated_image = self.label_annotator.annotate(
+                        scene=annotated_image,
+                        detections=detections,
+                        labels=pred_labels_list,
+                    )
+                else:
+                    annotated_image = self.label_annotator.annotate(
+                        scene=annotated_image, detections=detections
+                    )
 
                 img_id = sample["image_id"]
                 Image.fromarray(annotated_image).save(

@@ -98,16 +98,11 @@ def main(cfg: DictConfig) -> None:
     datamodule = instantiate_datamodule(cfg.data)
 
     # Auto-detect num_classes from data if model doesn't specify it
-    num_classes = cfg.model.get("num_classes")
-    if num_classes is None and hasattr(datamodule, "num_classes"):
-        num_classes = datamodule.num_classes
-        logger.info(f"Auto-detected num_classes={num_classes} from dataset")
+    num_classes = datamodule.num_classes
+    logger.info(f"Auto-detected num_classes={num_classes} from dataset")
 
     logger.info("Instantiating model...")
-    if num_classes is not None:
-        model = instantiate_model(cfg.model, num_classes=num_classes)
-    else:
-        model = instantiate_model(cfg.model)
+    model = instantiate_model(cfg.model, num_classes=num_classes)
 
     logger.info("Instantiating callbacks...")
     callbacks = instantiate_callbacks(cfg.callbacks)

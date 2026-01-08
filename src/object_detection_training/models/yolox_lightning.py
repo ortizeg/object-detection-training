@@ -259,6 +259,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         self,
         outputs: Dict[str, torch.Tensor],
         original_sizes: Optional[List[Tuple[int, int]]] = None,
+        confidence_threshold: float = 0.1,
     ) -> List[Dict[str, torch.Tensor]]:
         """Convert model outputs to prediction format."""
         predictions = []
@@ -289,7 +290,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             scores = scores * obj_conf
 
             # Filter by threshold
-            keep = scores > 0.1
+            keep = scores > confidence_threshold
             boxes = boxes[keep]
             scores = scores[keep]
             labels = labels[keep]

@@ -4,7 +4,7 @@ COCO format data module for object detection training.
 
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from loguru import logger
 
@@ -105,9 +105,10 @@ class COCODataModule(BaseDataModule):
         self.num_windows = num_windows
         self.square_resize_div_64 = square_resize_div_64
 
-        # Cache for num_classes
+        # Cache for num_classes and mapping
         self._num_classes: Optional[int] = None
         self._class_names: Optional[list] = None
+        self._label_map: Optional[Dict[int, int]] = None
 
         self.save_hyperparameters()
 
@@ -125,19 +126,29 @@ class COCODataModule(BaseDataModule):
             self._load_class_info()
         return self._class_names
 
+    @property
+    def label_map(self) -> Dict[int, int]:
+        """Get mapping from COCO category_id to 0-indexed labels."""
+        if self._label_map is None:
+            self._load_class_info()
+        return self._label_map
+
     def _load_class_info(self):
         """Load class information from COCO annotations."""
         _, ann_file = self._get_img_folder_and_ann_file(self.train_path)
         with open(ann_file, "r") as f:
             coco_data = json.load(f)
 
-        categories = coco_data.get("categories", [])
+        categories = sorted(coco_data.get("categories", []), key=lambda x: x["id"])
         self._num_classes = len(categories)
         self._class_names = [
             cat.get("name", f"class_{cat['id']}") for cat in categories
         ]
+        # Map original category_id to 0..N-1
+        self._label_map = {cat["id"]: i for i, cat in enumerate(categories)}
 
         logger.info(f"Detected {self._num_classes} classes: {self._class_names}")
+        logger.debug(f"Label map: {self._label_map}")
 
     def _get_img_folder_and_ann_file(self, data_path: Path):
         """Get image folder and annotation file from data path."""
@@ -195,7 +206,9 @@ class COCODataModule(BaseDataModule):
 
         img_folder, ann_file = self._get_img_folder_and_ann_file(self.train_path)
         transforms = self._get_transforms("train")
-        dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
+        dataset = CocoDetection(
+            img_folder, ann_file, transforms=transforms, label_map=self.label_map
+        )
         logger.info(f"Training dataset: {len(dataset)} images")
         return dataset
 
@@ -206,7 +219,9 @@ class COCODataModule(BaseDataModule):
         img_folder, ann_file = self._get_img_folder_and_ann_file(self.val_path)
         # Use simple transforms for validation (no multi-scale)
         transforms = self._get_transforms("val")
-        dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
+        dataset = CocoDetection(
+            img_folder, ann_file, transforms=transforms, label_map=self.label_map
+        )
         logger.info(f"Validation dataset: {len(dataset)} images")
         return dataset
 
@@ -220,7 +235,9 @@ class COCODataModule(BaseDataModule):
 
         img_folder, ann_file = self._get_img_folder_and_ann_file(self.test_path)
         transforms = self._get_transforms("test")
-        dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
+        dataset = CocoDetection(
+            img_folder, ann_file, transforms=transforms, label_map=self.label_map
+        )
         logger.info(f"Test dataset: {len(dataset)} images")
         return dataset
 
