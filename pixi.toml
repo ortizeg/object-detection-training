@@ -10,7 +10,7 @@ platforms = ["osx-arm64", "linux-64"]
 cuda = "12.1"
 
 [tasks]
-train = { cmd = "python src/object_detection_training/train.py", env = { KMP_DUPLICATE_LIB_OK = "TRUE" } }
+train = { cmd = "python -m object_detection_training.task_manager", env = { KMP_DUPLICATE_LIB_OK = "TRUE" } }
 test = "pytest"
 precommit = "pre-commit run --all-files"
 format = "black ."
@@ -23,6 +23,11 @@ hydra-core = "*"
 loguru = "*"
 numpy = "<2.0.0"
 onnxscript = ">=0.5.6,<0.6"
+lightning = "*"
+pydantic = ">=2.0"
+fvcore = "*"
+wandb = ">=0.23.1,<0.24"
+iopath = ">=0.1.10,<0.2"
 
 [feature.dev.dependencies]
 pytest = "*"
@@ -37,4 +42,5 @@ prod = []
 
 [pypi-dependencies]
 rfdetr = { version = "*", extras = ["metrics", "onnxexport"] }
+torchmetrics = { version = "*" }
 object-detection-training = { path = ".", editable = true }

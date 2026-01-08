@@ -1,0 +1,53 @@
+# Default Callbacks Configuration
+model_checkpoint:
+  _target_: lightning.pytorch.callbacks.ModelCheckpoint
+  dirpath: ${hydra:runtime.output_dir}/checkpoints
+  filename: "{epoch:02d}-{val_mAP:.4f}"
+  monitor: val/mAP
+  mode: max
+  save_top_k: 3
+  save_last: true
+  verbose: true
+
+early_stopping:
+  _target_: lightning.pytorch.callbacks.EarlyStopping
+  monitor: val/mAP
+  mode: max
+  patience: 15
+  min_delta: 0.001
+  verbose: true
+
+ema:
+  _target_: object_detection_training.callbacks.ema.EMACallback
+  decay: 0.9999
+  warmup_steps: 2000
+
+onnx_export:
+  _target_: object_detection_training.callbacks.onnx_export.ONNXExportCallback
+  output_dir: onnx
+  export_best: true
+  export_final: true
+  export_all_checkpoints: false
+  opset_version: 17
+  simplify: true
+  input_height: 640
+  input_width: 640
+
+model_info:
+  _target_: object_detection_training.callbacks.model_info.ModelInfoCallback
+  output_filename: model_info.json
+  input_height: 640
+  input_width: 640
+  measure_inference_speed: true
+
+lr_monitor:
+  _target_: lightning.pytorch.callbacks.LearningRateMonitor
+  logging_interval: step
+
+rich_progress:
+  _target_: lightning.pytorch.callbacks.RichProgressBar
+
+visualization:
+  _target_: object_detection_training.callbacks.visualization.VisualizationCallback
+  num_samples: 10
+  output_dir: ${hydra:runtime.output_dir}/outputs

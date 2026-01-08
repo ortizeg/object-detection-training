@@ -1,28 +1,75 @@
+"""Tests for the object detection training framework."""
+
 import sys
 from os.path import dirname, join
 
 import hydra
 
-# Add src to path to import train script if needed, though we primarily test config here
-# Add src to path to import train script if needed, though we primarily test config here
+# Add src to path to import train script if needed
 sys.path.append(join(dirname(__file__), "../src"))
 
 # Register model configs by importing the wrappers
-import object_detection_training.models.rfdetr_wrappers as _  # noqa: F401, E402
+import object_detection_training.models as _  # noqa: F401, E402
 
 
 def test_hydra_configuration():
-    # Verify that we can load the configuration using Hydra
+    """Verify that we can load the configuration using Hydra."""
     with hydra.initialize(version_base=None, config_path="../conf"):
         cfg = hydra.compose(config_name="train")
 
         # Check basic config structure
-        assert "training" in cfg
-        assert "models" in cfg
+        assert "task" in cfg
+        assert "model" in cfg
+        assert "data" in cfg
+        assert "trainer" in cfg
+        assert "callbacks" in cfg
+        assert "logging" in cfg
 
-        # Check default values
-        assert cfg.training.batch_size == 8
+        # Check task config (from ConfigStore via @register)
+        assert cfg.task._target_ == "object_detection_training.tasks.TrainTask"
+        assert cfg.task.name == "object_detection_training"
+
+        # Check model config (default is rfdetr_small)
         assert (
-            cfg.models._target_
-            == "object_detection_training.models.rfdetr_wrappers.RFDETRSmall"
+            cfg.model._target_
+            == "object_detection_training.models.rfdetr_lightning.RFDETRSmallModel"
         )
+        assert cfg.model.num_classes == 80
+
+        # Check data config
+        assert cfg.data._target_ == "object_detection_training.data.coco.COCODataModule"
+        assert cfg.data.batch_size == 8
+
+        # Check trainer config
+        assert cfg.trainer._target_ == "lightning.Trainer"
+        assert cfg.trainer.max_epochs == 100
+        assert cfg.trainer.precision == "16-mixed"
+
+
+def test_hydra_model_override():
+    """Test that we can override the model with YOLOX."""
+    with hydra.initialize(version_base=None, config_path="../conf"):
+        cfg = hydra.compose(config_name="train", overrides=["model=yolox_s"])
+
+        # Check YOLOX model config
+        assert (
+            cfg.model._target_
+            == "object_detection_training.models.yolox_lightning.YOLOXSModel"
+        )
+        assert cfg.model.num_classes == 80
+
+
+def test_hydra_callbacks():
+    """Test callback configuration."""
+    with hydra.initialize(version_base=None, config_path="../conf"):
+        cfg = hydra.compose(config_name="train")
+
+        # Check callbacks
+        assert "model_checkpoint" in cfg.callbacks
+        assert "ema" in cfg.callbacks
+        assert "onnx_export" in cfg.callbacks
+        assert "model_info" in cfg.callbacks
+
+        # Check EMA config
+        assert cfg.callbacks.ema.decay == 0.9999
+        assert cfg.callbacks.ema.warmup_steps == 2000

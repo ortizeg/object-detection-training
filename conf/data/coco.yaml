@@ -1,0 +1,16 @@
+# COCO Dataset Configuration
+_target_: object_detection_training.data.coco.COCODataModule
+train_path: ???  # Required - path to training data
+val_path: ???    # Required - path to validation data
+test_path: null  # Optional - path to test data
+batch_size: 8
+num_workers: 4
+resolution: 560
+multi_scale: true
+expanded_scales: false
+skip_random_resize: false
+patch_size: 16
+num_windows: 4
+pin_memory: true
+persistent_workers: true
+square_resize_div_64: true

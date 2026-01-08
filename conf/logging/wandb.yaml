@@ -1,0 +1,9 @@
+# WandB Logger Configuration
+wandb:
+  _target_: lightning.pytorch.loggers.WandbLogger
+  project: object-detection-training
+  name: null  # Auto-generated if null
+  save_dir: ${hydra:runtime.output_dir}
+  log_model: true
+  tags: []
+  notes: null
