@@ -4,7 +4,7 @@ defaults:
 
 # RFDETR Small Model Configuration
 _target_: object_detection_training.models.rfdetr_lightning.RFDETRSmallModel
-resolution: 560
+input_size: 560
 learning_rate: 1e-4
 weight_decay: 1e-4
 download_pretrained: true

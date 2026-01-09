@@ -72,7 +72,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         variant: str = "small",
         num_classes: int = 80,
         pretrain_weights: Optional[str] = None,
-        resolution: int = 560,
+        input_size: int = 560,
         learning_rate: float = 1e-4,
         lr_encoder: float = 1.5e-4,
         weight_decay: float = 1e-4,
@@ -89,7 +89,7 @@ class RFDETRLightningModel(BaseDetectionModel):
             variant: Model variant (nano, small, medium, large).
             num_classes: Number of detection classes.
             pretrain_weights: Path to pretrained weights file.
-            resolution: Input resolution.
+            input_size: Input resolution.
             learning_rate: Base learning rate.
             lr_encoder: Learning rate for encoder.
             weight_decay: Weight decay.
@@ -111,7 +111,7 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         self.lr_encoder = lr_encoder
         self.variant = variant
-        self.resolution = resolution
+        self.input_size = input_size
         self.pretrain_weights = pretrain_weights
         self.download_pretrained = download_pretrained
 
