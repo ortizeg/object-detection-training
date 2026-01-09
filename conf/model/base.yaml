@@ -1,5 +1,7 @@
 
 num_classes: null
+input_height: ${input_height}
+input_width: ${input_width}
 learning_rate: 1e-4
 weight_decay: 1e-4
 warmup_epochs: 5

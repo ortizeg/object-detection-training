@@ -72,13 +72,14 @@ class RFDETRLightningModel(BaseDetectionModel):
         variant: str = "small",
         num_classes: int = 80,
         pretrain_weights: Optional[str] = None,
-        input_size: int = 560,
         learning_rate: float = 1e-4,
         lr_encoder: float = 1.5e-4,
         weight_decay: float = 1e-4,
         warmup_epochs: int = 5,
         use_ema: bool = True,
         ema_decay: float = 0.9999,
+        input_height: int = 576,
+        input_width: int = 576,
         download_pretrained: bool = True,
         output_dir: str = "outputs",
     ):
@@ -89,7 +90,8 @@ class RFDETRLightningModel(BaseDetectionModel):
             variant: Model variant (nano, small, medium, large).
             num_classes: Number of detection classes.
             pretrain_weights: Path to pretrained weights file.
-            input_size: Input resolution.
+            input_height: Input image height.
+            input_width: Input image width.
             learning_rate: Base learning rate.
             lr_encoder: Learning rate for encoder.
             weight_decay: Weight decay.
@@ -106,12 +108,13 @@ class RFDETRLightningModel(BaseDetectionModel):
             warmup_epochs=warmup_epochs,
             use_ema=use_ema,
             ema_decay=ema_decay,
+            input_height=input_height,
+            input_width=input_width,
             output_dir=output_dir,
         )
 
         self.lr_encoder = lr_encoder
         self.variant = variant
-        self.input_size = input_size
         self.pretrain_weights = pretrain_weights
         self.download_pretrained = download_pretrained
 
@@ -137,7 +140,9 @@ class RFDETRLightningModel(BaseDetectionModel):
         logging_info = f"Initializing RFDETR {variant} model"
         logger.info(logging_info)
         self.rfdetr_wrapper = model_class(
-            pretrain_weights=pretrain_weights, num_classes=num_classes
+            pretrain_weights=pretrain_weights,
+            num_classes=num_classes,
+            resolution=input_height,
         )
 
         # Register the actual nn.Module so Lightning/Optimizer can see parameters

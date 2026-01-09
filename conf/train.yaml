@@ -15,6 +15,10 @@ defaults:
   - callbacks: default
   - logging: null
 
+# Global Parameters
+input_height: 576
+input_width: 576
+
 # Hydra configuration
 hydra:
   run:

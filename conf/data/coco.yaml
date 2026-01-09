@@ -5,7 +5,8 @@ val_path: ???    # Required - path to validation data
 test_path: null  # Optional - path to test data
 batch_size: 8
 num_workers: 4
-resolution: 560
+input_height: ${input_height}
+input_width: ${input_width}
 multi_scale: true
 expanded_scales: false
 skip_random_resize: false

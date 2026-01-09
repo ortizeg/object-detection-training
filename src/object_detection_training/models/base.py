@@ -33,6 +33,8 @@ class BaseDetectionModel(L.LightningModule):
         warmup_epochs: int = 5,
         use_ema: bool = True,
         ema_decay: float = 0.9999,
+        input_height: int = 576,
+        input_width: int = 576,
         output_dir: str = "outputs",
     ):
         """
@@ -54,6 +56,8 @@ class BaseDetectionModel(L.LightningModule):
         self.warmup_epochs = warmup_epochs
         self.use_ema = use_ema
         self.ema_decay = ema_decay
+        self.input_height = input_height
+        self.input_width = input_width
         self.output_dir = Path(output_dir)
 
         self._export_mode = False

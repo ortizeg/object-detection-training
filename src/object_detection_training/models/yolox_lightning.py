@@ -93,7 +93,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         use_ema: bool = True,
         ema_decay: float = 0.9998,
         download_pretrained: bool = True,
-        input_size: int = 640,
+        input_height: int = 640,
+        input_width: int = 640,
         output_dir: str = "outputs",
     ):
         """
@@ -109,7 +110,8 @@ class YOLOXLightningModel(BaseDetectionModel):
             use_ema: Enable EMA.
             ema_decay: EMA decay factor.
             download_pretrained: Download pretrained weights if not available.
-            input_size: Input image size.
+            input_height: Input image height.
+            input_width: Input image width.
             output_dir: Base directory for outputting results.
         """
         super().__init__(
@@ -119,13 +121,16 @@ class YOLOXLightningModel(BaseDetectionModel):
             warmup_epochs=warmup_epochs,
             use_ema=use_ema,
             ema_decay=ema_decay,
+            input_height=input_height,
+            input_width=input_width,
             output_dir=output_dir,
         )
 
         self.variant = variant
         self.pretrain_weights = pretrain_weights
         self.download_pretrained = download_pretrained
-        self.input_size = input_size
+        self.input_height = input_height
+        self.input_width = input_width
 
         if variant not in YOLOX_CONFIGS:
             raise ValueError(

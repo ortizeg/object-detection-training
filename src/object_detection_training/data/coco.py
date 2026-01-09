@@ -36,7 +36,8 @@ class COCODataModule(BaseDataModule):
         test_path: Optional[str] = None,
         batch_size: int = 8,
         num_workers: int = 4,
-        resolution: int = 640,
+        input_height: int = 640,
+        input_width: int = 640,
         multi_scale: bool = False,
         expanded_scales: bool = False,
         skip_random_resize: bool = False,
@@ -55,7 +56,8 @@ class COCODataModule(BaseDataModule):
             test_path: Optional path to test data directory.
             batch_size: Batch size for data loaders.
             num_workers: Number of workers for data loading.
-            resolution: Base resolution (must be divisible by 64 for RFDETR).
+            input_height: Base input height (must be divisible by 64 for RFDETR).
+            input_width: Base input width (must be divisible by 64 for RFDETR).
             multi_scale: Enable multi-scale augmentation.
             expanded_scales: Use expanded scale range.
             skip_random_resize: Skip random resize augmentation.
@@ -88,16 +90,8 @@ class COCODataModule(BaseDataModule):
         )
         self.test_path = Path(test_path) if test_path else None
 
-        # Ensure resolution is divisible by 64 for RFDETR backbone compatibility
-        if resolution % 64 != 0:
-            new_resolution = ((resolution + 63) // 64) * 64
-            logger.warning(
-                f"Resolution {resolution} is not divisible by 64. "
-                f"Rounding up to {new_resolution}."
-            )
-            resolution = new_resolution
-
-        self.resolution = resolution
+        self.input_height = input_height
+        self.input_width = input_width
         self.multi_scale = multi_scale
         self.expanded_scales = expanded_scales
         self.skip_random_resize = skip_random_resize
@@ -182,7 +176,8 @@ class COCODataModule(BaseDataModule):
         if self.square_resize_div_64:
             return make_coco_transforms_square_div_64(
                 image_set,
-                self.resolution,
+                self.input_height,
+                self.input_width,
                 multi_scale=self.multi_scale,
                 expanded_scales=self.expanded_scales,
                 skip_random_resize=self.skip_random_resize,
@@ -192,7 +187,8 @@ class COCODataModule(BaseDataModule):
         else:
             return make_coco_transforms(
                 image_set,
-                self.resolution,
+                self.input_height,
+                self.input_width,
                 multi_scale=self.multi_scale,
                 expanded_scales=self.expanded_scales,
                 skip_random_resize=self.skip_random_resize,
