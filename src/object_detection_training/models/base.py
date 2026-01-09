@@ -177,30 +177,41 @@ class BaseDetectionModel(L.LightningModule):
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Exporting model to ONNX: {output_path}")
-        torch.onnx.export(
-            self,
-            dummy_input,
-            str(output_path),
-            opset_version=opset_version,
-            input_names=["images"],
-            output_names=["boxes", "scores", "labels"],
-            dynamic_axes=dynamic_axes,
-        )
+        try:
+            logger.info(f"Exporting model to ONNX: {output_path}")
+            torch.onnx.export(
+                self,
+                dummy_input,
+                str(output_path),
+                opset_version=opset_version,
+                input_names=["images"],
+                output_names=["boxes", "scores", "labels"],
+                dynamic_axes=dynamic_axes,
+            )
 
-        if simplify:
-            try:
-                import onnxsim
+            if simplify:
+                try:
+                    import onnxsim
 
-                model = onnx.load(str(output_path))
-                model_simp, check = onnxsim.simplify(model)
-                if check:
-                    onnx.save(model_simp, str(output_path))
-                    logger.info("ONNX model simplified successfully")
-                else:
-                    logger.warning("ONNX simplification failed, using original model")
-            except ImportError:
-                logger.warning("onnxsim not installed, skipping simplification")
+                    model = onnx.load(str(output_path))
+                    model_simp, check = onnxsim.simplify(model)
+                    if check:
+                        onnx.save(model_simp, str(output_path))
+                        logger.info("ONNX model simplified successfully")
+                    else:
+                        logger.warning(
+                            "ONNX simplification failed, using original model"
+                        )
+                except Exception as e:
+                    logger.warning(f"ONNX simplification failed: {e}")
+                    logger.warning("Using original ONNX model")
+        except Exception as e:
+            logger.error(f"Failed to export model to ONNX: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            if output_path.exists():
+                output_path.unlink()
 
         self.set_export_mode(False)
         return str(output_path)
@@ -232,7 +243,10 @@ class BaseDetectionModel(L.LightningModule):
             from fvcore.nn import FlopCountAnalysis
 
             dummy_input = torch.randn(*input_shape, device=device)
-            flops = FlopCountAnalysis(self, dummy_input)
+            # Targeting self.model instead of self to avoid Lightning wrapper overhead
+            # and potential recursion issues with some FLOP counters.
+            model_to_analyze = getattr(self, "model", self)
+            flops = FlopCountAnalysis(model_to_analyze, dummy_input)
             total_flops = flops.total()
         except Exception as e:
             logger.warning(f"Failed to compute FLOPs: {e}")
