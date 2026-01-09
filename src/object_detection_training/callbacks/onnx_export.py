@@ -97,20 +97,28 @@ class ONNXExportCallback(L.Callback):
         if self.export_best and trainer.checkpoint_callback:
             best_path = trainer.checkpoint_callback.best_model_path
             if best_path:
-                logger.info(f"Loading best model from {best_path}")
                 try:
                     # Load best checkpoint
                     import torch
 
+                    logger.info(f"Loading best checkpoint from {best_path}")
                     checkpoint = torch.load(best_path, map_location="cpu")
-                    pl_module.load_state_dict(checkpoint["state_dict"])
+
+                    # Handle both Lightning and raw state dicts
+                    state_dict = checkpoint.get("state_dict", checkpoint)
+
+                    pl_module.load_state_dict(state_dict)
+                    logger.info("Best model loaded successfully for ONNX export")
 
                     output_path = export_dir / "model_best.onnx"
                     exported = self._export_model(pl_module, output_path)
                     if exported:
                         self._exported_checkpoints.append(exported)
                 except Exception as e:
-                    logger.error(f"Failed to load best checkpoint: {e}")
+                    logger.error(f"Failed to load or export best checkpoint: {e}")
+                    import traceback
+
+                    logger.error(traceback.format_exc())
 
         # Export all checkpoints
         if self.export_all_checkpoints and trainer.checkpoint_callback:
