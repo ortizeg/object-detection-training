@@ -35,6 +35,7 @@ onnx_export:
 
 model_info:
   _target_: object_detection_training.callbacks.model_info.ModelInfoCallback
+  output_dir: ${hydra:runtime.output_dir}
   output_filename: model_info.json
   input_height: ${input_height}
   input_width: ${input_width}

@@ -6,7 +6,7 @@ Computes and logs model statistics at training start.
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import lightning as L
 from loguru import logger
@@ -21,6 +21,7 @@ class ModelInfoCallback(L.Callback):
 
     def __init__(
         self,
+        output_dir: Optional[str] = None,
         output_filename: str = "model_info.json",
         input_height: int = 640,
         input_width: int = 640,
@@ -30,12 +31,15 @@ class ModelInfoCallback(L.Callback):
         Initialize model info callback.
 
         Args:
+            output_dir: Directory to save the model info JSON.
+                        If None, uses trainer.log_dir.
             output_filename: Filename for the model info JSON.
             input_height: Input image height for FLOPs computation.
             input_width: Input image width for FLOPs computation.
             measure_inference_speed: Whether to measure inference speed.
         """
         super().__init__()
+        self.output_dir = Path(output_dir) if output_dir else None
         self.output_filename = output_filename
         self.input_height = input_height
         self.input_width = input_width
@@ -63,8 +67,14 @@ class ModelInfoCallback(L.Callback):
         self.model_info["num_classes"] = getattr(pl_module, "num_classes", None)
 
         # Save to file
-        log_dir = Path(trainer.log_dir) if trainer.log_dir else Path(".")
-        output_path = log_dir / self.output_filename
+        if self.output_dir:
+            save_dir = self.output_dir
+        elif trainer.log_dir:
+            save_dir = Path(trainer.log_dir)
+        else:
+            save_dir = Path(".")
+
+        output_path = save_dir / self.output_filename
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(output_path, "w") as f:
