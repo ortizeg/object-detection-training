@@ -194,13 +194,40 @@ class YOLOXLightningModel(BaseDetectionModel):
             else:
                 state_dict = checkpoint
 
-            # Filter out head weights if num_classes doesn't match
+            # Create new state dict with mapping
+            model_state_dict = self.model.state_dict()
             filtered_state_dict = {}
+
+            # Match parameters
+            matched = []
+            unmatched = []
+            class_mismatch = []
+
             for k, v in state_dict.items():
-                if "cls_preds" in k and v.shape[0] != self.num_classes:
-                    logger.warning(f"Skipping {k} due to class mismatch")
-                    continue
-                filtered_state_dict[k] = v
+                if k in model_state_dict:
+                    # Check for class dimension mismatch in head
+                    if "cls_preds" in k and v.shape[0] != self.num_classes:
+                        class_mismatch.append(k)
+                        continue
+
+                    if v.shape == model_state_dict[k].shape:
+                        filtered_state_dict[k] = v
+                        matched.append(k)
+                    else:
+                        unmatched.append(
+                            f"{k} (shape mismatch: {v.shape} vs "
+                            f"{model_state_dict[k].shape})"
+                        )
+                else:
+                    unmatched.append(k)
+
+            # Log summary
+            logger.info(f"Checkpoint match summary for {self.variant}:")
+            logger.info(f"  Matched: {len(matched)} / {len(model_state_dict)}")
+            if class_mismatch:
+                logger.info(f"  Class mismatch (skipped): {len(class_mismatch)}")
+            if unmatched:
+                logger.debug(f"  Unmatched: {unmatched[:10]}...")
 
             self.model.load_state_dict(filtered_state_dict, strict=False)
             logger.info("Weights loaded successfully")
