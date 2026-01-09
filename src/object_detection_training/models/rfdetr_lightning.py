@@ -136,7 +136,9 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         logging_info = f"Initializing RFDETR {variant} model"
         logger.info(logging_info)
-        self.rfdetr_wrapper = model_class(pretrain_weights=pretrain_weights)
+        self.rfdetr_wrapper = model_class(
+            pretrain_weights=pretrain_weights, num_classes=num_classes
+        )
 
         # Register the actual nn.Module so Lightning/Optimizer can see parameters
         # valid chain based on forward usage: self.model.model.model
