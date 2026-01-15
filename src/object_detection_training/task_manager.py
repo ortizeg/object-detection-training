@@ -41,36 +41,46 @@ if not hasattr(onnx.helper, "float32_to_bfloat16"):
 
     onnx.helper.float32_to_bfloat16 = float32_to_bfloat16
 
-# Configure loguru to show all pytorch internal logs
-logger.remove()
-logger.add(
-    sys.stderr,
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-    "<level>{level: <8}</level> | "
-    "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
-    "<level>{message}</level>",
-    level="DEBUG",
-)
+
+# Configure loguru to show logs based on level
+def setup_loguru(log_level="INFO"):
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+        "<level>{level: <8}</level> | "
+        "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+        "<level>{message}</level>",
+        level=log_level,
+    )
 
 
-def setup_logging():
-    """Configure logging to show all PyTorch internal logs."""
+def setup_logging(log_level="INFO"):
+    """Configure logging to show logs based on level."""
     import logging
     import warnings
+
+    setup_loguru(log_level)
 
     # Enable all warnings
     warnings.filterwarnings("default")
 
-    # Set all loggers to DEBUG
-    logging.getLogger().setLevel(logging.DEBUG)
-    logging.getLogger("pytorch_lightning").setLevel(logging.DEBUG)
-    logging.getLogger("lightning").setLevel(logging.DEBUG)
-    logging.getLogger("torch").setLevel(logging.DEBUG)
+    # Set all loggers to the specified level
+    numeric_level = getattr(logging, log_level.upper(), logging.INFO)
+    logging.getLogger().setLevel(numeric_level)
+    logging.getLogger("pytorch_lightning").setLevel(numeric_level)
+    logging.getLogger("lightning").setLevel(numeric_level)
+    logging.getLogger("torch").setLevel(numeric_level)
 
-    # Make sure PyTorch prints all internal info
-    import torch
+    # Explicitly suppress noisy loggers by setting them to the requested level
+    logging.getLogger("matplotlib").setLevel(numeric_level)
+    logging.getLogger("matplotlib.font_manager").setLevel(numeric_level)
 
-    torch.set_printoptions(profile="full")
+    # Make sure PyTorch prints all internal info if in DEBUG
+    if log_level.upper() == "DEBUG":
+        import torch
+
+        torch.set_printoptions(profile="full")
 
 
 @hydra.main(version_base=None, config_path="../../conf", config_name="train")
@@ -81,7 +91,8 @@ def main(cfg: DictConfig) -> None:
     Args:
         cfg: Hydra configuration dictionary.
     """
-    setup_logging()
+    log_level = cfg.get("log_level", "INFO")
+    setup_logging(log_level)
 
     logger.info("=" * 60)
     logger.info("Object Detection Training Framework")
