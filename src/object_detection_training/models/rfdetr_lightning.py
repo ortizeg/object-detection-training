@@ -4,6 +4,7 @@ RFDETR model wrappers for PyTorch Lightning.
 This module wraps the rfdetr models to work with the Lightning training framework.
 """
 
+import math
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -72,14 +73,14 @@ class RFDETRLightningModel(BaseDetectionModel):
         variant: str = "small",
         num_classes: int = 80,
         pretrain_weights: Optional[str] = None,
-        learning_rate: float = 1e-4,
+        learning_rate: float = 2.5e-4,
         lr_encoder: float = 1.5e-4,
         weight_decay: float = 1e-4,
-        warmup_epochs: int = 5,
+        warmup_epochs: int = 1,
         use_ema: bool = True,
-        ema_decay: float = 0.9999,
-        input_height: int = 576,
-        input_width: int = 576,
+        ema_decay: float = 0.993,
+        input_height: int = 512,
+        input_width: int = 512,
         download_pretrained: bool = True,
         output_dir: str = "outputs",
     ):
@@ -362,11 +363,19 @@ class RFDETRLightningModel(BaseDetectionModel):
             weight_decay=self.weight_decay,
         )
 
-        # Learning rate scheduler with warmup
+        # Learning rate scheduler with warmup and cosine annealing
         def lr_lambda(epoch):
             if epoch < self.warmup_epochs:
                 return (epoch + 1) / self.warmup_epochs
-            return 1.0
+
+            # After warmup, use cosine annealing
+            max_epochs = getattr(self.trainer, "max_epochs", 100)
+            if max_epochs <= self.warmup_epochs:
+                return 1.0
+
+            progress = (epoch - self.warmup_epochs) / (max_epochs - self.warmup_epochs)
+            # Decay to 0.01 of the original learning rate
+            return 0.01 + (1 - 0.01) * 0.5 * (1.0 + math.cos(math.pi * progress))
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 

@@ -4,7 +4,9 @@ defaults:
 
 # RFDETR Small Model Configuration
 _target_: object_detection_training.models.rfdetr_lightning.RFDETRSmallModel
-learning_rate: 1e-4
+learning_rate: 2.5e-4
 weight_decay: 1e-4
+warmup_epochs: 1
+ema_decay: 0.993
 download_pretrained: true
 pretrain_weights: null

@@ -8,7 +8,7 @@ num_workers: 4
 input_height: ${input_height}
 input_width: ${input_width}
 multi_scale: true
-expanded_scales: false
+expanded_scales: true
 skip_random_resize: false
 patch_size: 16
 num_windows: 4

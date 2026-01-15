@@ -19,8 +19,8 @@ early_stopping:
 
 ema:
   _target_: object_detection_training.callbacks.ema.EMACallback
-  decay: 0.9999
-  warmup_steps: 2000
+  decay: 0.993
+  warmup_steps: 0
 
 onnx_export:
   _target_: object_detection_training.callbacks.onnx_export.ONNXExportCallback

@@ -4,7 +4,7 @@ set -e
 IMAGE_NAME="object-detection-training"
 TAG="latest"
 GCP_PROJECT_ID="api-project-562713517696"
-REGION="us-central1"
+REGION="us"
 REPO_NAME="object-detection-training"
 ARTIFACT_HOST="$REGION-docker.pkg.dev"
 ARTIFACT_URL="$ARTIFACT_HOST/$GCP_PROJECT_ID/$REPO_NAME/$IMAGE_NAME:$TAG"

@@ -145,15 +145,16 @@ class VisualizationCallback(L.Callback):
                 )
 
                 # Debug logging
-                if len(detections.confidence) > 0:
-                    max_conf = detections.confidence.max()
+                num_raw = len(preds["scores"])
+                high_conf_preds = preds["scores"] > 0.05
+                num_high_conf = high_conf_preds.sum().item()
+
+                if num_raw > 0:
+                    max_conf = preds["scores"].max().item()
                     logger.info(
-                        f"Image {sample.get('image_id')}: Max confidence = \
-                            {max_conf:.4f}"
-                    )
-                    logger.info(
-                        f"Image {sample.get('image_id')}: Boxes range = \
-                            {pred_boxes_abs.min():.1f} - {pred_boxes_abs.max():.1f}"
+                        f"Image {sample.get('image_id')}: {num_raw} raw detections. "
+                        f"Max confidence = {max_conf:.4f}. "
+                        f"{num_high_conf} detections > 0.05"
                     )
                 else:
                     logger.info(

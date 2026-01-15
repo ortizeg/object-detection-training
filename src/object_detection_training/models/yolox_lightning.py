@@ -327,6 +327,11 @@ class YOLOXLightningModel(BaseDetectionModel):
             scores = scores[keep]
             labels = labels[keep]
 
+            # Normalize boxes to [0, 1] relative to input resolution
+            # YOLOX predictions are in absolute pixels for the input_height/width
+            boxes[:, [0, 2]] /= self.input_width
+            boxes[:, [1, 3]] /= self.input_height
+
             predictions.append(
                 {
                     "boxes": boxes,
@@ -387,6 +392,8 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         # Calculate warmup steps
         warmup_steps = int(total_steps * (warmup_epochs / max(1, max_epochs)))
+        # Ensure warmup doesn't take more than half of training
+        warmup_steps = min(warmup_steps, total_steps // 2)
         warmup_steps = max(1, warmup_steps)
 
         scheduler_warmup = torch.optim.lr_scheduler.LinearLR(
