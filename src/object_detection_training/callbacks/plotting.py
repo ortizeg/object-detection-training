@@ -23,13 +23,9 @@ class TrainingHistoryPlotter(L.Callback):
         self.history = {
             "train_loss": [],
             "val_loss": [],
-            "train_mAP": [],
             "val_mAP": [],
             "val_mAP50": [],
             "val_mAP75": [],
-            "val_mAP_small": [],
-            "val_mAP_medium": [],
-            "val_mAP_large": [],
         }
         self.epochs = []
 
@@ -52,10 +48,9 @@ class TrainingHistoryPlotter(L.Callback):
         val_loss = metrics.get("val/loss_epoch") or metrics.get("val/loss")
 
         # mAP metrics
-        train_map = metrics.get("train/mAP")
         val_map = metrics.get("val/mAP")
-        val_map50 = metrics.get("val/mAP50")
-        val_map75 = metrics.get("val/mAP75")
+        val_map50 = metrics.get("val/mAP_50")
+        val_map75 = metrics.get("val/mAP_75")
 
         # Update history (handle missing values with None or last value)
         self.history["train_loss"].append(
@@ -69,11 +64,6 @@ class TrainingHistoryPlotter(L.Callback):
             val_loss.item()
             if val_loss is not None
             else (self.history["val_loss"][-1] if self.history["val_loss"] else None)
-        )
-        self.history["train_mAP"].append(
-            train_map.item()
-            if train_map is not None
-            else (self.history["train_mAP"][-1] if self.history["train_mAP"] else None)
         )
         self.history["val_mAP"].append(
             val_map.item()
@@ -132,7 +122,6 @@ class TrainingHistoryPlotter(L.Callback):
         plt.figure(figsize=(10, 6))
 
         metrics_to_plot = {
-            "train_mAP": ("Train mAP", "o"),
             "val_mAP": ("Val mAP", "s"),
             "val_mAP50": ("Val mAP50", "^"),
             "val_mAP75": ("Val mAP75", "v"),

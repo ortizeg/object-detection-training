@@ -440,16 +440,18 @@ class BaseDetectionModel(L.LightningModule):
         class_names = getattr(self.trainer.datamodule, "class_names", None)
 
         if class_names and result.ap_per_class is not None:
+            # Create a mapping from class_id to AP (average across IoU thresholds)
+            class_ap_map = {
+                class_id: float(result.ap_per_class[i].mean())
+                for i, class_id in enumerate(result.matched_classes)
+            }
             for class_id, name in enumerate(class_names):
-                ap = -1.0
-                if class_id < len(result.ap_per_class):
-                    # Average across IoU thresholds to get mAP@50:95 for this class
-                    ap = float(result.ap_per_class[class_id].mean())
+                ap = class_ap_map.get(class_id, 0.0)
                 self.log(f"val/mAP_{name}", ap)
         elif result.ap_per_class is not None:
-            for i, ap_array in enumerate(result.ap_per_class):
-                name = f"class_{i}"
-                ap = float(ap_array.mean())
+            for i, class_id in enumerate(result.matched_classes):
+                name = f"class_{class_id}"
+                ap = float(result.ap_per_class[i].mean())
                 self.log(f"val/mAP_{name}", ap)
 
         self.val_map.reset()
@@ -532,16 +534,18 @@ class BaseDetectionModel(L.LightningModule):
         class_names = getattr(self.trainer.datamodule, "class_names", None)
 
         if class_names and result.ap_per_class is not None:
+            # Create a mapping from class_id to AP (average across IoU thresholds)
+            class_ap_map = {
+                class_id: float(result.ap_per_class[i].mean())
+                for i, class_id in enumerate(result.matched_classes)
+            }
             for class_id, name in enumerate(class_names):
-                ap = -1.0
-                if class_id < len(result.ap_per_class):
-                    # Average across IoU thresholds to get mAP@50:95 for this class
-                    ap = float(result.ap_per_class[class_id].mean())
+                ap = class_ap_map.get(class_id, 0.0)
                 self.log(f"test/mAP_{name}", ap)
         elif result.ap_per_class is not None:
-            for i, ap_array in enumerate(result.ap_per_class):
-                name = f"class_{i}"
-                ap = float(ap_array.mean())
+            for i, class_id in enumerate(result.matched_classes):
+                name = f"class_{class_id}"
+                ap = float(result.ap_per_class[i].mean())
                 self.log(f"test/mAP_{name}", ap)
 
         self.test_map.reset()
