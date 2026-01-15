@@ -40,7 +40,7 @@ class COCODataModule(BaseDataModule):
         input_width: int = 640,
         multi_scale: bool = False,
         expanded_scales: bool = False,
-        skip_random_resize: bool = False,
+        skip_random_resize: bool = True,
         patch_size: int = 16,
         num_windows: int = 4,
         pin_memory: bool = True,

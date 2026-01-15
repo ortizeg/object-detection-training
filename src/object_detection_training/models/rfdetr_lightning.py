@@ -188,7 +188,7 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         # Log other components (ensure they are scalars)
         for k, v in outputs.items():
-            if k != "loss" and isinstance(v, torch.Tensor) and v.numel() == 1:
+            if k not in ["loss", ""] and isinstance(v, torch.Tensor) and v.numel() == 1:
                 self.log(k, v, on_step=True, on_epoch=True, prog_bar=False)
 
         return total_loss

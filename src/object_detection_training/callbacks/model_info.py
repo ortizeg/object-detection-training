@@ -10,6 +10,9 @@ from typing import Any, Dict, Optional
 
 import lightning as L
 from loguru import logger
+from rich import box
+from rich.console import Console
+from rich.table import Table
 
 
 class ModelInfoCallback(L.Callback):
@@ -81,7 +84,44 @@ class ModelInfoCallback(L.Callback):
             json.dump(self.model_info, f, indent=2)
 
         logger.info(f"Model info saved to {output_path}")
-        logger.info(f"Model info: {json.dumps(self.model_info, indent=2)}")
+
+        console = Console()
+        table = Table(
+            title="Model Information",
+            header_style="bold magenta",
+            box=box.SQUARE,
+            show_lines=True,
+        )
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+
+        for k, v in self.model_info.items():
+            # Format value for better readability
+            if k in ["total_params", "trainable_params"] and isinstance(
+                v, (int, float)
+            ):
+                value_str = f"{v / 1e6:.2f} M"
+            elif k == "flops" and isinstance(v, (int, float)):
+                if v >= 1e9:
+                    value_str = f"{v / 1e9:.2f} G"
+                else:
+                    value_str = f"{v / 1e6:.2f} M"
+            elif k == "model_size_mb" and isinstance(v, (int, float)):
+                value_str = f"{v:.2f} MB"
+            elif k == "inference_time_ms" and isinstance(v, (int, float)):
+                value_str = f"{v:.2f} ms"
+            elif k == "fps" and isinstance(v, (int, float)):
+                value_str = f"{v:.2f} FPS"
+            elif isinstance(v, float):
+                value_str = f"{v:,.2f}"
+            elif isinstance(v, int):
+                value_str = f"{v:,}"
+            else:
+                value_str = str(v)
+            table.add_row(k, value_str)
+
+        logger.info("Model Info:")
+        console.print(table)
 
         # Log to trainer loggers
         for logger_inst in trainer.loggers:

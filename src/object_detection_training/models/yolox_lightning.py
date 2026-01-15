@@ -11,6 +11,7 @@ import torch
 from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
+from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.hydra import register
 from object_detection_training.yolox import YOLOPAFPN, YOLOX, YOLOXHead
 
@@ -286,12 +287,12 @@ class YOLOXLightningModel(BaseDetectionModel):
         if self._export_mode:
             return self.model(images)
 
-        if self.training and targets is not None:
+        if targets is not None:
             # Un-normalize targets for YOLOX loss calculation
             # targets is a list of dicts with 'boxes' and 'labels'
             # boxes are in [0, 1] cxcywh format
-            # Use actual image shape for accurate un-normalization (esp. for
-            # multi-scale)
+            # Use actual image shape for accurate un-normalization
+            # (esp. for multi-scale)
             img_h, img_w = images.shape[2:]
             unnormalized_targets = []
             for t in targets:
@@ -304,6 +305,9 @@ class YOLOXLightningModel(BaseDetectionModel):
                 unnormalized_targets.append(new_t)
 
             outputs = self.model(images, unnormalized_targets)
+            # Add images shape to outputs for post-processing resolution retrieval
+            if "image_shape" not in outputs:
+                outputs["image_shape"] = images.shape[2:]
             return outputs
         else:
             with torch.no_grad():
@@ -355,12 +359,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
             # Get boxes (cxcywh -> xyxy)
             # Important: unbind to avoid in-place corruption
-            cx, cy, w, h = box_preds[:, :4].unbind(-1)
-            x1 = cx - 0.5 * w
-            y1 = cy - 0.5 * h
-            x2 = cx + 0.5 * w
-            y2 = cy + 0.5 * h
-            boxes = torch.stack([x1, y1, x2, y2], dim=-1)
+            boxes = cxcywh_to_xyxy(box_preds[:, :4])
 
             # NMS (Required for YOLOX post-processing)
             from torchvision.ops import batched_nms

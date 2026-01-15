@@ -37,8 +37,7 @@ class YOLOX(nn.Module):
         # fpn output content features of [dark3, dark4, dark5]
         fpn_outs = self.backbone(x)
 
-        if self.training:
-            assert targets is not None
+        if targets is not None:
             loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.head(
                 fpn_outs, targets, x
             )
@@ -50,6 +49,12 @@ class YOLOX(nn.Module):
                 "cls_loss": cls_loss,
                 "num_fg": num_fg,
             }
+            # If targets are provided but we're in eval mode (e.g. validation),
+            # we also want predictions for metric computation
+            if not self.training:
+                # Store training state, switch to eval for inference pass
+                # (although we're likely already in eval)
+                outputs["predictions"] = self.head(fpn_outs)
         else:
             outputs = self.head(fpn_outs)
 

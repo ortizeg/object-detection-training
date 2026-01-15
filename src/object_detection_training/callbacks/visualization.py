@@ -10,6 +10,8 @@ import wandb
 from loguru import logger
 from PIL import Image
 
+from object_detection_training.utils.boxes import cxcywh_to_xyxy
+
 
 class VisualizationCallback(L.Callback):
     """
@@ -151,13 +153,13 @@ class VisualizationCallback(L.Callback):
 
                 if num_raw > 0:
                     max_conf = preds["scores"].max().item()
-                    logger.info(
+                    logger.debug(
                         f"Image {sample.get('image_id')}: {num_raw} raw detections. "
                         f"Max confidence = {max_conf:.4f}. "
                         f"{num_high_conf} detections > 0.05"
                     )
                 else:
-                    logger.info(
+                    logger.debug(
                         f"Image {sample.get('image_id')}: No raw detections found."
                     )
 
@@ -347,13 +349,7 @@ class VisualizationCallback(L.Callback):
             boxes_abs = boxes_tensor * scale_tensor
 
             # cxcywh -> xyxy
-            cx, cy, w, h = boxes_abs.unbind(-1)
-            x1 = cx - 0.5 * w
-            y1 = cy - 0.5 * h
-            x2 = cx + 0.5 * w
-            y2 = cy + 0.5 * h
-
-            boxes_xyxy = torch.stack([x1, y1, x2, y2], dim=-1).numpy()
+            boxes_xyxy = cxcywh_to_xyxy(boxes_abs).numpy()
 
             detections = sv.Detections(
                 xyxy=boxes_xyxy,

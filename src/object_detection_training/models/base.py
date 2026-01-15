@@ -9,11 +9,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import lightning as L
+import supervision as sv
 import torch
 from loguru import logger
-from torchmetrics.detection import MeanAveragePrecision
+from supervision.metrics import MeanAveragePrecision
 
 from object_detection_training.metrics.curves import compute_detection_curves
+from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.plotting import save_detection_curves_plots
 
 
@@ -63,16 +65,8 @@ class BaseDetectionModel(L.LightningModule):
         self._export_mode = False
 
         # Metrics
-        self.val_map = MeanAveragePrecision(
-            box_format="xyxy",
-            iou_type="bbox",
-            class_metrics=True,
-        )
-        self.test_map = MeanAveragePrecision(
-            box_format="xyxy",
-            iou_type="bbox",
-            class_metrics=True,
-        )
+        self.val_map = MeanAveragePrecision()
+        self.test_map = MeanAveragePrecision()
 
         self.save_hyperparameters()
 
@@ -297,17 +291,66 @@ class BaseDetectionModel(L.LightningModule):
         self.train(was_training)
         return stats
 
+    def _to_sv_detections(
+        self,
+        preds: List[Dict[str, torch.Tensor]],
+        targets: List[Dict[str, torch.Tensor]],
+    ) -> Tuple[List[sv.Detections], List[sv.Detections]]:
+        """
+        Convert framework format to supervision Detections.
+
+        Args:
+            preds: List of prediction dictionaries.
+            targets: List of target dictionaries.
+
+        Returns:
+            Tuple of (list of sv.Detections, list of sv.Detections).
+        """
+        sv_preds = []
+        for p in preds:
+            sv_preds.append(
+                sv.Detections(
+                    xyxy=p["boxes"].cpu().numpy(),
+                    confidence=p["scores"].cpu().numpy(),
+                    class_id=p["labels"].cpu().numpy().astype(int),
+                )
+            )
+
+        sv_targets = []
+        for t in targets:
+            sv_targets.append(
+                sv.Detections(
+                    xyxy=t["boxes"].cpu().numpy(),
+                    class_id=t["labels"].cpu().numpy().astype(int),
+                )
+            )
+
+        return sv_preds, sv_targets
+
     def training_step(self, batch, batch_idx) -> torch.Tensor:
         """Training step."""
         images, targets = batch
         outputs = self(images, targets)
 
-        # Sum all losses
-        losses = {k: v for k, v in outputs.items() if "loss" in k.lower()}
-        total_loss = sum(losses.values())
+        # Individual loss components for logging (scalars only)
+        loss_components = {
+            k: v for k, v in outputs.items() if "loss" in k.lower() and v.numel() == 1
+        }
+
+        # Determine total loss, avoiding double counting 'loss' or 'total_loss'
+        if "loss" in outputs:
+            total_loss = outputs["loss"]
+            loss_components.pop("loss", None)
+        elif "total_loss" in outputs:
+            total_loss = outputs["total_loss"]
+            loss_components.pop("total_loss", None)
+        else:
+            total_loss = (
+                sum(loss_components.values()) if loss_components else torch.tensor(0.0)
+            )
 
         # Log losses
-        for name, value in losses.items():
+        for name, value in loss_components.items():
             self.log(
                 f"train/{name}", value, on_step=True, on_epoch=True, prog_bar=False
             )
@@ -323,7 +366,33 @@ class BaseDetectionModel(L.LightningModule):
     def validation_step(self, batch, batch_idx) -> None:
         """Validation step."""
         images, targets = batch
-        outputs = self(images)
+        outputs = self(images, targets)
+
+        # Extract individual loss components for detailed logging
+        loss_components = {
+            k: v for k, v in outputs.items() if "loss" in k.lower() and v.numel() == 1
+        }
+
+        # Determine total loss, avoiding double counting
+        if "loss" in outputs:
+            total_loss = outputs["loss"]
+            loss_components.pop("loss", None)
+        elif "total_loss" in outputs:
+            total_loss = outputs["total_loss"]
+            loss_components.pop("total_loss", None)
+        else:
+            total_loss = (
+                sum(loss_components.values()) if loss_components else torch.tensor(0.0)
+            )
+
+        if total_loss is not None:
+            self.log(
+                "val/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True
+            )
+            for name, value in loss_components.items():
+                if not name.startswith("val/"):
+                    name = f"val/{name}"
+                self.log(name, value, on_step=False, on_epoch=True)
 
         # Convert to predictions format
         preds = self.get_predictions(outputs, confidence_threshold=0.0)
@@ -334,13 +403,7 @@ class BaseDetectionModel(L.LightningModule):
             # Targets are normalized cxcywh, metric expects xyxy
             boxes = target["boxes"]
             if boxes.numel() > 0:
-                # cxcywh -> xyxy
-                cx, cy, w, h = boxes.unbind(-1)
-                x1 = cx - 0.5 * w
-                y1 = cy - 0.5 * h
-                x2 = cx + 0.5 * w
-                y2 = cy + 0.5 * h
-                boxes = torch.stack([x1, y1, x2, y2], dim=-1)
+                boxes = cxcywh_to_xyxy(boxes)
 
             formatted_targets.append(
                 {
@@ -349,7 +412,8 @@ class BaseDetectionModel(L.LightningModule):
                 }
             )
 
-        self.val_map.update(preds, formatted_targets)
+        sv_preds, sv_targets = self._to_sv_detections(preds, formatted_targets)
+        self.val_map.update(sv_preds, sv_targets)
 
         # Store for curve computation
         # Move to CPU to save GPU memory
@@ -362,36 +426,30 @@ class BaseDetectionModel(L.LightningModule):
 
     def on_validation_epoch_end(self) -> None:
         """Compute validation metrics at epoch end."""
-        metrics = self.val_map.compute()
+        result = self.val_map.compute()
+        logger.info(
+            f"Validation mAP@50: {result.map50:.4f}, mAP@50:95: {result.map50_95:.4f}"
+        )
 
         # Log main metrics
-        self.log("val/mAP", metrics["map"], prog_bar=True)
-        self.log("val/mAP_50", metrics["map_50"], prog_bar=True)
-        self.log("val/mAP_75", metrics["map_75"])
+        self.log("val/mAP", result.map50_95, prog_bar=True)
+        self.log("val/mAP_50", result.map50, prog_bar=True)
+        self.log("val/mAP_75", result.map75)
 
         # Log per-class mAP if available
         class_names = getattr(self.trainer.datamodule, "class_names", None)
-        classes_tensor = metrics.get("classes")
-        map_per_class = metrics.get("map_per_class")
 
-        if class_names and map_per_class is not None:
+        if class_names and result.ap_per_class is not None:
             for class_id, name in enumerate(class_names):
-                ap = torch.tensor(-1.0, device=self.device)
-                if classes_tensor is not None:
-                    # Find where this class ID appears in the classes tensor
-                    matches = (classes_tensor == class_id).nonzero(as_tuple=True)[0]
-                    if len(matches) > 0:
-                        ap = map_per_class[matches[0].item()]
-
+                ap = -1.0
+                if class_id < len(result.ap_per_class):
+                    # Average across IoU thresholds to get mAP@50:95 for this class
+                    ap = float(result.ap_per_class[class_id].mean())
                 self.log(f"val/mAP_{name}", ap)
-        elif map_per_class is not None:
-            # Fallback to whatever metrics returned
-            for i, ap in enumerate(map_per_class):
-                class_id = i
-                if classes_tensor is not None and i < len(classes_tensor):
-                    class_id = int(classes_tensor[i].item())
-
-                name = f"class_{class_id}"
+        elif result.ap_per_class is not None:
+            for i, ap_array in enumerate(result.ap_per_class):
+                name = f"class_{i}"
+                ap = float(ap_array.mean())
                 self.log(f"val/mAP_{name}", ap)
 
         self.val_map.reset()
@@ -403,6 +461,14 @@ class BaseDetectionModel(L.LightningModule):
 
         epoch_dir = self.output_dir / f"epoch_{self.current_epoch:03d}"
         metrics_dir = epoch_dir / "metrics"
+
+        # Build metrics dict for compatibility with plotting curves
+        metrics = {
+            "map": result.map50_95,
+            "map_50": result.map50,
+            "map_75": result.map75,
+            "map_per_class": result.ap_per_class,
+        }
 
         save_detection_curves_plots(curves, class_names, metrics_dir, metrics=metrics)
 
@@ -427,12 +493,7 @@ class BaseDetectionModel(L.LightningModule):
             boxes = target["boxes"]
             if boxes.numel() > 0:
                 # cxcywh -> xyxy
-                cx, cy, w, h = boxes.unbind(-1)
-                x1 = cx - 0.5 * w
-                y1 = cy - 0.5 * h
-                x2 = cx + 0.5 * w
-                y2 = cy + 0.5 * h
-                boxes = torch.stack([x1, y1, x2, y2], dim=-1)
+                boxes = cxcywh_to_xyxy(boxes)
 
             formatted_targets.append(
                 {
@@ -441,7 +502,8 @@ class BaseDetectionModel(L.LightningModule):
                 }
             )
 
-        self.test_map.update(preds, formatted_targets)
+        sv_preds, sv_targets = self._to_sv_detections(preds, formatted_targets)
+        self.test_map.update(sv_preds, sv_targets)
 
         # Store for curve computation
         self.test_preds_storage.extend(
@@ -453,30 +515,33 @@ class BaseDetectionModel(L.LightningModule):
 
     def on_test_epoch_end(self) -> None:
         """Compute test metrics at epoch end."""
-        metrics = self.test_map.compute()
+        result = self.test_map.compute()
 
-        self.log("test/mAP", metrics["map"])
-        self.log("test/mAP_50", metrics["map_50"])
-        self.log("test/mAP_75", metrics["map_75"])
+        # Build metrics dict for compatibility with plotting curves
+        metrics = {
+            "map": result.map50_95,
+            "map_50": result.map50,
+            "map_75": result.map75,
+            "map_per_class": result.ap_per_class,
+        }
+
+        self.log("test/mAP", result.map50_95)
+        self.log("test/mAP_50", result.map50)
+        self.log("test/mAP_75", result.map75)
 
         class_names = getattr(self.trainer.datamodule, "class_names", None)
-        classes_tensor = metrics.get("classes")
-        map_per_class = metrics.get("map_per_class")
 
-        if class_names and map_per_class is not None:
+        if class_names and result.ap_per_class is not None:
             for class_id, name in enumerate(class_names):
-                ap = torch.tensor(-1.0, device=self.device)
-                if classes_tensor is not None:
-                    matches = (classes_tensor == class_id).nonzero(as_tuple=True)[0]
-                    if len(matches) > 0:
-                        ap = map_per_class[matches[0].item()]
+                ap = -1.0
+                if class_id < len(result.ap_per_class):
+                    # Average across IoU thresholds to get mAP@50:95 for this class
+                    ap = float(result.ap_per_class[class_id].mean())
                 self.log(f"test/mAP_{name}", ap)
-        elif map_per_class is not None:
-            for i, ap in enumerate(map_per_class):
-                class_id = i
-                if classes_tensor is not None and i < len(classes_tensor):
-                    class_id = int(classes_tensor[i].item())
-                name = f"class_{class_id}"
+        elif result.ap_per_class is not None:
+            for i, ap_array in enumerate(result.ap_per_class):
+                name = f"class_{i}"
+                ap = float(ap_array.mean())
                 self.log(f"test/mAP_{name}", ap)
 
         self.test_map.reset()
