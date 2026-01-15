@@ -1,0 +1,12 @@
+defaults:
+  - base
+  - _self_
+
+# RFDETR Base Configuration
+# Centralizing optimization hyperparameters for all RFDETR variants
+lr_encoder: 1.5e-4
+lr_vit_layer_decay: 0.8
+lr_component_decay: 0.7
+out_feature_indexes: [3, 6, 9, 12]
+download_pretrained: true
+pretrain_weights: null

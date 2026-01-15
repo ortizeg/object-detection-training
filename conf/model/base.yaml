@@ -1,10 +1,11 @@
-
+# Base model configuration - defaults matching rfdetr package
 num_classes: null
 input_height: ${input_height}
 input_width: ${input_width}
 learning_rate: 1e-4
 weight_decay: 1e-4
-warmup_epochs: 5
-use_ema: True
-ema_decay: 0.9999
+
+warmup_epochs: 0 # Match rfdetr TrainConfig default (0.0)
+use_ema: true
+ema_decay: 0.993 # Match rfdetr TrainConfig default
 output_dir: ${hydra:runtime.output_dir}/outputs

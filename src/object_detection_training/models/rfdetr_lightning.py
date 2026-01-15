@@ -4,7 +4,6 @@ RFDETR model wrappers for PyTorch Lightning.
 This module wraps the rfdetr models to work with the Lightning training framework.
 """
 
-import math
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -14,6 +13,7 @@ from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
 from rfdetr.models import build_criterion_and_postprocessors
 
 from object_detection_training.models.base import BaseDetectionModel
+from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.hydra import register
 
 # Model checkpoint URLs for download
@@ -76,11 +76,14 @@ class RFDETRLightningModel(BaseDetectionModel):
         learning_rate: float = 2.5e-4,
         lr_encoder: float = 1.5e-4,
         weight_decay: float = 1e-4,
-        warmup_epochs: int = 1,
+        warmup_epochs: int = 0,  # Match rfdetr TrainConfig default
         use_ema: bool = True,
         ema_decay: float = 0.993,
         input_height: int = 512,
         input_width: int = 512,
+        lr_vit_layer_decay: float = 0.8,
+        lr_component_decay: float = 0.7,
+        out_feature_indexes: List[int] = [3, 6, 9, 12],
         download_pretrained: bool = True,
         output_dir: str = "outputs",
     ):
@@ -118,6 +121,9 @@ class RFDETRLightningModel(BaseDetectionModel):
         self.variant = variant
         self.pretrain_weights = pretrain_weights
         self.download_pretrained = download_pretrained
+        self.lr_vit_layer_decay = lr_vit_layer_decay
+        self.lr_component_decay = lr_component_decay
+        self.out_feature_indexes = out_feature_indexes
 
         if variant not in self.MODEL_VARIANTS:
             raise ValueError(
@@ -180,9 +186,9 @@ class RFDETRLightningModel(BaseDetectionModel):
         # Log total loss
         self.log("train/loss", total_loss, on_step=True, on_epoch=True, prog_bar=True)
 
-        # Log other components
+        # Log other components (ensure they are scalars)
         for k, v in outputs.items():
-            if k != "loss":
+            if k != "loss" and isinstance(v, torch.Tensor) and v.numel() == 1:
                 self.log(k, v, on_step=True, on_epoch=True, prog_bar=False)
 
         return total_loss
@@ -204,8 +210,8 @@ class RFDETRLightningModel(BaseDetectionModel):
             # For ONNX export, return detections directly
             return self._forward_for_export(images)
 
-        if self.training and targets is not None:
-            # Training mode - compute losses
+        if targets is not None and not self._export_mode:
+            # Training/Validation mode - compute losses
             return self._forward_train(images, targets)
         else:
             # Inference mode
@@ -232,7 +238,11 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         # Prepare log dict
         log_data = {"loss": losses}
-        log_data.update({f"train/{k}": v for k, v in loss_dict.items()})
+        prefix = "train" if self.training else "val"
+        log_data.update({f"{prefix}/{k}": v for k, v in loss_dict.items()})
+
+        # Add raw model outputs for potential metric calculation (validation_step)
+        log_data.update(outputs)
 
         return log_data
 
@@ -254,11 +264,13 @@ class RFDETRLightningModel(BaseDetectionModel):
         original_sizes: Optional[List[Tuple[int, int]]] = None,
         confidence_threshold: float = 0.0,
     ) -> List[Dict[str, torch.Tensor]]:
-        """Convert model outputs to prediction format for metrics."""
+        """Convert model outputs to prediction format for metrics.
+
+        Uses sigmoid activation to match rfdetr package's PostProcess.
+        RFDETR uses focal loss which is multi-label, so sigmoid is correct.
+        """
         predictions = []
 
-        # Extract predictions from outputs
-        # This depends on the specific output format of RFDETR
         pred_logits = outputs.get("pred_logits")
         pred_boxes = outputs.get("pred_boxes")
 
@@ -267,12 +279,15 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         batch_size = pred_logits.shape[0]
         for b in range(batch_size):
-            logits = pred_logits[b]
-            boxes = pred_boxes[b]
+            logits = pred_logits[b]  # [num_queries, num_classes]
+            boxes = pred_boxes[b]  # [num_queries, 4]
 
-            # Get scores and labels
-            probs = logits.softmax(-1)
-            scores, labels = probs[..., :-1].max(-1)
+            # Use sigmoid activation (matches rfdetr PostProcess)
+            # NOT softmax - rfdetr uses focal loss which is multi-label
+            probs = logits.sigmoid()
+
+            # Get max probability and corresponding label per query
+            scores, labels = probs.max(dim=-1)
 
             # Filter by score threshold
             keep = scores > confidence_threshold
@@ -280,19 +295,9 @@ class RFDETRLightningModel(BaseDetectionModel):
             scores = scores[keep]
             labels = labels[keep]
 
-            # Convert boxes from cxcywh to xyxy if needed
+            # Convert boxes from cxcywh to xyxy
             if boxes.numel() > 0:
-                # Assuming boxes are in normalized cxcywh format
-                cx, cy, w, h = boxes.unbind(-1)
-                boxes = torch.stack(
-                    [
-                        cx - w / 2,
-                        cy - h / 2,
-                        cx + w / 2,
-                        cy + h / 2,
-                    ],
-                    dim=-1,
-                )
+                boxes = cxcywh_to_xyxy(boxes)
 
                 # Rescale if original sizes provided
                 if original_sizes is not None and b < len(original_sizes):
@@ -340,42 +345,69 @@ class RFDETRLightningModel(BaseDetectionModel):
         return str(output_path)
 
     def configure_optimizers(self):
-        """Configure optimizers and schedulers."""
-        # Separate parameters for encoder and decoder
-        encoder_params = []
-        other_params = []
+        """Configure optimizers and schedulers matching rfdetr package."""
+        # Parameters values are now passed via Hydra config
+        lr_vit_layer_decay = self.lr_vit_layer_decay
+        lr_component_decay = self.lr_component_decay
+        num_layers = self.out_feature_indexes[-1] + 1
 
-        for name, param in self.named_parameters():
-            if not param.requires_grad:
+        param_dicts = []
+
+        # We need to map our local param names to what get_dinov2_lr_decay_rate expects
+        # Our model is at self.model (which is internal model)
+        # Parameters look like: transformer.decoder..., etc.
+        # But wait, our self.model is self.rfdetr_wrapper.model.model
+        # Let's check the prefixes.
+
+        for n, p in self.model.named_parameters():
+            if not p.requires_grad:
                 continue
-            if "backbone" in name or "encoder" in name:
-                encoder_params.append(param)
-            else:
-                other_params.append(param)
 
-        param_groups = [
-            {"params": other_params, "lr": self.learning_rate},
-            {"params": encoder_params, "lr": self.lr_encoder},
-        ]
+            # Default values
+            lr = self.learning_rate
+            weight_decay = self.weight_decay
 
-        optimizer = torch.optim.AdamW(
-            param_groups,
-            weight_decay=self.weight_decay,
-        )
+            # Apply LLRD and selective WD if it's backbone
+            # Backbone parameters in self.model start with "backbone.0"
+            if n.startswith("backbone.0.encoder"):
+                # Matches Backbone.get_named_param_lr_pairs logic
+                layer_id = num_layers + 1
+                if "embeddings" in n:
+                    layer_id = 0
+                elif ".layer." in n and ".residual." not in n:
+                    # e.g. backbone.0.encoder.encoder.layer.5...
+                    try:
+                        layer_id = int(n[n.find(".layer.") :].split(".")[2]) + 1
+                    except (IndexError, ValueError):
+                        pass
 
-        # Learning rate scheduler with warmup and cosine annealing
+                lr_decay = lr_vit_layer_decay ** (num_layers + 1 - layer_id)
+                lr = self.lr_encoder * lr_decay * (lr_component_decay**2)
+
+            # Selective weight decay: 0 for bias, norm, pos_embed, etc.
+            if any(
+                k in n
+                for k in ["bias", "norm", "gamma", "pos_embed", "rel_pos", "embeddings"]
+            ):
+                weight_decay = 0.0
+
+            param_dicts.append(
+                {
+                    "params": [p],
+                    "lr": lr,
+                    "weight_decay": weight_decay,
+                }
+            )
+
+        optimizer = torch.optim.AdamW(param_dicts)
+
+        # Learning rate scheduler
+        # rfdetr uses StepLR or custom schedules. For 1 epoch comparison,
+        # we'll keep it simple but ensure it starts at 1.0.
         def lr_lambda(epoch):
-            if epoch < self.warmup_epochs:
+            if self.warmup_epochs > 0 and epoch < self.warmup_epochs:
                 return (epoch + 1) / self.warmup_epochs
-
-            # After warmup, use cosine annealing
-            max_epochs = getattr(self.trainer, "max_epochs", 100)
-            if max_epochs <= self.warmup_epochs:
-                return 1.0
-
-            progress = (epoch - self.warmup_epochs) / (max_epochs - self.warmup_epochs)
-            # Decay to 0.01 of the original learning rate
-            return 0.01 + (1 - 0.01) * 0.5 * (1.0 + math.cos(math.pi * progress))
+            return 1.0
 
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
