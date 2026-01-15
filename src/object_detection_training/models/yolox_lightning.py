@@ -16,27 +16,27 @@ from object_detection_training.yolox import YOLOPAFPN, YOLOX, YOLOXHead
 
 # YOLOX checkpoint URLs from official releases
 YOLOX_CHECKPOINT_URLS = {
-    "yolox_nano": (
+    "nano": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_nano.pth"
     ),
-    "yolox_tiny": (
+    "tiny": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_tiny.pth"
     ),
-    "yolox_s": (
+    "s": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_s.pth"
     ),
-    "yolox_m": (
+    "m": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_m.pth"
     ),
-    "yolox_l": (
+    "l": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_l.pth"
     ),
-    "yolox_x": (
+    "x": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_x.pth"
     ),
@@ -161,6 +161,12 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         self.model = YOLOX(backbone=backbone, head=head)
 
+        # Initialize biases for better convergence if not loading full weights
+        # This is especially important for the classification head when classes differ
+        # from COCO using a slightly higher prior_prob (0.1) to ensure detections are
+        # visible early on
+        self.model.head.initialize_biases(prior_prob=0.1)
+
         # Load pretrained weights
         if pretrain_weights:
             self._load_weights(pretrain_weights)
@@ -247,6 +253,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         l1_loss = outputs["l1_loss"]
         num_fg = outputs["num_fg"]
 
+        # Log losses
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         self.log(
             "train/iou_loss", iou_loss, on_step=True, on_epoch=True, prog_bar=False
@@ -258,13 +265,13 @@ class YOLOXLightningModel(BaseDetectionModel):
             "train/cls_loss", cls_loss, on_step=True, on_epoch=True, prog_bar=False
         )
         self.log("train/l1_loss", l1_loss, on_step=True, on_epoch=True, prog_bar=False)
-        self.log(
-            "train/num_fg",
-            num_fg.float() if isinstance(num_fg, torch.Tensor) else float(num_fg),
-            on_step=True,
-            on_epoch=True,
-            prog_bar=False,
-        )
+
+        # Log num_fg
+        if isinstance(num_fg, torch.Tensor):
+            num_fg_val = num_fg.float().mean()
+        else:
+            num_fg_val = float(num_fg)
+        self.log("train/num_fg", num_fg_val, on_step=True, on_epoch=True, prog_bar=True)
 
         return loss
 
@@ -280,12 +287,29 @@ class YOLOXLightningModel(BaseDetectionModel):
             return self.model(images)
 
         if self.training and targets is not None:
-            outputs = self.model(images, targets)
+            # Un-normalize targets for YOLOX loss calculation
+            # targets is a list of dicts with 'boxes' and 'labels'
+            # boxes are in [0, 1] cxcywh format
+            # Use actual image shape for accurate un-normalization (esp. for
+            # multi-scale)
+            img_h, img_w = images.shape[2:]
+            unnormalized_targets = []
+            for t in targets:
+                new_t = t.copy()
+                if "boxes" in new_t and new_t["boxes"].numel() > 0:
+                    boxes = new_t["boxes"].clone()
+                    boxes[:, [0, 2]] *= img_w
+                    boxes[:, [1, 3]] *= img_h
+                    new_t["boxes"] = boxes
+                unnormalized_targets.append(new_t)
+
+            outputs = self.model(images, unnormalized_targets)
             return outputs
         else:
             with torch.no_grad():
                 outputs = self.model(images)
-            return {"predictions": outputs}
+            # Add images shape to outputs for post-processing resolution retrieval
+            return {"predictions": outputs, "image_shape": images.shape[2:]}
 
     def get_predictions(
         self,
@@ -307,30 +331,58 @@ class YOLOXLightningModel(BaseDetectionModel):
         for b in range(batch_size):
             box_preds = pred[b]  # [num_anchors, 5 + num_classes]
 
-            # Get boxes (cxcywh -> xyxy)
-            boxes = box_preds[:, :4].clone()
-            cx, cy, w, h = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-            boxes[:, 0] = cx - w / 2
-            boxes[:, 1] = cy - h / 2
-            boxes[:, 2] = cx + w / 2
-            boxes[:, 3] = cy + h / 2
-
-            # Get scores and labels
+            # Get scores and labels first
             obj_conf = box_preds[:, 4]
             cls_conf = box_preds[:, 5:]
             scores, labels = cls_conf.max(dim=1)
             scores = scores * obj_conf
 
-            # Filter by threshold
+            # Filter by threshold early to speed up NMS
             keep = scores > confidence_threshold
-            boxes = boxes[keep]
+            box_preds = box_preds[keep]
             scores = scores[keep]
             labels = labels[keep]
 
-            # Normalize boxes to [0, 1] relative to input resolution
-            # YOLOX predictions are in absolute pixels for the input_height/width
-            boxes[:, [0, 2]] /= self.input_width
-            boxes[:, [1, 3]] /= self.input_height
+            if len(scores) == 0:
+                predictions.append(
+                    {
+                        "boxes": torch.zeros((0, 4), device=scores.device),
+                        "scores": scores,
+                        "labels": labels,
+                    }
+                )
+                continue
+
+            # Get boxes (cxcywh -> xyxy)
+            # Important: unbind to avoid in-place corruption
+            cx, cy, w, h = box_preds[:, :4].unbind(-1)
+            x1 = cx - 0.5 * w
+            y1 = cy - 0.5 * h
+            x2 = cx + 0.5 * w
+            y2 = cy + 0.5 * h
+            boxes = torch.stack([x1, y1, x2, y2], dim=-1)
+
+            # NMS (Required for YOLOX post-processing)
+            from torchvision.ops import batched_nms
+
+            keep_indices = batched_nms(boxes, scores, labels, iou_threshold=0.45)
+            boxes = boxes[keep_indices]
+            scores = scores[keep_indices]
+            labels = labels[keep_indices]
+
+            # Normalize boxes to [0, 1] or scale to original_sizes
+            # Use actual runtime resolution (image_shape) for normalization
+            img_h, img_w = outputs.get(
+                "image_shape", (self.input_height, self.input_width)
+            )
+            if original_sizes is not None and len(original_sizes) > b:
+                orig_h, orig_w = original_sizes[b]
+                boxes[:, [0, 2]] = (boxes[:, [0, 2]] / img_w) * orig_w
+                boxes[:, [1, 3]] = (boxes[:, [1, 3]] / img_h) * orig_h
+            else:
+                # Normalize boxes to [0, 1] relative to current resolution
+                boxes[:, [0, 2]] /= img_w
+                boxes[:, [1, 3]] /= img_h
 
             predictions.append(
                 {

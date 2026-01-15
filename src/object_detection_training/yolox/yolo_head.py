@@ -492,7 +492,7 @@ class YOLOXHead(nn.Module):
 
         # 2. Compute Cost Matrix
         # Pairwise IOU
-        pair_wise_ious = bboxes_iou(gt_bboxes_per_image, bbox_preds, xyxy=True)
+        pair_wise_ious = bboxes_iou(gt_bboxes_per_image, bbox_preds, xyxy=False)
         pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
 
         # Pairwise Classification Ccost
