@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import List, Optional
 
 import lightning as L
+import omegaconf
+import torch
 from loguru import logger
 
 
@@ -99,7 +101,15 @@ class ONNXExportCallback(L.Callback):
             if best_path:
                 try:
                     # Load best checkpoint
-                    import torch
+                    torch.serialization.add_safe_globals(
+                        [
+                            omegaconf.listconfig.ListConfig,
+                            omegaconf.dictconfig.DictConfig,
+                            omegaconf.base.ContainerMetadata,
+                            omegaconf.base.Metadata,
+                            omegaconf.nodes.AnyNode,
+                        ]
+                    )
 
                     logger.info(f"Loading best checkpoint from {best_path}")
                     checkpoint = torch.load(best_path, map_location="cpu")
@@ -129,7 +139,15 @@ class ONNXExportCallback(L.Callback):
 
                 logger.info(f"Exporting checkpoint: {ckpt_file}")
                 try:
-                    import torch
+                    torch.serialization.add_safe_globals(
+                        [
+                            omegaconf.listconfig.ListConfig,
+                            omegaconf.dictconfig.DictConfig,
+                            omegaconf.base.ContainerMetadata,
+                            omegaconf.base.Metadata,
+                            omegaconf.nodes.AnyNode,
+                        ]
+                    )
 
                     checkpoint = torch.load(ckpt_file, map_location="cpu")
                     pl_module.load_state_dict(checkpoint["state_dict"])

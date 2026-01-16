@@ -4,9 +4,11 @@ RFDETR model wrappers for PyTorch Lightning.
 This module wraps the rfdetr models to work with the Lightning training framework.
 """
 
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import omegaconf
 import torch
 from loguru import logger
 from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
@@ -337,15 +339,44 @@ class RFDETRLightningModel(BaseDetectionModel):
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        torch.serialization.add_safe_globals(
+            [
+                omegaconf.listconfig.ListConfig,
+                omegaconf.dictconfig.DictConfig,
+                omegaconf.base.ContainerMetadata,
+                omegaconf.base.Metadata,
+                omegaconf.nodes.AnyNode,
+            ]
+        )
+
         logger.info(f"Exporting RFDETR model to ONNX: {output_path}")
 
+        # Forcing legacy ONNX exporter as the new Dynamo exporter (torch.export)
+        # has issues with RF-DETR's architectural complexities (like unallocated
+        # tensors)
+        os.environ["TORCH_ONNX_LEGACY_EXPORTER"] = "1"
+
+        # Explicit monkeypatch for torch.onnx.export to enforce dynamo=False
+        # this ensures that even if environment variables are ignored, the export
+        # will fall back to the legacy TorchScript-based path.
+        original_export = torch.onnx.export
+
+        def monkeypatched_export(*args, **kwargs):
+            kwargs["dynamo"] = False
+            return original_export(*args, **kwargs)
+
+        # Replace temporarily
+        torch.onnx.export = monkeypatched_export
+
         # Use RFDETR's built-in export
-        # Note: We need to ensure correct model usage for export
         self.rfdetr_wrapper.export(
             output_dir=str(output_path.parent),
             simplify=simplify,
             opset_version=opset_version,
         )
+
+        # Restore original export
+        torch.onnx.export = original_export
 
         return str(output_path)
 
