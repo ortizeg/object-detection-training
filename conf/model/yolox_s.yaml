@@ -1,10 +1,6 @@
 defaults:
-  - base
+  - yolox_base
   - _self_
 
 # YOLOX Small Model Configuration
 _target_: object_detection_training.models.yolox_lightning.YOLOXSModel
-learning_rate: 1e-3
-weight_decay: 5e-4
-download_pretrained: true
-pretrain_weights: null

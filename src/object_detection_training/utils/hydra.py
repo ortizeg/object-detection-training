@@ -8,7 +8,10 @@ from omegaconf import DictConfig
 
 
 def register(
-    cls: Optional[Type[Any]] = None, *, group: Optional[str] = None
+    cls: Optional[Type[Any]] = None,
+    *,
+    group: Optional[str] = None,
+    name: Optional[str] = None,
 ) -> Union[Type[Any], Any]:
     """
     Decorator to register a class with Hydra's ConfigStore.
@@ -27,14 +30,14 @@ def register(
     """
 
     def _process_class(target_cls: Type[Any]) -> Type[Any]:
-        nonlocal group
+        nonlocal group, name
 
         # Determine the target path (module + class name)
         # Assuming the class is defined in a module that is importable
         target_path = f"{target_cls.__module__}.{target_cls.__name__}"
 
-        # Use class name as the config name
-        config_name = target_cls.__name__
+        # Use provided name or class name as the config name
+        config_name = name or target_cls.__name__
 
         # Infer group if not provided
         if group is None:

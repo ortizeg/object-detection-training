@@ -38,9 +38,20 @@ class YOLOX(nn.Module):
         fpn_outs = self.backbone(x)
 
         if targets is not None:
-            loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.head(
-                fpn_outs, targets, x
-            )
+            # Head's forward checks self.training to decide whether to compute losses
+            # During validation (model.eval()), we need to temporarily set head to
+            # train mode to compute losses for metric computation
+            was_training = self.head.training
+            self.head.train()
+            try:
+                loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.head(
+                    fpn_outs, targets, x
+                )
+            finally:
+                # Restore original training state
+                if not was_training:
+                    self.head.eval()
+
             outputs = {
                 "total_loss": loss,
                 "iou_loss": iou_loss,
@@ -52,8 +63,7 @@ class YOLOX(nn.Module):
             # If targets are provided but we're in eval mode (e.g. validation),
             # we also want predictions for metric computation
             if not self.training:
-                # Store training state, switch to eval for inference pass
-                # (although we're likely already in eval)
+                # Get predictions in eval mode
                 outputs["predictions"] = self.head(fpn_outs)
         else:
             outputs = self.head(fpn_outs)

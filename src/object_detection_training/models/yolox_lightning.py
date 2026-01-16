@@ -4,10 +4,12 @@ YOLOX model wrapper for PyTorch Lightning.
 This module provides Lightning-compatible wrappers for YOLOX models.
 """
 
+import math
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import torch
+import torch.nn as nn
 from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
@@ -97,6 +99,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         input_height: int = 640,
         input_width: int = 640,
         output_dir: str = "outputs",
+        image_mean: List[float] = [0.0, 0.0, 0.0],
+        image_std: List[float] = [1.0, 1.0, 1.0],
     ):
         """
         Initialize YOLOX Lightning model.
@@ -126,6 +130,9 @@ class YOLOXLightningModel(BaseDetectionModel):
             input_width=input_width,
             output_dir=output_dir,
         )
+
+        self.image_mean = image_mean
+        self.image_std = image_std
 
         self.variant = variant
         self.pretrain_weights = pretrain_weights
@@ -162,11 +169,14 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         self.model = YOLOX(backbone=backbone, head=head)
 
-        # Initialize biases for better convergence if not loading full weights
-        # This is especially important for the classification head when classes differ
-        # from COCO using a slightly higher prior_prob (0.1) to ensure detections are
-        # visible early on
-        self.model.head.initialize_biases(prior_prob=0.1)
+        # Initialize BatchNorm with official YOLOX settings
+        for m in self.model.modules():
+            if isinstance(m, nn.BatchNorm2d):
+                m.eps = 1e-3
+                m.momentum = 0.03
+
+        # Initialize biases BEFORE loading weights
+        self.model.head.initialize_biases(prior_prob=1e-2)
 
         # Load pretrained weights
         if pretrain_weights:
@@ -174,7 +184,26 @@ class YOLOXLightningModel(BaseDetectionModel):
         elif download_pretrained:
             self._download_and_load_weights()
 
+        # Reinitialize classification biases AFTER loading weights
+        # This is crucial when num_classes differs from pretrained (cls_preds skipped)
+        self._reinitialize_cls_biases()
+
         self.save_hyperparameters()
+
+    def _reinitialize_cls_biases(self):
+        """Reinitialize classification prediction biases after weight loading.
+
+        When loading pretrained weights with different num_classes, the cls_preds
+        weights are skipped, leaving random initialization. We reinitialize the
+        biases with proper prior probability for stable training.
+        """
+        prior_prob = 1e-2
+        bias_init = -math.log((1 - prior_prob) / prior_prob)
+
+        for conv in self.model.head.cls_preds:
+            nn.init.constant_(conv.bias, bias_init)
+
+        logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
 
     def _download_and_load_weights(self):
         """Download and load pretrained weights."""

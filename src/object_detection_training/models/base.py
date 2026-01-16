@@ -311,7 +311,7 @@ class BaseDetectionModel(L.LightningModule):
             sv_preds.append(
                 sv.Detections(
                     xyxy=p["boxes"].cpu().numpy(),
-                    confidence=p["scores"].cpu().numpy(),
+                    confidence=p["scores"].float().cpu().numpy(),
                     class_id=p["labels"].cpu().numpy().astype(int),
                 )
             )

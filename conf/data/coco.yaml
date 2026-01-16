@@ -16,3 +16,7 @@ num_windows: 2 # Match RFDETRMediumConfig (small=4, medium=2, large=2)
 pin_memory: true
 persistent_workers: true
 square_resize_div_64: true # Match rfdetr TrainConfig default
+
+# Normalization parameters linked from model config (0-255 scale)
+image_mean: ${model.image_mean}
+image_std: ${model.image_std}

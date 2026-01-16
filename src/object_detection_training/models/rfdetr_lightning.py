@@ -86,6 +86,8 @@ class RFDETRLightningModel(BaseDetectionModel):
         out_feature_indexes: List[int] = [3, 6, 9, 12],
         download_pretrained: bool = True,
         output_dir: str = "outputs",
+        image_mean: List[float] = [123.675, 116.28, 103.53],
+        image_std: List[float] = [58.395, 57.12, 57.375],
     ):
         """
         Initialize RFDETR Lightning model.
@@ -116,6 +118,9 @@ class RFDETRLightningModel(BaseDetectionModel):
             input_width=input_width,
             output_dir=output_dir,
         )
+
+        self.image_mean = image_mean
+        self.image_std = image_std
 
         self.lr_encoder = lr_encoder
         self.variant = variant

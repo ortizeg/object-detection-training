@@ -515,9 +515,9 @@ class YOLOXHead(nn.Module):
         del cls_preds_
 
         cost = (
-            3.0 * pair_wise_cls_loss
+            pair_wise_cls_loss
             + 3.0 * pair_wise_ious_loss
-            + 100000.0 * (~is_in_boxes_and_center)
+            + float(1e6) * (~is_in_boxes_and_center)
         )
 
         # 3. Dynamic K Matching
@@ -583,17 +583,17 @@ class YOLOXHead(nn.Module):
             .repeat(1, total_num_anchors)
         )
 
-        b_l = x_centers_per_image - gt_bboxes_per_image_l
-        b_r = gt_bboxes_per_image_r - x_centers_per_image
-        b_t = y_centers_per_image - gt_bboxes_per_image_t
-        b_b = gt_bboxes_per_image_b - y_centers_per_image
-        bbox_deltas = torch.stack([b_l, b_b, b_r, b_t], 2)
+        # b_l = x_centers_per_image - gt_bboxes_per_image_l
+        # b_r = gt_bboxes_per_image_r - x_centers_per_image
+        # b_t = y_centers_per_image - gt_bboxes_per_image_t
+        # b_b = gt_bboxes_per_image_b - y_centers_per_image
+        # bbox_deltas = torch.stack([b_l, b_b, b_r, b_t], 2)
 
-        is_in_boxes = bbox_deltas.min(dim=-1).values > 0.0
-        is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
+        # is_in_boxes = bbox_deltas.min(dim=-1).values > 0.0
+        # is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
 
-        # Center sampling
-        center_radius = 2.5
+        # Center sampling (matches official YOLOX)
+        center_radius = 1.5
 
         gt_bboxes_per_image_l = (gt_bboxes_per_image[:, 0]).unsqueeze(1).repeat(
             1, total_num_anchors
@@ -616,12 +616,11 @@ class YOLOXHead(nn.Module):
         is_in_centers = center_deltas.min(dim=-1).values > 0.0
         is_in_centers_all = is_in_centers.sum(dim=0) > 0
 
-        # In boxes AND in centers
-        is_in_boxes_anchor = is_in_boxes_all | is_in_centers_all
+        # In boxes AND in centers (simplified to match official YOLOX)
+        # Use center-based filtering only for anchor selection
+        is_in_boxes_anchor = is_in_centers_all
 
-        is_in_boxes_and_center = (
-            is_in_boxes[:, is_in_boxes_anchor] & is_in_centers[:, is_in_boxes_anchor]
-        )
+        is_in_boxes_and_center = is_in_centers[:, is_in_boxes_anchor]
         return is_in_boxes_anchor, is_in_boxes_and_center
 
     def dynamic_k_matching(self, cost, pair_wise_ious, gt_classes, num_gt, fg_mask):

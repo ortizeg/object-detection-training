@@ -447,6 +447,18 @@ class ToTensor(object):
         return F.to_tensor(img), target
 
 
+class PILToTensor(object):
+    """Convert PIL Image to tensor, keeping values in 0-255 range.
+
+    Models using this should specify normalization mean/std relative to the 0-255 range.
+    """
+
+    def __call__(self, img, target):
+        img_array = np.array(img, dtype=np.float32)
+        img_tensor = torch.from_numpy(img_array.transpose(2, 0, 1))
+        return img_tensor, target
+
+
 class RandomErasing(object):
     def __init__(self, *args, **kwargs):
         self.eraser = T.RandomErasing(*args, **kwargs)

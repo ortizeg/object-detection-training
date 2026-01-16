@@ -22,11 +22,12 @@ https://github.com/pytorch/vision/blob/13b35ff/references/detection/coco_utils.p
 from typing import Optional
 
 import pycocotools.mask as coco_mask
-import rfdetr.datasets.transforms as T
 import torch
 import torch.utils.data
 import torchvision
-from rfdetr.util.misc import collate_fn  # Re-export collate_fn from rfdetr
+from rfdetr.util.misc import collate_fn  # Re-export collate_fn
+
+import object_detection_training.rfdetr.transforms as T
 
 __all__ = [
     "CocoDetection",
@@ -179,20 +180,19 @@ def make_coco_transforms(
     skip_random_resize=False,
     patch_size=16,
     num_windows=4,
+    mean=[123.675, 116.28, 103.53],
+    std=[58.395, 57.12, 57.375],
 ):
-    normalize = T.Compose(
-        [T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
-    )
+    # Always use PILToTensor (keeps 0-255 range)
+    normalize = T.Compose([T.PILToTensor(), T.Normalize(mean, std)])
 
     scales = [input_height]
     if multi_scale:
-        # scales = [448, 512, 576, 640, 704, 768, 832, 896]
         scales = compute_multi_scale_scales(
             input_height, expanded_scales, patch_size, num_windows
         )
         if skip_random_resize:
             scales = [scales[-1]]
-        print(scales)
 
     if image_set == "train":
         return T.Compose(
@@ -212,17 +212,14 @@ def make_coco_transforms(
             ]
         )
 
-    if image_set == "val":
+    if image_set in ["val", "test", "val_speed"]:
         return T.Compose(
             [
-                T.RandomResize([input_height], max_size=1333),
-                normalize,
-            ]
-        )
-    if image_set == "val_speed":
-        return T.Compose(
-            [
-                T.SquareResize([input_height]),
+                (
+                    T.SquareResize([input_height])
+                    if image_set == "val_speed"
+                    else T.RandomResize([input_height], max_size=1333)
+                ),
                 normalize,
             ]
         )
@@ -239,12 +236,12 @@ def make_coco_transforms_square_div_64(
     skip_random_resize=False,
     patch_size=16,
     num_windows=4,
+    mean=[123.675, 116.28, 103.53],
+    std=[58.395, 57.12, 57.375],
 ):
     """ """
-
-    normalize = T.Compose(
-        [T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
-    )
+    # Always use PILToTensor (keeps 0-255 range)
+    normalize = T.Compose([T.PILToTensor(), T.Normalize(mean, std)])
 
     scales = [input_height]
     if multi_scale:

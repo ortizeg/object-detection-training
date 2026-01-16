@@ -25,8 +25,8 @@ class VisualizationCallback(L.Callback):
         num_samples: int = 10,
         confidence_threshold: float = 0.3,
         output_dir: str = "outputs",
-        mean: List[float] = [0.485, 0.456, 0.406],
-        std: List[float] = [0.229, 0.224, 0.225],
+        mean: List[float] = [123.675, 116.28, 103.53],
+        std: List[float] = [58.395, 57.12, 57.375],
     ):
         """
         Initialize visualization callback.
@@ -55,10 +55,13 @@ class VisualizationCallback(L.Callback):
     def _denormalize(self, tensor: torch.Tensor) -> np.ndarray:
         """Denormalize image tensor to numpy array [H, W, 3] (0-255)."""
         # tensor is [3, H, W]
-        tensor = tensor.cpu() * self.std + self.mean
-        tensor = torch.clamp(tensor, 0, 1)
+        tensor = tensor.cpu()
+
+        # Denormalize using std and mean (result is back in 0-255 range)
+        tensor = tensor * self.std + self.mean
+
         array = tensor.permute(1, 2, 0).numpy()
-        return (array * 255).astype(np.uint8)
+        return np.clip(array, 0, 255).astype(np.uint8)
 
     def _collect_samples(self, dataloader, num: int) -> List[Dict[str, Any]]:
         """Collect random samples from dataloader."""
