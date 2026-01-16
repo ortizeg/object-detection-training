@@ -45,3 +45,4 @@ prod = []
 rfdetr = { version = "*", extras = ["metrics", "onnxexport"] }
 torchmetrics = { version = "*" }
 object-detection-training = { path = ".", editable = true }
+dotenv = "*"

@@ -16,8 +16,8 @@ defaults:
   - logging: null
 
 # Global Parameters
-input_height: 512
-input_width: 512
+input_height: 640
+input_width: 640
 log_level: INFO
 
 # Hydra configuration

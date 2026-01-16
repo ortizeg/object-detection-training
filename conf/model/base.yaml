@@ -5,7 +5,7 @@ input_width: ${input_width}
 learning_rate: 1e-4
 weight_decay: 1e-4
 
-warmup_epochs: 0 # Match rfdetr TrainConfig default (0.0)
+warmup_epochs: 5 # Improved from 0 for stability
 use_ema: true
 ema_decay: 0.993 # Match rfdetr TrainConfig default
 output_dir: ${hydra:runtime.output_dir}/outputs

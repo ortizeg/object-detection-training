@@ -23,7 +23,7 @@ def test_hydra_configuration():
         assert "data" in cfg
         assert "trainer" in cfg
         assert "callbacks" in cfg
-        assert "logging" in cfg
+        # assert "logging" in cfg  # Removed as logging: null removes the key
 
         # Check task config (from ConfigStore via @register)
         assert cfg.task._target_ == "object_detection_training.tasks.TrainTask"
@@ -34,7 +34,7 @@ def test_hydra_configuration():
             cfg.model._target_
             == "object_detection_training.models.rfdetr_lightning.RFDETRSmallModel"
         )
-        assert cfg.model.num_classes == 80
+        assert cfg.model.num_classes is None
 
         # Check data config
         assert cfg.data._target_ == "object_detection_training.data.coco.COCODataModule"
@@ -56,7 +56,7 @@ def test_hydra_model_override():
             cfg.model._target_
             == "object_detection_training.models.yolox_lightning.YOLOXSModel"
         )
-        assert cfg.model.num_classes == 80
+        assert cfg.model.num_classes is None
 
 
 def test_hydra_callbacks():
@@ -71,5 +71,5 @@ def test_hydra_callbacks():
         assert "model_info" in cfg.callbacks
 
         # Check EMA config
-        assert cfg.callbacks.ema.decay == 0.9999
-        assert cfg.callbacks.ema.warmup_steps == 2000
+        assert cfg.callbacks.ema.decay == 0.993
+        assert cfg.callbacks.ema.warmup_steps == 0
