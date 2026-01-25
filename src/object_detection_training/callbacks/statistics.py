@@ -1,19 +1,27 @@
-import json
+"""
+Dataset statistics callback for PyTorch Lightning.
+
+Computes and visualizes dataset statistics at the start of training
+using the DatasetStatistics class.
+"""
+
 from pathlib import Path
-from typing import Any, Dict, List
 
 import lightning as L
-import matplotlib.pyplot as plt
-import numpy as np
 from loguru import logger
 from rich import box
 from rich.console import Console
 from rich.table import Table
 
+from object_detection_training.data.dataset_stats import DatasetStatistics
+
 
 class DatasetStatisticsCallback(L.Callback):
     """
     Callback to compute and visualize dataset statistics at the start of training.
+
+    Uses the DatasetStatistics class for computing box size distributions,
+    class distributions, and per-image annotation counts.
     """
 
     def __init__(self, output_dir: str = "outputs"):
@@ -29,224 +37,145 @@ class DatasetStatisticsCallback(L.Callback):
             logger.warning("No datamodule found in trainer. Skipping statistics.")
             return
 
-        stats = {}
-        splits = ["train", "val", "test"]
-        class_names = getattr(datamodule, "class_names", [])
-        num_classes = len(class_names)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        stats_list = []
 
-        for split in splits:
-            dataset = None
-            if split == "train":
-                dataset = getattr(datamodule, "train_dataloader", lambda: None)()
-                if dataset is None:
-                    # Try direct access if dataloader method not ready
-                    dataset = getattr(datamodule, "train_dataset", None)
-            elif split == "val":
-                dataset = getattr(datamodule, "val_dataloader", lambda: None)()
-                if dataset is None:
-                    dataset = getattr(datamodule, "val_dataset", None)
-            elif split == "test":
-                # Ensure test dataset is setup as it's usually done later
-                try:
-                    datamodule.setup("test")
-                except Exception as e:
-                    logger.warning(f"Failed to setup test dataset: {e}")
+        # Process each split
+        for split in ["train", "val", "test"]:
+            detection_dataset = self._get_detection_dataset(datamodule, split)
+            if detection_dataset is not None:
+                stats = DatasetStatistics(detection_dataset)
+                stats_list.append((split, stats))
 
-                dataset = getattr(datamodule, "test_dataloader", lambda: None)()
-                if dataset is None:
-                    dataset = getattr(datamodule, "test_dataset", None)
-
-            # Extract the actual dataset from dataloader if needed
-            if hasattr(dataset, "dataset"):
-                dataset = dataset.dataset
-
-            if dataset is not None:
-                stats[split] = self._compute_split_stats(dataset, num_classes)
-            else:
-                logger.warning(f"No {split} dataset found.")
-
-        if not stats:
-            logger.warning("No datasets found to compute statistics.")
+        if not stats_list:
+            logger.warning("No detection datasets found to compute statistics.")
             return
 
-        # 1. Generate Summary Table
+        # Generate summary table
+        self._print_summary_table(stats_list)
+
+        # Generate class distribution table
+        self._print_class_table(stats_list)
+
+        # Generate reports for each split
+        for split, stats in stats_list:
+            stats.generate_report(self.output_dir / split)
+
+        logger.info(f"Dataset statistics exported to {self.output_dir}")
+
+    def _get_detection_dataset(self, datamodule, split: str):
+        """Get the underlying DetectionDataset for a split."""
+        # Try to get detection dataset directly from COCODataModule
+        if split == "train" and hasattr(datamodule, "train_detection_dataset"):
+            return datamodule.train_detection_dataset
+
+        # For val/test, we need to create them
+        if hasattr(datamodule, "_create_detection_dataset"):
+            try:
+                if split == "train":
+                    return datamodule._create_detection_dataset(
+                        datamodule.train_path, "train"
+                    )
+                elif split == "val":
+                    return datamodule._create_detection_dataset(
+                        datamodule.val_path, "val"
+                    )
+                elif split == "test" and datamodule.test_path:
+                    return datamodule._create_detection_dataset(
+                        datamodule.test_path, "test"
+                    )
+            except Exception as e:
+                logger.debug(f"Could not create detection dataset for {split}: {e}")
+
+        return None
+
+    def _print_summary_table(self, stats_list):
+        """Print a summary table with rich formatting."""
         console = Console()
-        summary_table = Table(
+        table = Table(
             title="Dataset Summary",
             header_style="bold magenta",
             box=box.SQUARE,
             show_lines=True,
         )
-        summary_table.add_column("Split", style="cyan")
-        summary_table.add_column("Images", justify="right", style="green")
-        summary_table.add_column("Detection Boxes", justify="right", style="green")
+        table.add_column("Split", style="cyan")
+        table.add_column("Images", justify="right", style="green")
+        table.add_column("Annotations", justify="right", style="green")
+        table.add_column("Classes", justify="right", style="green")
+        table.add_column("Avg/Image", justify="right", style="yellow")
 
         total_images = 0
-        total_detections = 0
-        for split, s in stats.items():
-            summary_table.add_row(
-                split.capitalize(), str(s["total_images"]), str(s["total_detections"])
-            )
-            total_images += s["total_images"]
-            total_detections += s["total_detections"]
+        total_anns = 0
 
-        summary_table.add_section()
-        summary_table.add_row(
-            "Total", str(total_images), str(total_detections), style="bold"
+        for split, stats in stats_list:
+            summary = stats.summary()
+            total_images += summary["num_images"]
+            total_anns += summary["num_annotations"]
+            avg_per_img = summary["annotations_per_image"]["mean"]
+
+            table.add_row(
+                split.capitalize(),
+                str(summary["num_images"]),
+                str(summary["num_annotations"]),
+                str(summary["num_classes"]),
+                f"{avg_per_img:.1f}",
+            )
+
+        table.add_section()
+        table.add_row(
+            "Total",
+            str(total_images),
+            str(total_anns),
+            "-",
+            f"{total_anns / total_images:.1f}" if total_images > 0 else "-",
+            style="bold",
         )
 
         logger.info("\nDataset Summary:")
-        console.print(summary_table)
+        console.print(table)
 
-        # 2. Generate Class-wise Table
-        class_table = Table(
+    def _print_class_table(self, stats_list):
+        """Print class distribution table."""
+        if not stats_list:
+            return
+
+        console = Console()
+        table = Table(
             title="Class Distribution",
             header_style="bold magenta",
             box=box.SQUARE,
             show_lines=True,
         )
-        class_table.add_column("Class", style="cyan")
-        for split in splits:
-            if split in stats:
-                class_table.add_column(
-                    split.capitalize(), justify="right", style="green"
-                )
+        table.add_column("Class", style="cyan")
+        for split, _ in stats_list:
+            table.add_column(split.capitalize(), justify="right", style="green")
+        table.add_column("Total", justify="right", style="yellow")
 
-        for i, name in enumerate(class_names):
-            row = [name]
-            for split in splits:
-                if split in stats:
-                    row.append(str(stats[split]["class_counts"][i]))
-            class_table.add_row(*row)
+        # Get class names from first dataset
+        first_stats = stats_list[0][1]
+        class_names = first_stats.dataset.class_names
+
+        for class_name in class_names:
+            row = [class_name]
+            total = 0
+            for _, stats in stats_list:
+                class_dist = stats.class_distribution()
+                count = class_dist[class_dist["category_name"] == class_name][
+                    "count"
+                ].values
+                count = int(count[0]) if len(count) > 0 else 0
+                row.append(str(count))
+                total += count
+            row.append(str(total))
+            table.add_row(*row)
 
         logger.info("\nClass Distribution:")
-        console.print(class_table)
+        console.print(table)
 
-        # 3. Save to JSON
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        json_stats = {
-            "summary": {
-                "splits": {
-                    s.capitalize(): {
-                        "images": stats[s]["total_images"],
-                        "detections": stats[s]["total_detections"],
-                    }
-                    for s in stats
-                },
-                "total": {"images": total_images, "detections": total_detections},
-            },
-            "class_distribution": {
-                name: {
-                    s.capitalize(): int(stats[s]["class_counts"][i])
-                    for s in stats
-                    if s in stats
-                }
-                for i, name in enumerate(class_names)
-            },
-        }
-        with open(self.output_dir / "dataset_stats.json", "w") as f:
-            json.dump(json_stats, f, indent=4)
+    def state_dict(self):
+        """Return callback state."""
+        return {}
 
-        # 4. Plot Histograms
-        self._plot_statistics(stats, class_names)
-
-        logger.info(f"Dataset statistics exported to {self.output_dir}")
-
-    def _compute_split_stats(self, dataset: Any, num_classes: int) -> Dict[str, Any]:
-        """Compute stats for a single dataset split."""
-        total_images = len(dataset)
-        class_counts = np.zeros(num_classes, dtype=int)
-        total_detections = 0
-
-        # We assume dataset has 'coco' attribute or similar if it's CocoDetection
-        # or we can iterate if it's small. For large datasets, iteration might be slow.
-        # But for statistics at start, it's usually acceptable if done efficiently.
-
-        if hasattr(dataset, "coco"):
-            # Efficient COCO-specific stats
-            coco = dataset.coco
-            for ann_id in coco.getAnnIds():
-                ann = coco.loadAnns(ann_id)[0]
-                cat_id = ann["category_id"]
-                # Map cat_id to 0-indexed if label_map exists in dataset
-                if (
-                    hasattr(dataset, "prepare")
-                    and hasattr(dataset.prepare, "label_map")
-                    and dataset.prepare.label_map
-                ):
-                    label = dataset.prepare.label_map.get(cat_id)
-                    if label is not None:
-                        class_counts[label] += 1
-                        total_detections += 1
-                else:
-                    # Fallback to category_id - 1 if no map
-                    class_counts[cat_id - 1] += 1
-                    total_detections += 1
-        else:
-            # Fallback iteration (might be slow for huge datasets, but necessary)
-            logger.info("Iterating dataset for statistics...")
-            for i in range(len(dataset)):
-                _, target = dataset[i]
-                labels = target.get("labels")
-                if labels is not None:
-                    for label in labels:
-                        class_counts[int(label)] += 1
-                        total_detections += 1
-
-        return {
-            "total_images": total_images,
-            "total_detections": total_detections,
-            "class_counts": class_counts,
-        }
-
-    def _plot_statistics(self, stats: Dict[str, Dict], class_names: List[str]):
-        """Plot and save bar graphs for class distribution."""
-        num_splits = len(stats)
-        fig, axes = plt.subplots(
-            num_splits, 1, figsize=(12, 5 * num_splits), squeeze=False
-        )
-
-        for i, (split, s) in enumerate(stats.items()):
-            ax = axes[i, 0]
-            counts = s["class_counts"]
-            bars = ax.bar(class_names, counts, color="skyblue", edgecolor="navy")
-
-            ax.set_title(f"Class Distribution - {split.capitalize()}")
-            ax.set_ylabel("Number of Detections")
-            ax.set_xlabel("Class")
-            plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
-
-            # Add counts on top of bars
-            for bar in bars:
-                height = bar.get_height()
-                ax.annotate(
-                    f"{int(height)}",
-                    xy=(bar.get_x() + bar.get_width() / 2, height),
-                    xytext=(0, 3),  # 3 points vertical offset
-                    textcoords="offset points",
-                    ha="center",
-                    va="bottom",
-                )
-
-        plt.tight_layout()
-        plt.savefig(self.output_dir / "dataset_stats_histogram.png", dpi=300)
-        plt.close()
-
-        # Also save a combined side-by-side bar chart
-        if num_splits > 1:
-            plt.figure(figsize=(14, 8))
-            x = np.arange(len(class_names))
-            width = 0.8 / num_splits
-
-            for i, (split, s) in enumerate(stats.items()):
-                offset = (i - (num_splits - 1) / 2) * width
-                plt.bar(x + offset, s["class_counts"], width, label=split.capitalize())
-
-            plt.xlabel("Class")
-            plt.ylabel("Number of Detections")
-            plt.title("Class Distribution Comparison")
-            plt.xticks(x, class_names, rotation=45, ha="right")
-            plt.legend()
-            plt.tight_layout()
-            plt.savefig(self.output_dir / "dataset_stats_comparison.png", dpi=300)
-            plt.close()
+    def load_state_dict(self, state_dict):
+        """Load callback state."""
+        pass

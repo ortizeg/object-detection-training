@@ -1,0 +1,4 @@
+defaults:
+  - RFDETRLarge
+  - rfdetr_base
+  - _self_

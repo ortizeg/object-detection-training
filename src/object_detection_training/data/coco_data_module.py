@@ -6,15 +6,18 @@ import lightning as L
 import torch
 from loguru import logger
 
-from object_detection_training.rfdetr.coco import (
+from object_detection_training.data.coco_detection_dataset import (
+    COCODetectionDataset,
     collate_fn,
+)
+from object_detection_training.models.rfdetr.coco import (
     make_coco_transforms,
     make_coco_transforms_square_div_64,
 )
 from object_detection_training.utils.hydra import register
 
 
-@register(group="data", name="coco")
+@register
 class COCODataModule(L.LightningDataModule):
     """
     Lightning DataModule for COCO dataset.
@@ -44,6 +47,8 @@ class COCODataModule(L.LightningDataModule):
         square_resize_div_64: bool = True,
         image_mean: List[float] = [123.675, 116.28, 103.53],
         image_std: List[float] = [58.395, 57.12, 57.375],
+        selected_categories: Optional[List[str]] = None,
+        size_thresholds: Optional[Dict[str, float]] = None,
     ):
         """
         Initialize COCO data module.
@@ -102,6 +107,13 @@ class COCODataModule(L.LightningDataModule):
         self._class_names: Optional[list] = None
         self._label_map: Optional[Dict[int, int]] = None
 
+        # Category filtering and size thresholds
+        self.selected_categories = selected_categories
+        self.size_thresholds = size_thresholds or {"small": 32, "medium": 96}
+
+        # Lazy-loaded detection dataset for DataFrame access
+        self._train_detection_dataset = None
+
     @property
     def num_classes(self) -> int:
         """Returns the number of classes in the training set."""
@@ -127,25 +139,46 @@ class COCODataModule(L.LightningDataModule):
             logger.error(f"Annotation file not found in {self.train_path}")
             self._num_classes = 1  # Default fallback
             self._class_names = ["object"]
+            self._label_map = {}
             return
 
         with open(ann_file, "r") as f:
             data = json.load(f)
 
-        categories = data["categories"]
-        # Ensure classes are sorted by ID for consistency
-        categories.sort(key=lambda x: x["id"])
+        all_categories = data.get("categories", [])
+        # Ensure classes are sorted by ID for consistency if not using
+        # selected_categories
+        all_categories.sort(key=lambda x: x["id"])
 
-        self._class_names = [cat["name"] for cat in categories]
-        self._num_classes = len(categories)
+        # Apply category filtering if specified
+        if self.selected_categories is not None:
+            # Definitively use the order in selected_categories
+            name_to_id = {cat["name"]: cat["id"] for cat in all_categories}
+            self._class_names = self.selected_categories
+            self._num_classes = len(self.selected_categories)
+            self._label_map = {}
+            for i, name in enumerate(self.selected_categories):
+                if name in name_to_id:
+                    self._label_map[name_to_id[name]] = i
+                else:
+                    logger.warning(f"Category '{name}' not found in training JSON.")
+            logger.info(
+                f"Using {self._num_classes} selected categories: {self._class_names}"
+            )
+        else:
+            # Filter out supercategories with no annotations (like "basketball")
+            annotations = data.get("annotations", [])
+            used_cat_ids = set(ann["category_id"] for ann in annotations)
+            categories = [cat for cat in all_categories if cat["id"] in used_cat_ids]
 
-        # Map original IDs to 0-indexed contiguous IDs
-        self._label_map = {cat["id"]: i for i, cat in enumerate(categories)}
-
-        logger.info(
-            f"Loaded {self._num_classes} classes from {ann_file.name}: "
-            f"{self._class_names}"
-        )
+            self._class_names = [cat["name"] for cat in categories]
+            self._num_classes = len(categories)
+            # Map original IDs to 0-indexed contiguous IDs
+            self._label_map = {cat["id"]: i for i, cat in enumerate(categories)}
+            logger.info(
+                f"Discovered {self._num_classes} categories in training set: "
+                f"{self._class_names}"
+            )
 
     def _get_transforms(self, image_set: str):
         """Get transforms based on configuration and normalization parameters."""
@@ -183,30 +216,46 @@ class COCODataModule(L.LightningDataModule):
             return images_dir
         return path
 
+    def _create_detection_dataset(self, path: Path, split: str) -> COCODetectionDataset:
+        """Create a COCODetectionDataset for the given path and split."""
+        # Ensure metadata is loaded to provide consistent mapping across all splits
+        if self._label_map is None:
+            self._load_metadata()
+
+        return COCODetectionDataset(
+            root_path=str(path),
+            split=split,
+            selected_categories=self.selected_categories,
+            small_threshold=self.size_thresholds.get("small", 32.0),
+            medium_threshold=self.size_thresholds.get("medium", 96.0),
+            label_map=self._label_map,
+            class_names=self._class_names,
+        )
+
     def setup_train_dataset(self) -> Any:
         """Helper to create training dataset for visualization/stats."""
-        from object_detection_training.rfdetr.coco import CocoDetection
-
-        return CocoDetection(
-            img_folder=self._get_img_folder(self.train_path),
-            ann_file=self.train_path / "_annotations.coco.json",
-            transforms=self._get_transforms("train"),
-            include_masks=False,
-            label_map=self._label_map,
-        )
+        if self._train_detection_dataset is None:
+            self._train_detection_dataset = self._create_detection_dataset(
+                self.train_path, "train"
+            )
+        # Apply transforms directly to the same dataset object
+        self._train_detection_dataset.transforms = self._get_transforms("train")
+        return self._train_detection_dataset
 
     def train_dataloader(self):
-        from object_detection_training.rfdetr.coco import CocoDetection
+        """Return training data loader using new COCODetectionDataset."""
+        if self._train_detection_dataset is None:
+            self._train_detection_dataset = self._create_detection_dataset(
+                self.train_path, "train"
+            )
+            # Update class info from the dataset
+            self._num_classes = self._train_detection_dataset.num_classes
+            self._class_names = self._train_detection_dataset.class_names
+            self._label_map = self._train_detection_dataset.label_map
 
-        dataset = CocoDetection(
-            img_folder=self._get_img_folder(self.train_path),
-            ann_file=self.train_path / "_annotations.coco.json",
-            transforms=self._get_transforms("train"),
-            include_masks=False,
-            label_map=self._label_map,
-        )
+        self._train_detection_dataset.transforms = self._get_transforms("train")
         return torch.utils.data.DataLoader(
-            dataset,
+            self._train_detection_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
@@ -216,17 +265,11 @@ class COCODataModule(L.LightningDataModule):
         )
 
     def val_dataloader(self):
-        from object_detection_training.rfdetr.coco import CocoDetection
-
-        dataset = CocoDetection(
-            img_folder=self._get_img_folder(self.val_path),
-            ann_file=self.val_path / "_annotations.coco.json",
-            transforms=self._get_transforms("val"),
-            include_masks=False,
-            label_map=self._label_map,
-        )
+        """Return validation data loader using new COCODetectionDataset."""
+        val_dataset = self._create_detection_dataset(self.val_path, "val")
+        val_dataset.transforms = self._get_transforms("val")
         return torch.utils.data.DataLoader(
-            dataset,
+            val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
@@ -236,20 +279,14 @@ class COCODataModule(L.LightningDataModule):
         )
 
     def test_dataloader(self):
+        """Return test data loader if test dataset exists."""
         if not self.test_path:
             return None
 
-        from object_detection_training.rfdetr.coco import CocoDetection
-
-        dataset = CocoDetection(
-            img_folder=self._get_img_folder(self.test_path),
-            ann_file=self.test_path / "_annotations.coco.json",
-            transforms=self._get_transforms("test"),
-            include_masks=False,
-            label_map=self._label_map,
-        )
+        test_dataset = self._create_detection_dataset(self.test_path, "test")
+        test_dataset.transforms = self._get_transforms("test")
         return torch.utils.data.DataLoader(
-            dataset,
+            test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
@@ -257,3 +294,16 @@ class COCODataModule(L.LightningDataModule):
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers,
         )
+
+    @property
+    def train_detection_dataset(self) -> Optional[COCODetectionDataset]:
+        """Expose training COCODetectionDataset for stats/sampling."""
+        if self._train_detection_dataset is None:
+            self._train_detection_dataset = self._create_detection_dataset(
+                self.train_path, "train"
+            )
+        return self._train_detection_dataset
+
+    def export_labels_mapping(self, save_path: Path) -> None:
+        """Export labels mapping JSON for model outputs."""
+        self.train_detection_dataset.export_labels_mapping(save_path)

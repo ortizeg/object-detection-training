@@ -1,4 +1,3 @@
-from dataclasses import dataclass, make_dataclass
 from typing import Any, List, Optional, Type, Union
 
 import hydra
@@ -12,28 +11,28 @@ def register(
     *,
     group: Optional[str] = None,
     name: Optional[str] = None,
+    **kwargs: Any,
 ) -> Union[Type[Any], Any]:
     """
     Decorator to register a class with Hydra's ConfigStore.
 
-    Automatically creates a configuration dataclass with the correct `_target_`
+    Automatically creates a configuration entry with the correct `_target_`
     pointing to the decorated class and registers it in the ConfigStore.
 
-    If `group` is not provided, it tries to infer it from the module path:
-    - `src.models.xyz` -> group="model"
-    - `src.datasets.xyz` -> group="dataset"
-    - Defaults to "model" if no known keyword is found.
+    If `group` is not provided, it tries to infer it from the module path
+    by taking the second to last element of the module path.
 
     Arguments:
         cls: The class to register.
         group: The ConfigStore group. If None, inference is attempted.
+        name: The name for the config. Defaults to class name.
+        **kwargs: Default values for the configuration node.
     """
 
     def _process_class(target_cls: Type[Any]) -> Type[Any]:
         nonlocal group, name
 
         # Determine the target path (module + class name)
-        # Assuming the class is defined in a module that is importable
         target_path = f"{target_cls.__module__}.{target_cls.__name__}"
 
         # Use provided name or class name as the config name
@@ -44,20 +43,15 @@ def register(
             module_parts = target_cls.__module__.split(".")
             group = module_parts[-2]
 
-        # Create the configuration dataclass dynamically
-        config_cls_name = f"{target_cls.__name__}Config"
-        ConfigClass = make_dataclass(
-            config_cls_name,
-            [("_target_", str, target_path)],
-            bases=(),
-            namespace={"__module__": target_cls.__module__},
-        )
-        # Apply @dataclass decorator
-        ConfigClass = dataclass(ConfigClass)
-
         # Register in ConfigStore
         cs = ConfigStore.instance()
-        cs.store(group=group, name=config_name, node=ConfigClass)
+        logger.debug(
+            f"Registering {target_cls.__name__} as '{config_name}' in group '{group}'"
+        )
+        # Build the configuration node
+        node = {"_target_": target_path}
+        node.update(kwargs)
+        cs.store(group=group, name=config_name, node=node)
 
         return target_cls
 

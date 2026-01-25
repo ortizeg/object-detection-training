@@ -367,7 +367,8 @@ class VisualizationCallback(L.Callback):
             ):
                 try:
                     labels_list = [
-                        trainer.datamodule.class_names[class_id] for class_id in labels
+                        trainer.datamodule.class_names[int(class_id)]
+                        for class_id in labels
                     ]
                 except IndexError:
                     logger.warning(f"Class ID out of range for class names: {labels}")

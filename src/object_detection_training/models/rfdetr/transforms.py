@@ -9,6 +9,7 @@
 """
 Transforms and data augmentation for both image + bbox.
 """
+
 import random
 from numbers import Number
 
@@ -465,6 +466,14 @@ class RandomErasing(object):
 
     def __call__(self, img, target):
         return self.eraser(img), target
+
+
+class RFColorJitter(object):
+    def __init__(self, *args, **kwargs):
+        self.color_jitter = T.ColorJitter(*args, **kwargs)
+
+    def __call__(self, img, target):
+        return self.color_jitter(img), target
 
 
 class Normalize(object):

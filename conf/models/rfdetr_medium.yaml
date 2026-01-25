@@ -1,0 +1,4 @@
+defaults:
+  - RFDETRMedium
+  - rfdetr_base
+  - _self_

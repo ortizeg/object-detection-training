@@ -13,9 +13,9 @@ import torch.nn as nn
 from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
+from object_detection_training.models.yolox import YOLOPAFPN, YOLOX, YOLOXHead
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.hydra import register
-from object_detection_training.yolox import YOLOPAFPN, YOLOX, YOLOXHead
 
 # YOLOX checkpoint URLs from official releases
 YOLOX_CHECKPOINT_URLS = {
@@ -93,8 +93,6 @@ class YOLOXLightningModel(BaseDetectionModel):
         learning_rate: float = 1e-3,
         weight_decay: float = 5e-4,
         warmup_epochs: int = 5,
-        use_ema: bool = True,
-        ema_decay: float = 0.9998,
         download_pretrained: bool = True,
         input_height: int = 640,
         input_width: int = 640,
@@ -112,8 +110,6 @@ class YOLOXLightningModel(BaseDetectionModel):
             learning_rate: Base learning rate.
             weight_decay: Weight decay.
             warmup_epochs: Number of warmup epochs.
-            use_ema: Enable EMA.
-            ema_decay: EMA decay factor.
             download_pretrained: Download pretrained weights if not available.
             input_height: Input image height.
             input_width: Input image width.
@@ -124,8 +120,6 @@ class YOLOXLightningModel(BaseDetectionModel):
             learning_rate=learning_rate,
             weight_decay=weight_decay,
             warmup_epochs=warmup_epochs,
-            use_ema=use_ema,
-            ema_decay=ema_decay,
             input_height=input_height,
             input_width=input_width,
             output_dir=output_dir,
@@ -503,7 +497,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
 
 # Register model variants with Hydra
-@register(group="model")
+@register(name="YOLOXNano")
 class YOLOXNanoModel(YOLOXLightningModel):
     """YOLOX Nano model for Hydra instantiation."""
 
@@ -512,7 +506,7 @@ class YOLOXNanoModel(YOLOXLightningModel):
         super().__init__(variant="nano", **kwargs)
 
 
-@register(group="model")
+@register(name="YOLOXTiny")
 class YOLOXTinyModel(YOLOXLightningModel):
     """YOLOX Tiny model for Hydra instantiation."""
 
@@ -521,7 +515,7 @@ class YOLOXTinyModel(YOLOXLightningModel):
         super().__init__(variant="tiny", **kwargs)
 
 
-@register(group="model")
+@register(name="YOLOXS")
 class YOLOXSModel(YOLOXLightningModel):
     """YOLOX Small model for Hydra instantiation."""
 
@@ -530,7 +524,7 @@ class YOLOXSModel(YOLOXLightningModel):
         super().__init__(variant="s", **kwargs)
 
 
-@register(group="model")
+@register(name="YOLOXM")
 class YOLOXMModel(YOLOXLightningModel):
     """YOLOX Medium model for Hydra instantiation."""
 
@@ -539,7 +533,7 @@ class YOLOXMModel(YOLOXLightningModel):
         super().__init__(variant="m", **kwargs)
 
 
-@register(group="model")
+@register(name="YOLOXL")
 class YOLOXLModel(YOLOXLightningModel):
     """YOLOX Large model for Hydra instantiation."""
 
@@ -548,7 +542,7 @@ class YOLOXLModel(YOLOXLightningModel):
         super().__init__(variant="l", **kwargs)
 
 
-@register(group="model")
+@register(name="YOLOXX")
 class YOLOXXModel(YOLOXLightningModel):
     """YOLOX X-Large model for Hydra instantiation."""
 

@@ -13,8 +13,8 @@ cuda = "12.1"
 train = { cmd = "python -m object_detection_training.task_manager", env = { KMP_DUPLICATE_LIB_OK = "TRUE" } }
 test = "pytest"
 precommit = "pre-commit run --all-files"
-format = "black ."
-lint = "flake8 ."
+format = "ruff format ."
+lint = "ruff check . --fix"
 
 
 [dependencies]
@@ -33,8 +33,7 @@ colored = ">=2.3.1,<3"
 [feature.dev.dependencies]
 pytest = "*"
 tensorboard = ">=2.20.0,<3"
-black = "*"
-flake8 = "*"
+ruff = "*"
 pre-commit = "*"
 
 [environments]
@@ -46,3 +45,4 @@ rfdetr = { version = "*", extras = ["metrics", "onnxexport"] }
 torchmetrics = { version = "*" }
 object-detection-training = { path = ".", editable = true }
 dotenv = "*"
+orjson = "*"  # Fast JSON parsing for dataset loading

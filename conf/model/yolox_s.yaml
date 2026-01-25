@@ -1,6 +1,0 @@
-defaults:
-  - yolox_base
-  - _self_
-
-# YOLOX Small Model Configuration
-_target_: object_detection_training.models.yolox_lightning.YOLOXSModel

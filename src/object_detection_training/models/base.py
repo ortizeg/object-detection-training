@@ -2,7 +2,6 @@
 Base detection model abstraction using PyTorch Lightning.
 """
 
-import json
 import time
 from abc import abstractmethod
 from pathlib import Path
@@ -33,8 +32,6 @@ class BaseDetectionModel(L.LightningModule):
         learning_rate: float = 1e-4,
         weight_decay: float = 1e-4,
         warmup_epochs: int = 5,
-        use_ema: bool = True,
-        ema_decay: float = 0.9999,
         input_height: int = 576,
         input_width: int = 576,
         output_dir: str = "outputs",
@@ -47,8 +44,6 @@ class BaseDetectionModel(L.LightningModule):
             learning_rate: Base learning rate.
             weight_decay: Weight decay for optimizer.
             warmup_epochs: Number of warmup epochs.
-            use_ema: Whether to use EMA for model weights.
-            ema_decay: Decay factor for EMA.
             output_dir: Base directory for outputting results (metrics/images).
         """
         super().__init__()
@@ -56,8 +51,6 @@ class BaseDetectionModel(L.LightningModule):
         self.learning_rate = learning_rate
         self.weight_decay = weight_decay
         self.warmup_epochs = warmup_epochs
-        self.use_ema = use_ema
-        self.ema_decay = ema_decay
         self.input_height = input_height
         self.input_width = input_width
         self.output_dir = Path(output_dir)
@@ -287,7 +280,6 @@ class BaseDetectionModel(L.LightningModule):
             "input_shape": list(input_shape),
         }
 
-        logger.info(f"Model stats: {json.dumps(stats, indent=2)}")
         self.train(was_training)
         return stats
 
@@ -461,7 +453,7 @@ class BaseDetectionModel(L.LightningModule):
             self.val_preds_storage, self.val_targets_storage, self.num_classes
         )
 
-        epoch_dir = self.output_dir / f"epoch_{self.current_epoch:03d}"
+        epoch_dir = self.output_dir / "val_results" / f"epoch_{self.current_epoch:03d}"
         metrics_dir = epoch_dir / "metrics"
 
         # Build metrics dict for compatibility with plotting curves

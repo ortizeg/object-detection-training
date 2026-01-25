@@ -1,15 +1,15 @@
 # Default Trainer Configuration for Object Detection
 _target_: lightning.Trainer
-max_epochs: 100
-precision: 16-mixed  # AMP - Mixed Precision Training
+max_epochs: 300
+precision: 16-mixed # AMP - Mixed Precision Training
 accelerator: auto
 devices: auto
 strategy: auto
-val_check_interval: 1.0  # Validate at the end of epoch
+val_check_interval: 1.0 # Validate at the end of epoch
 log_every_n_steps: 50
 enable_checkpointing: true
 enable_progress_bar: true
 enable_model_summary: true
-gradient_clip_val: 0.1
+gradient_clip_val: 5.0
 accumulate_grad_batches: 2
 num_sanity_val_steps: 2

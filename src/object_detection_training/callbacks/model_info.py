@@ -85,6 +85,9 @@ class ModelInfoCallback(L.Callback):
 
         logger.info(f"Model info saved to {output_path}")
 
+        # Export labels mapping alongside model_info.json
+        self._export_labels_mapping(trainer, save_dir)
+
         console = Console()
         table = Table(
             title="Model Information",
@@ -171,3 +174,39 @@ class ModelInfoCallback(L.Callback):
     def load_state_dict(self, state_dict):
         """Load callback state."""
         self.model_info = state_dict.get("model_info", {})
+
+    def _export_labels_mapping(self, trainer: L.Trainer, save_dir: Path) -> None:
+        """Export labels mapping JSON from the datamodule.
+
+        Creates a labels_mapping.json file that maps contiguous label IDs
+        to class names, useful for interpreting model predictions.
+
+        Args:
+            trainer: The Lightning trainer instance.
+            save_dir: Directory to save the labels mapping file.
+        """
+        try:
+            datamodule = trainer.datamodule
+
+            # Try using new train_detection_dataset if available
+            if hasattr(datamodule, "train_detection_dataset"):
+                detection_dataset = datamodule.train_detection_dataset
+                if detection_dataset is not None:
+                    labels_path = save_dir / "labels_mapping.json"
+                    detection_dataset.export_labels_mapping(labels_path)
+                    logger.info(f"Labels mapping saved to {labels_path}")
+                    return
+
+            # Fallback: use class_names from datamodule directly
+            if hasattr(datamodule, "class_names"):
+                # Force to list to avoid OmegaConf serialization issues
+                class_names = list(datamodule.class_names)
+                labels_mapping = {str(i): name for i, name in enumerate(class_names)}
+
+                labels_path = save_dir / "labels_mapping.json"
+                with open(labels_path, "w") as f:
+                    json.dump(labels_mapping, f, indent=2)
+                logger.info(f"Labels mapping saved to {labels_path}")
+
+        except Exception as e:
+            logger.warning(f"Failed to export labels mapping: {e}")

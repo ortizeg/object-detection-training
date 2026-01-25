@@ -3,14 +3,9 @@ defaults:
   - _self_
 
 # RFDETR Base Configuration
-# Centralizing optimization hyperparameters for all RFDETR variants
 lr_encoder: 1.5e-4
 lr_vit_layer_decay: 0.8
 lr_component_decay: 0.7
 out_feature_indexes: [3, 6, 9, 12]
 download_pretrained: true
 pretrain_weights: null
-
-# Normalization parameters for RF-DETR (0-255 scale ImageNet)
-image_mean: [123.675, 116.28, 103.53]
-image_std: [58.395, 57.12, 57.375]

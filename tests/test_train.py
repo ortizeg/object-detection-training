@@ -19,7 +19,7 @@ def test_hydra_configuration():
 
         # Check basic config structure
         assert "task" in cfg
-        assert "model" in cfg
+        assert "models" in cfg
         assert "data" in cfg
         assert "trainer" in cfg
         assert "callbacks" in cfg
@@ -31,32 +31,35 @@ def test_hydra_configuration():
 
         # Check model config (default is rfdetr_small)
         assert (
-            cfg.model._target_
+            cfg.models._target_
             == "object_detection_training.models.rfdetr_lightning.RFDETRSmallModel"
         )
-        assert cfg.model.num_classes is None
+        assert cfg.models.num_classes is None
 
         # Check data config
-        assert cfg.data._target_ == "object_detection_training.data.coco.COCODataModule"
+        assert (
+            cfg.data._target_
+            == "object_detection_training.data.coco_data_module.COCODataModule"
+        )
         assert cfg.data.batch_size == 8
 
         # Check trainer config
         assert cfg.trainer._target_ == "lightning.Trainer"
-        assert cfg.trainer.max_epochs == 100
+        assert cfg.trainer.max_epochs == 300
         assert cfg.trainer.precision == "16-mixed"
 
 
 def test_hydra_model_override():
     """Test that we can override the model with YOLOX."""
     with hydra.initialize(version_base=None, config_path="../conf"):
-        cfg = hydra.compose(config_name="train", overrides=["model=yolox_s"])
+        cfg = hydra.compose(config_name="train", overrides=["models=yolox_s"])
 
         # Check YOLOX model config
         assert (
-            cfg.model._target_
+            cfg.models._target_
             == "object_detection_training.models.yolox_lightning.YOLOXSModel"
         )
-        assert cfg.model.num_classes is None
+        assert cfg.models.num_classes is None
 
 
 def test_hydra_callbacks():

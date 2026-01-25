@@ -1,16 +1,17 @@
-# Object Detection Training Configuration
-# =========================================
+# Basketball RF-DETR Training Configuration
+# ==========================================
 #
 # Usage:
-#   python -m object_detection_training.task_manager
-#   python -m object_detection_training.task_manager model=rfdetr_nano
-#   python -m object_detection_training.task_manager model=yolox_s
+#   python -m object_detection_training.task_manager \
+#       --config-name train_basketball_rfdetr \
+#       train_path=/path/to/train \
+#       val_path=/path/to/val
 
 defaults:
   - _self_
   - task: train
-  - models: rfdetr_small
-  - data: coco
+  - model: rfdetr_small
+  - data: data_basketball
   - trainer: default
   - callbacks: default
   - logging: null

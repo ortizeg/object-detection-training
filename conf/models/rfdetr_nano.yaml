@@ -1,0 +1,4 @@
+defaults:
+  - RFDETRNano
+  - rfdetr_base
+  - _self_

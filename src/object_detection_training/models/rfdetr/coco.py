@@ -19,15 +19,16 @@ COCO dataset which returns image_id for evaluation.
 Mostly copy-paste from
 https://github.com/pytorch/vision/blob/13b35ff/references/detection/coco_utils.py
 """
+
 from typing import Optional
 
 import pycocotools.mask as coco_mask
 import torch
 import torch.utils.data
 import torchvision
-from rfdetr.util.misc import collate_fn  # Re-export collate_fn
 
-import object_detection_training.rfdetr.transforms as T
+import object_detection_training.models.rfdetr.transforms as T
+from object_detection_training.models.rfdetr.collate import collate_fn
 
 __all__ = [
     "CocoDetection",

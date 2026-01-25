@@ -5,14 +5,14 @@
 # ------------------------------------------------------------------------
 """RFDETR datasets module."""
 
-from object_detection_training.rfdetr.coco import (
+from object_detection_training.models.rfdetr.coco import (
     CocoDetection,
     ConvertCoco,
     collate_fn,
     compute_multi_scale_scales,
     make_coco_transforms,
 )
-from object_detection_training.rfdetr.transforms import (
+from object_detection_training.models.rfdetr.transforms import (
     Compose,
     Normalize,
     RandomHorizontalFlip,

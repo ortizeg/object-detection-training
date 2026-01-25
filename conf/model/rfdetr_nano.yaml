@@ -1,7 +1,0 @@
-defaults:
-  - rfdetr_base
-  - _self_
-
-# RFDETR Nano Model Configuration
-# Resolution 384 matches RFDETRNanoConfig from rfdetr package
-_target_: object_detection_training.models.rfdetr_lightning.RFDETRNanoModel

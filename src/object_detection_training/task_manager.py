@@ -7,7 +7,7 @@ training tasks with full configuration management.
 
 Usage:
     python -m object_detection_training.task_manager
-    python -m object_detection_training.task_manager model=rfdetr_small
+    python -m object_detection_training.task_manager model=RFDETRSmall
     python -m object_detection_training.task_manager trainer.max_epochs=50
 """
 
@@ -20,6 +20,8 @@ from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
+# Import models to ensure they are registered in Hydra's ConfigStore
+import object_detection_training.models  # noqa: F401
 from object_detection_training.utils.hydra import (
     instantiate_callbacks,
     instantiate_datamodule,
@@ -60,8 +62,6 @@ def setup_logging(log_level="INFO"):
     import logging
     import warnings
 
-    setup_loguru(log_level)
-
     # Enable all warnings
     warnings.filterwarnings("default")
 
@@ -92,7 +92,8 @@ def main(cfg: DictConfig) -> None:
         cfg: Hydra configuration dictionary.
     """
     log_level = cfg.get("log_level", "INFO")
-    setup_logging(log_level)
+    setup_loguru(log_level)
+    # setup_logging(log_level)
 
     logger.info("=" * 60)
     logger.info("Object Detection Training Framework")
@@ -113,7 +114,7 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Auto-detected num_classes={num_classes} from dataset")
 
     logger.info("Instantiating model...")
-    model = instantiate_model(cfg.model, num_classes=num_classes)
+    model = instantiate_model(cfg.models, num_classes=num_classes)
 
     logger.info("Instantiating callbacks...")
     callbacks = instantiate_callbacks(cfg.callbacks)

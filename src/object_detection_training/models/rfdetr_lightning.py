@@ -13,6 +13,7 @@ import torch
 from loguru import logger
 from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
 from rfdetr.models import build_criterion_and_postprocessors
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 from object_detection_training.models.base import BaseDetectionModel
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
@@ -79,8 +80,6 @@ class RFDETRLightningModel(BaseDetectionModel):
         lr_encoder: float = 1.5e-4,
         weight_decay: float = 1e-4,
         warmup_epochs: int = 0,  # Match rfdetr TrainConfig default
-        use_ema: bool = True,
-        ema_decay: float = 0.993,
         input_height: int = 512,
         input_width: int = 512,
         lr_vit_layer_decay: float = 0.8,
@@ -104,8 +103,6 @@ class RFDETRLightningModel(BaseDetectionModel):
             lr_encoder: Learning rate for encoder.
             weight_decay: Weight decay.
             warmup_epochs: Number of warmup epochs.
-            use_ema: Enable EMA.
-            ema_decay: EMA decay factor.
             download_pretrained: Download pretrained weights if not available.
             output_dir: Base directory for outputting results.
         """
@@ -114,8 +111,6 @@ class RFDETRLightningModel(BaseDetectionModel):
             learning_rate=learning_rate,
             weight_decay=weight_decay,
             warmup_epochs=warmup_epochs,
-            use_ema=use_ema,
-            ema_decay=ema_decay,
             input_height=input_height,
             input_width=input_width,
             output_dir=output_dir,
@@ -159,6 +154,20 @@ class RFDETRLightningModel(BaseDetectionModel):
             resolution=input_height,
         )
 
+        # Ensure the model head matches the target number of classes.
+        # rfdetr's Model.__init__ grows the head to match checkpoints (e.g. 91 for COCO)
+        # but the native training script shrinks it back before training.
+        current_out_features = self.rfdetr_wrapper.model.model.class_embed.weight.shape[
+            0
+        ]
+        if current_out_features != num_classes + 1:
+            logger.info(
+                "Reinitializing detection head from {} to {} classes",
+                current_out_features,
+                num_classes + 1,
+            )
+            self.rfdetr_wrapper.model.reinitialize_detection_head(num_classes + 1)
+
         # Register the actual nn.Module so Lightning/Optimizer can see parameters
         # valid chain based on forward usage: self.model.model.model
         # We assign it to self.model which is a standard name
@@ -184,10 +193,10 @@ class RFDETRLightningModel(BaseDetectionModel):
     def training_step(self, batch, batch_idx) -> torch.Tensor:
         """Custom training step to handle RFDETR weighted losses."""
         images, targets = batch
+
         # self(images, targets) returns dict with 'loss' and 'train/...' keys
         outputs = self(images, targets)
-
-        # Extract total loss
+        # Individual loss components for logging (scalars only)
         total_loss = outputs["loss"]
 
         # Log total loss
@@ -286,7 +295,10 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         batch_size = pred_logits.shape[0]
         for b in range(batch_size):
-            logits = pred_logits[b]  # [num_queries, num_classes]
+            # pred_logits has num_classes + 1 channels if explicitly reinitialized
+            # or if it's following DETR convention where the last class is background.
+            # We slice it to only look at foreground classes (0 to num_classes - 1).
+            logits = pred_logits[b, :, : self.num_classes]
             boxes = pred_boxes[b]  # [num_queries, 4]
 
             # Use sigmoid activation (matches rfdetr PostProcess)
@@ -437,15 +449,35 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         optimizer = torch.optim.AdamW(param_dicts)
 
-        # Learning rate scheduler
-        # rfdetr uses StepLR or custom schedules. For 1 epoch comparison,
-        # we'll keep it simple but ensure it starts at 1.0.
-        def lr_lambda(epoch):
-            if self.warmup_epochs > 0 and epoch < self.warmup_epochs:
-                return (epoch + 1) / self.warmup_epochs
-            return 1.0
+        # Learning rate scheduler: Linear Warmup + Cosine Annealing
+        max_epochs = self.trainer.max_epochs if self.trainer else 300
+        warmup_epochs = max(
+            1, self.warmup_epochs
+        )  # Ensure at least 1 epoch for LinearLR
+        cosine_epochs = max(1, max_epochs - warmup_epochs)
 
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+        # Linear warmup from 0.1% to 100% of base LR
+        warmup_scheduler = LinearLR(
+            optimizer,
+            start_factor=1e-3,
+            end_factor=1.0,
+            total_iters=warmup_epochs,
+        )
+
+        # Cosine annealing decay after warmup
+        # eta_min set to 5% of base LR to prevent training stall at end
+        cosine_scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=cosine_epochs,
+            eta_min=self.learning_rate * 0.05,
+        )
+
+        # Combine: warmup first, then cosine decay
+        scheduler = SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[warmup_epochs],
+        )
 
         return {
             "optimizer": optimizer,
@@ -457,7 +489,7 @@ class RFDETRLightningModel(BaseDetectionModel):
 
 
 # Register model variants with Hydra
-@register(group="model")
+@register(name="RFDETRNano")
 class RFDETRNanoModel(RFDETRLightningModel):
     """RFDETR Nano model for Hydra instantiation."""
 
@@ -466,7 +498,7 @@ class RFDETRNanoModel(RFDETRLightningModel):
         super().__init__(variant="nano", **kwargs)
 
 
-@register(group="model")
+@register(name="RFDETRSmall")
 class RFDETRSmallModel(RFDETRLightningModel):
     """RFDETR Small model for Hydra instantiation."""
 
@@ -475,7 +507,7 @@ class RFDETRSmallModel(RFDETRLightningModel):
         super().__init__(variant="small", **kwargs)
 
 
-@register(group="model")
+@register(name="RFDETRMedium")
 class RFDETRMediumModel(RFDETRLightningModel):
     """RFDETR Medium model for Hydra instantiation."""
 
@@ -484,7 +516,7 @@ class RFDETRMediumModel(RFDETRLightningModel):
         super().__init__(variant="medium", **kwargs)
 
 
-@register(group="model")
+@register(name="RFDETRLarge")
 class RFDETRLargeModel(RFDETRLightningModel):
     """RFDETR Large model for Hydra instantiation."""
 
