@@ -5,6 +5,7 @@ This module wraps the rfdetr models to work with the Lightning training framewor
 """
 
 import argparse
+import copy
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -120,6 +121,32 @@ class RFDETRLightningModel(BaseDetectionModel):
         self.model = model
         self.criterion = criterion
         self.postprocessors = postprocessors
+
+        # Synchronize group_detr and expand weight_dict for auxiliary losses
+        if self.criterion is not None:
+            # Propagate group_detr from model to criterion
+            if hasattr(self.model, "group_detr"):
+                self.criterion.group_detr = self.model.group_detr
+
+            # Automatically expand weight_dict for auxiliary and encoder outputs
+            # Matching the logic in rfdetr.models.build_criterion_and_postprocessors
+            base_weight_dict = copy.deepcopy(self.criterion.weight_dict)
+
+            # Add auxiliary weights if available
+            if getattr(self.model, "aux_loss", False):
+                # The number of aux_outputs depends on the number of decoder layers
+                # In LWDETR, aux_outputs is a list of all but the last layer's outputs
+                # We can just iterate through a reasonable range or check the model's structure
+                # Using a safe approach: expand based on what LWDETR produces
+                num_decoder_layers = getattr(self.model.transformer, "dec_layers", 6)
+                for i in range(num_decoder_layers - 1):
+                    for k, v in base_weight_dict.items():
+                        self.criterion.weight_dict[f"{k}_{i}"] = v
+
+            # Add encoder weights if two_stage
+            if getattr(self.model, "two_stage", False):
+                for k, v in base_weight_dict.items():
+                    self.criterion.weight_dict[f"{k}_enc"] = v
 
         # Handle weight loading if provided
         if self.pretrain_weights:
