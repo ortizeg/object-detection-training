@@ -1,0 +1,16 @@
+# Base model configuration - defaults matching rfdetr package
+num_classes: null
+input_height: ${input_height}
+input_width: ${input_width}
+learning_rate: 1e-4
+weight_decay: 1e-4
+
+warmup_epochs: 2
+
+output_dir: ${hydra:runtime.output_dir}
+
+# Normalization parameters (0-255 scale)
+# ImageNet: [0.485, 0.456, 0.406] * 255 = [123.675, 116.28, 103.53]
+# ImageNet: [0.229, 0.224, 0.225] * 255 = [58.395, 57.12, 57.375]
+image_mean: [123.675, 116.28, 103.53]
+image_std: [58.395, 57.12, 57.375]

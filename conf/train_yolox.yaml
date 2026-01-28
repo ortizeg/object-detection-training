@@ -1,0 +1,24 @@
+# YOLOX Training Task Configuration
+# Focused on YOLOX model variants
+
+defaults:
+  - _self_
+  - task: train
+  - models: yolox_s
+  - data: coco_yolox
+  - trainer: trainer_yolox
+  - callbacks: default
+  - logging: null
+
+# Global Parameters
+input_height: 640
+input_width: 640
+log_level: INFO
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/yolox_s_${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/yolox_s_${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

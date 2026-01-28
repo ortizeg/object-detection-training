@@ -1,0 +1,21 @@
+# Optimized Trainer Configuration for YOLOX
+_target_: lightning.Trainer
+max_epochs: 300 # Standard YOLOX training length
+precision: 16-mixed # AMP - Mixed Precision Training
+accelerator: auto
+devices: auto
+strategy: auto
+val_check_interval: 1.0
+log_every_n_steps: 50
+enable_checkpointing: true
+enable_progress_bar: true
+enable_model_summary: true
+
+# YOLOX specific optimizations
+gradient_clip_val: 5.0 # Relaxed clipping for YOLOX
+accumulate_grad_batches: 2 # Total batch size = 16 * 2 = 32
+num_sanity_val_steps: 2
+
+# For debugging/verification
+limit_train_batches: null
+limit_val_batches: null

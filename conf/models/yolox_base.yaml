@@ -1,0 +1,27 @@
+defaults:
+  - base
+  - _self_
+
+_target_: object_detection_training.models.yolox_lightning.YOLOXLightningModel
+
+# YOLOX Defaults
+weights_url: null
+depth: 1.0
+width: 1.0
+num_classes: ${num_classes}
+input_height: ${input_height}
+input_width: ${input_width}
+use_ema: true
+ema_decay: 0.9998
+
+model:
+  _target_: object_detection_training.models.yolox.yolox.YOLOX
+  backbone:
+    _target_: object_detection_training.models.yolox.yolo_pafpn.YOLOPAFPN
+    depth: ${models.depth}
+    width: ${models.width}
+    depthwise: false
+  head:
+    _target_: object_detection_training.models.yolox.yolo_head.YOLOXHead
+    num_classes: ${models.num_classes}
+    width: ${models.width}
