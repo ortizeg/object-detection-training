@@ -233,8 +233,40 @@ class BaseDetectionModel(L.LightningModule):
             # Targeting self.model instead of self to avoid Lightning wrapper overhead
             # and potential recursion issues with some FLOP counters.
             model_to_analyze = getattr(self, "model", self)
-            flops = FlopCountAnalysis(model_to_analyze, dummy_input)
-            total_flops = flops.total()
+
+            # Set model to eval mode and try FLOP analysis
+            was_training = model_to_analyze.training
+            model_to_analyze.eval()
+            try:
+                flops = FlopCountAnalysis(model_to_analyze, dummy_input)
+                # Suppress warnings about untraced operations
+                flops.unsupported_ops_warnings(False)
+                flops.uncalled_modules_warnings(False)
+                flops.tracer_warnings("none")
+                total_flops = flops.total()
+            except Exception:
+                # Fallback: analyze backbone only if full model tracing fails
+                # This is common for detection heads that use non-traceable ops
+                # (e.g., grid computations, argmax for labels)
+                backbone = getattr(model_to_analyze, "backbone", None)
+                if backbone is not None:
+                    try:
+                        flops = FlopCountAnalysis(backbone, dummy_input)
+                        flops.unsupported_ops_warnings(False)
+                        flops.uncalled_modules_warnings(False)
+                        flops.tracer_warnings("none")
+                        total_flops = flops.total()
+                        logger.debug(
+                            "FLOP count based on backbone only (head tracing failed)"
+                        )
+                    except Exception as e2:
+                        logger.warning(f"Failed to compute FLOPs (backbone): {e2}")
+                        total_flops = 0
+                else:
+                    total_flops = 0
+            finally:
+                # Restore original training state
+                model_to_analyze.train(was_training)
         except Exception as e:
             logger.warning(f"Failed to compute FLOPs: {e}")
             total_flops = 0
