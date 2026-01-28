@@ -112,7 +112,9 @@ class ONNXExportCallback(L.Callback):
                     )
 
                     logger.info(f"Loading best checkpoint from {best_path}")
-                    checkpoint = torch.load(best_path, map_location="cpu")
+                    checkpoint = torch.load(
+                        best_path, map_location="cpu", weights_only=False
+                    )
 
                     # Handle both Lightning and raw state dicts
                     state_dict = checkpoint.get("state_dict", checkpoint)
@@ -149,7 +151,9 @@ class ONNXExportCallback(L.Callback):
                         ]
                     )
 
-                    checkpoint = torch.load(ckpt_file, map_location="cpu")
+                    checkpoint = torch.load(
+                        ckpt_file, map_location="cpu", weights_only=False
+                    )
                     pl_module.load_state_dict(checkpoint["state_dict"])
 
                     output_path = export_dir / f"{ckpt_file.stem}.onnx"
