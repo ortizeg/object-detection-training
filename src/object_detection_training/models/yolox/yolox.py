@@ -8,9 +8,12 @@
 
 import torch.nn as nn
 
+from object_detection_training.utils.hydra import register
+
 from .yolo_pafpn import YOLOPAFPN
 
 
+@register(group="model", name="yolo_model")
 class YOLOX(nn.Module):
     """
     YOLOX model module.

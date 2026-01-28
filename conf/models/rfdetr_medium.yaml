@@ -1,4 +1,24 @@
+# RF-DETR Medium Configuration
+# Based on official RFDETRMediumConfig from Roboflow
+
 defaults:
-  - RFDETRMedium
   - rfdetr_base
   - _self_
+
+# Medium-specific overrides
+encoder_type: "dinov2_windowed_small"
+pretrained_encoder: "facebook/dinov2-small"
+weights_url: "https://storage.googleapis.com/rfdetr/medium_coco/checkpoint_best_regular.pth"
+
+# Architecture overrides for Medium
+num_decoder_layers: 4        # Medium uses 4 layers (vs Base 3)
+# input_height: 576            # 576 resolution
+# input_width: 576
+
+# Backbone overrides
+model:
+  backbone:
+    out_feature_indexes: [3, 6, 9, 12]   # Medium uses [3,6,9,12]
+    patch_size: 16           # Medium uses patch_size=16
+    num_windows: 2           # Medium uses 2 windows
+    positional_encoding_size: 36         # 576 / 16 = 36

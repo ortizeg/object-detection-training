@@ -4,97 +4,70 @@ RFDETR model wrappers for PyTorch Lightning.
 This module wraps the rfdetr models to work with the Lightning training framework.
 """
 
+import argparse
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import omegaconf
 import torch
+import torch.nn as nn
 from loguru import logger
-from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
-from rfdetr.models import build_criterion_and_postprocessors
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 from object_detection_training.models.base import BaseDetectionModel
+from object_detection_training.models.rfdetr import (
+    build_criterion_and_postprocessors,
+)
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
+from object_detection_training.utils.download import download_checkpoint
 from object_detection_training.utils.hydra import register
 
-# Model checkpoint URLs for download
-CHECKPOINT_URLS = {
-    "nano": (
-        "https://storage.googleapis.com/rfdetr/nano_coco/checkpoint_best_regular.pth"
-    ),
-    "small": (
-        "https://storage.googleapis.com/rfdetr/small_coco/checkpoint_best_regular.pth"
-    ),
-    "medium": (
-        "https://storage.googleapis.com/rfdetr/medium_coco/checkpoint_best_regular.pth"
-    ),
-    "large": "https://storage.googleapis.com/rfdetr/rf-detr-large.pth",
-}
+# Add argparse.Namespace to safe globals for torch.load in PyTorch 2.6+
+torch.serialization.add_safe_globals([argparse.Namespace])
+
+# Model weight handling logic is now configuration-driven.
 
 
-def download_checkpoint(url: str, destination: Path) -> Path:
-    """Download a checkpoint file if it doesn't exist."""
-    import urllib.request
-
-    destination = Path(destination)
-    if destination.exists():
-        logger.info(f"Checkpoint already exists: {destination}")
-        return destination
-
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Downloading checkpoint from {url}")
-
-    try:
-        urllib.request.urlretrieve(url, destination)
-        logger.info(f"Checkpoint downloaded to {destination}")
-    except Exception as e:
-        logger.error(f"Failed to download checkpoint: {e}")
-        raise
-
-    return destination
+# Model weight handling logic is now configuration-driven.
 
 
+@register(name="rfdetr")
 class RFDETRLightningModel(BaseDetectionModel):
     """
     PyTorch Lightning wrapper for RFDETR models.
-
-    Wraps the rfdetr package models to work with Lightning training framework.
     """
-
-    # Model variant configurations
-    MODEL_VARIANTS = {
-        "nano": {"class": RFDETRNano, "checkpoint_key": "nano"},
-        "small": {"class": RFDETRSmall, "checkpoint_key": "small"},
-        "medium": {"class": RFDETRMedium, "checkpoint_key": "medium"},
-        "large": {"class": RFDETRLarge, "checkpoint_key": "large"},
-    }
 
     def __init__(
         self,
-        variant: str = "small",
+        model: nn.Module,
+        criterion: Optional[nn.Module] = None,
+        postprocessors: Optional[nn.Module] = None,
         num_classes: int = 80,
         pretrain_weights: Optional[str] = None,
+        weights_url: Optional[str] = None,
+        download_pretrained: bool = False,
         learning_rate: float = 2.5e-4,
         lr_encoder: float = 1.5e-4,
         weight_decay: float = 1e-4,
-        warmup_epochs: int = 0,  # Match rfdetr TrainConfig default
+        warmup_epochs: int = 0,
         input_height: int = 512,
         input_width: int = 512,
         lr_vit_layer_decay: float = 0.8,
         lr_component_decay: float = 0.7,
         out_feature_indexes: List[int] = [3, 6, 9, 12],
-        download_pretrained: bool = True,
         output_dir: str = "outputs",
         image_mean: List[float] = [123.675, 116.28, 103.53],
         image_std: List[float] = [58.395, 57.12, 57.375],
+        **kwargs: Any,
     ):
         """
         Initialize RFDETR Lightning model.
 
         Args:
-            variant: Model variant (nano, small, medium, large).
+            model: The RFDETR model instance.
+            criterion: The loss criterion.
+            postprocessors: Post-processors for inference.
             num_classes: Number of detection classes.
             pretrain_weights: Path to pretrained weights file.
             input_height: Input image height.
@@ -103,7 +76,6 @@ class RFDETRLightningModel(BaseDetectionModel):
             lr_encoder: Learning rate for encoder.
             weight_decay: Weight decay.
             warmup_epochs: Number of warmup epochs.
-            download_pretrained: Download pretrained weights if not available.
             output_dir: Base directory for outputting results.
         """
         super().__init__(
@@ -115,80 +87,88 @@ class RFDETRLightningModel(BaseDetectionModel):
             input_width=input_width,
             output_dir=output_dir,
         )
+        self.save_hyperparameters(
+            ignore=["model", "criterion", "postprocessors", "kwargs"]
+        )
+
+        self.download_pretrained = download_pretrained
+        self.pretrain_weights = pretrain_weights
+        self.weights_url = weights_url
+
+        if download_pretrained and not pretrain_weights:
+            if not weights_url:
+                logger.warning(
+                    "download_pretrained=True but no weights_url specified. Skipping download."
+                )
+            else:
+                # Use a generic name if variant is not available
+                filename = Path(weights_url).name
+                dest = Path(output_dir) / "checkpoints" / filename
+                try:
+                    self.pretrain_weights = str(download_checkpoint(weights_url, dest))
+                except Exception as e:
+                    logger.error(f"Failed to download pretrained weights: {e}")
 
         self.image_mean = image_mean
         self.image_std = image_std
 
         self.lr_encoder = lr_encoder
-        self.variant = variant
-        self.pretrain_weights = pretrain_weights
-        self.download_pretrained = download_pretrained
         self.lr_vit_layer_decay = lr_vit_layer_decay
         self.lr_component_decay = lr_component_decay
         self.out_feature_indexes = out_feature_indexes
 
-        if variant not in self.MODEL_VARIANTS:
-            raise ValueError(
-                f"Unknown variant: {variant}. "
-                f"Choose from {list(self.MODEL_VARIANTS.keys())}"
-            )
+        self.model = model
+        self.criterion = criterion
+        self.postprocessors = postprocessors
 
-        # Initialize the RFDETR model
-        model_config = self.MODEL_VARIANTS[variant]
-        model_class = model_config["class"]
+        # Handle weight loading if provided
+        if self.pretrain_weights:
+            logger.info(f"Loading weights from {self.pretrain_weights}")
+            checkpoint = torch.load(self.pretrain_weights, map_location="cpu")
+            state_dict = checkpoint["model"] if "model" in checkpoint else checkpoint
 
-        # Handle pretrained weights
-        if pretrain_weights is None and download_pretrained:
-            cache_dir = Path.home() / ".cache" / "rfdetr"
-            checkpoint_path = cache_dir / f"rf-detr-{variant}.pth"
-            if not checkpoint_path.exists():
-                url = CHECKPOINT_URLS[model_config["checkpoint_key"]]
-                download_checkpoint(url, checkpoint_path)
-            pretrain_weights = str(checkpoint_path)
+            # Robust loading: filter out parameters with mismatched shapes
+            model_state_dict = self.model.state_dict()
+            filtered_state_dict = {}
+            for k, v in state_dict.items():
+                if k in model_state_dict:
+                    if v.shape == model_state_dict[k].shape:
+                        filtered_state_dict[k] = v
+                    else:
+                        logger.warning(
+                            f"Skipping parameter {k} due to shape mismatch: "
+                            f"checkpoint {v.shape} vs model {model_state_dict[k].shape}"
+                        )
+                else:
+                    logger.debug(f"Skipping parameter {k} not in model")
 
-        logging_info = f"Initializing RFDETR {variant} model"
-        logger.info(logging_info)
-        self.rfdetr_wrapper = model_class(
-            pretrain_weights=pretrain_weights,
-            num_classes=num_classes,
-            resolution=input_height,
-        )
+            self.model.load_state_dict(filtered_state_dict, strict=False)
 
         # Ensure the model head matches the target number of classes.
-        # rfdetr's Model.__init__ grows the head to match checkpoints (e.g. 91 for COCO)
-        # but the native training script shrinks it back before training.
-        current_out_features = self.rfdetr_wrapper.model.model.class_embed.weight.shape[
-            0
-        ]
-        if current_out_features != num_classes + 1:
+        current_out_features = self.model.class_embed.weight.shape[0]
+        if current_out_features != num_classes:
             logger.info(
                 "Reinitializing detection head from {} to {} classes",
                 current_out_features,
-                num_classes + 1,
+                num_classes,
             )
-            self.rfdetr_wrapper.model.reinitialize_detection_head(num_classes + 1)
+            # Check if model has reinitialize_detection_head method
+            if hasattr(self.model, "reinitialize_detection_head"):
+                self.model.reinitialize_detection_head(num_classes)
+            else:
+                # Manual reinitialization if needed
+                hidden_dim = self.model.class_embed.in_features
+                self.model.class_embed = nn.Linear(hidden_dim, num_classes)
+                nn.init.constant_(self.model.class_embed.bias, -4.6)  # focal loss init
 
-        # Register the actual nn.Module so Lightning/Optimizer can see parameters
-        # valid chain based on forward usage: self.model.model.model
-        # We assign it to self.model which is a standard name
-        self.model = self.rfdetr_wrapper.model.model
-
-        # Store internal model reference for export if needed
-        # (though self.model is the nn.Module now)
-        self._internal_model = self.model
-
-        # Build criterion for training
-        logger.info("Building criterion for training...")
-        if build_criterion_and_postprocessors:
-            # args are in the wrapper
+        # If criterion is still None, try building it if we have args (unlikely in direct pass)
+        if self.criterion is None and hasattr(self, "args"):
+            logger.info("Building criterion for training...")
             self.criterion, self.postprocessors = build_criterion_and_postprocessors(
-                self.rfdetr_wrapper.model.args
+                self.args
             )
-        else:
-            self.criterion = None
-            self.postprocessors = None
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["model", "criterion", "postprocessors"])
 
     def training_step(self, batch, batch_idx) -> torch.Tensor:
         """Custom training step to handle RFDETR weighted losses."""
@@ -346,7 +326,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         simplify: bool = True,
         dynamic_axes: Optional[Dict] = None,
     ) -> str:
-        """Export using RFDETR's built-in export method."""
+        """Export using custom export logic."""
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -363,14 +343,10 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         logger.info(f"Exporting RFDETR model to ONNX: {output_path}")
 
-        # Forcing legacy ONNX exporter as the new Dynamo exporter (torch.export)
-        # has issues with RF-DETR's architectural complexities (like unallocated
-        # tensors)
+        # Forcing legacy ONNX exporter
         os.environ["TORCH_ONNX_LEGACY_EXPORTER"] = "1"
 
         # Explicit monkeypatch for torch.onnx.export to enforce dynamo=False
-        # this ensures that even if environment variables are ignored, the export
-        # will fall back to the legacy TorchScript-based path.
         original_export = torch.onnx.export
 
         def monkeypatched_export(*args, **kwargs):
@@ -380,11 +356,24 @@ class RFDETRLightningModel(BaseDetectionModel):
         # Replace temporarily
         torch.onnx.export = monkeypatched_export
 
-        # Use RFDETR's built-in export
-        self.rfdetr_wrapper.export(
-            output_dir=str(output_path.parent),
-            simplify=simplify,
+        # For RF-DETR export, we use the model's export method if it exists
+        if hasattr(self.model, "export"):
+            self.model.export()
+
+        # Dummy input
+        dummy_input = torch.randn(1, 3, input_height, input_width).to(self.device)
+
+        # Export
+        torch.onnx.export(
+            self.model,
+            dummy_input,
+            str(output_path),
+            export_params=True,
             opset_version=opset_version,
+            do_constant_folding=True,
+            input_names=["input"],
+            output_names=["pred_boxes", "pred_logits"],
+            dynamic_axes=dynamic_axes or {"input": {0: "batch"}},
         )
 
         # Restore original export
@@ -486,40 +475,3 @@ class RFDETRLightningModel(BaseDetectionModel):
                 "interval": "epoch",
             },
         }
-
-
-# Register model variants with Hydra
-@register(name="RFDETRNano")
-class RFDETRNanoModel(RFDETRLightningModel):
-    """RFDETR Nano model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="nano", **kwargs)
-
-
-@register(name="RFDETRSmall")
-class RFDETRSmallModel(RFDETRLightningModel):
-    """RFDETR Small model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="small", **kwargs)
-
-
-@register(name="RFDETRMedium")
-class RFDETRMediumModel(RFDETRLightningModel):
-    """RFDETR Medium model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="medium", **kwargs)
-
-
-@register(name="RFDETRLarge")
-class RFDETRLargeModel(RFDETRLightningModel):
-    """RFDETR Large model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="large", **kwargs)

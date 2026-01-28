@@ -1,4 +1,24 @@
+# RF-DETR Small Configuration
+# Based on official RFDETRSmallConfig from Roboflow
+
 defaults:
-  - RFDETRSmall
   - rfdetr_base
   - _self_
+
+# Small-specific overrides
+encoder_type: "dinov2_windowed_small"
+pretrained_encoder: "facebook/dinov2-small"
+weights_url: "https://storage.googleapis.com/rfdetr/small_coco/checkpoint_best_regular.pth"
+
+# Architecture overrides for Small
+num_decoder_layers: 3        # Same as Base
+# input_height: 512            # 512 resolution
+# input_width: 512
+
+# Backbone overrides
+model:
+  backbone:
+    out_feature_indexes: [3, 6, 9, 12]   # Small uses [3,6,9,12]
+    patch_size: 16           # Small uses patch_size=16
+    num_windows: 2           # Small uses 2 windows
+    positional_encoding_size: 32         # 512 / 16 = 32

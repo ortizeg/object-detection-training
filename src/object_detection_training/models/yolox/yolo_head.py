@@ -12,6 +12,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from object_detection_training.utils.hydra import register
+
 from .network_blocks import BaseConv, DWConv
 
 
@@ -96,6 +98,7 @@ class IOUloss(nn.Module):
         return loss
 
 
+@register(group="head", name="yolo_head")
 class YOLOXHead(nn.Module):
     """YOLOX detection head with decoupled classification and regression."""
 

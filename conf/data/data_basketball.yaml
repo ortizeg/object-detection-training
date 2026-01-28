@@ -34,6 +34,7 @@ size_thresholds:
 
 # DataLoader settings
 num_workers: 8
+batch_size: 8
 input_height: ${models.input_height}
 input_width: ${models.input_width}
 

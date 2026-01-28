@@ -6,78 +6,26 @@ This module provides Lightning-compatible wrappers for YOLOX models.
 
 import math
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
-from object_detection_training.models.yolox import YOLOPAFPN, YOLOX, YOLOXHead
+from object_detection_training.models.yolox.yolox import YOLOX
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
+from object_detection_training.utils.download import download_checkpoint
 from object_detection_training.utils.hydra import register
 
 # YOLOX checkpoint URLs from official releases
-YOLOX_CHECKPOINT_URLS = {
-    "nano": (
-        "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
-        "yolox_nano.pth"
-    ),
-    "tiny": (
-        "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
-        "yolox_tiny.pth"
-    ),
-    "s": (
-        "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
-        "yolox_s.pth"
-    ),
-    "m": (
-        "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
-        "yolox_m.pth"
-    ),
-    "l": (
-        "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
-        "yolox_l.pth"
-    ),
-    "x": (
-        "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
-        "yolox_x.pth"
-    ),
-}
-
-# YOLOX model configurations (depth, width)
-YOLOX_CONFIGS = {
-    "nano": {"depth": 0.33, "width": 0.25, "depthwise": True},
-    "tiny": {"depth": 0.33, "width": 0.375, "depthwise": False},
-    "s": {"depth": 0.33, "width": 0.50, "depthwise": False},
-    "m": {"depth": 0.67, "width": 0.75, "depthwise": False},
-    "l": {"depth": 1.0, "width": 1.0, "depthwise": False},
-    "x": {"depth": 1.33, "width": 1.25, "depthwise": False},
-}
+# Model configurations and URLs are now configuration-driven.
 
 
-def download_checkpoint(url: str, destination: Path) -> Path:
-    """Download a checkpoint file if it doesn't exist."""
-    import urllib.request
-
-    destination = Path(destination)
-    if destination.exists():
-        logger.info(f"Checkpoint already exists: {destination}")
-        return destination
-
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Downloading checkpoint from {url}")
-
-    try:
-        urllib.request.urlretrieve(url, destination)
-        logger.info(f"Checkpoint downloaded to {destination}")
-    except Exception as e:
-        logger.error(f"Failed to download checkpoint: {e}")
-        raise
-
-    return destination
+# Model configurations and URLs are now configuration-driven.
 
 
+@register(name="yolox")
 class YOLOXLightningModel(BaseDetectionModel):
     """
     PyTorch Lightning wrapper for YOLOX models.
@@ -87,26 +35,35 @@ class YOLOXLightningModel(BaseDetectionModel):
 
     def __init__(
         self,
-        variant: str = "s",
+        model: Optional[nn.Module] = None,
+        backbone: Optional[nn.Module] = None,
+        head: Optional[nn.Module] = None,
         num_classes: int = 80,
         pretrain_weights: Optional[str] = None,
+        weights_url: Optional[str] = None,
         learning_rate: float = 1e-3,
         weight_decay: float = 5e-4,
         warmup_epochs: int = 5,
         download_pretrained: bool = True,
+        use_ema: bool = True,
+        ema_decay: float = 0.9998,
         input_height: int = 640,
         input_width: int = 640,
         output_dir: str = "outputs",
         image_mean: List[float] = [0.0, 0.0, 0.0],
         image_std: List[float] = [1.0, 1.0, 1.0],
+        **kwargs: Any,
     ):
         """
         Initialize YOLOX Lightning model.
 
         Args:
-            variant: Model variant (nano, tiny, s, m, l, x).
+            model: The YOLOX model instance.
+            backbone: The YOLOX backbone instance (optional if model provided).
+            head: The YOLOX head instance (optional if model provided).
             num_classes: Number of detection classes.
             pretrain_weights: Path to pretrained weights file.
+            weights_url: URL to download pretrained weights.
             learning_rate: Base learning rate.
             weight_decay: Weight decay.
             warmup_epochs: Number of warmup epochs.
@@ -124,44 +81,40 @@ class YOLOXLightningModel(BaseDetectionModel):
             input_width=input_width,
             output_dir=output_dir,
         )
+        self.save_hyperparameters(ignore=["model", "backbone", "head", "kwargs"])
 
         self.image_mean = image_mean
         self.image_std = image_std
 
-        self.variant = variant
         self.pretrain_weights = pretrain_weights
+        self.weights_url = weights_url
         self.download_pretrained = download_pretrained
+        self.use_ema = use_ema
+        self.ema_decay = ema_decay
         self.input_height = input_height
         self.input_width = input_width
 
-        if variant not in YOLOX_CONFIGS:
-            raise ValueError(
-                f"Unknown variant: {variant}. Choose from {list(YOLOX_CONFIGS.keys())}"
-            )
-
-        config = YOLOX_CONFIGS[variant]
-        depth = config["depth"]
-        width = config["width"]
-        depthwise = config["depthwise"]
+        if download_pretrained and not pretrain_weights:
+            if not weights_url:
+                logger.warning(
+                    "download_pretrained=True but no weights_url specified. Skipping download."
+                )
+            else:
+                filename = Path(weights_url).name
+                dest = Path(output_dir) / "checkpoints" / filename
+                try:
+                    self.pretrain_weights = str(download_checkpoint(weights_url, dest))
+                except Exception as e:
+                    logger.error(f"Failed to download pretrained weights: {e}")
 
         # Build YOLOX model
-        logger.info(f"Initializing YOLOX {variant} model")
+        logger.info("Initializing YOLOX model")
 
-        in_channels = [256, 512, 1024]
-        backbone = YOLOPAFPN(
-            depth=depth,
-            width=width,
-            in_channels=in_channels,
-            depthwise=depthwise,
-        )
-        head = YOLOXHead(
-            num_classes=num_classes,
-            width=width,
-            in_channels=in_channels,
-            depthwise=depthwise,
-        )
-
-        self.model = YOLOX(backbone=backbone, head=head)
+        if model is not None:
+            self.model = model
+        else:
+            logger.info("Initializing YOLOX model with provided backbone and head")
+            self.model = YOLOX(backbone=backbone, head=head)
 
         # Initialize BatchNorm with official YOLOX settings
         for m in self.model.modules():
@@ -172,17 +125,15 @@ class YOLOXLightningModel(BaseDetectionModel):
         # Initialize biases BEFORE loading weights
         self.model.head.initialize_biases(prior_prob=1e-2)
 
-        # Load pretrained weights
-        if pretrain_weights:
-            self._load_weights(pretrain_weights)
-        elif download_pretrained:
-            self._download_and_load_weights()
+        # Load pretrained weights (after download if applicable)
+        if self.pretrain_weights:
+            self._load_weights(self.pretrain_weights)
 
         # Reinitialize classification biases AFTER loading weights
         # This is crucial when num_classes differs from pretrained (cls_preds skipped)
         self._reinitialize_cls_biases()
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["model", "backbone", "head"])
 
     def _reinitialize_cls_biases(self):
         """Reinitialize classification prediction biases after weight loading.
@@ -199,30 +150,12 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
 
-    def _download_and_load_weights(self):
-        """Download and load pretrained weights."""
-        if self.variant not in YOLOX_CHECKPOINT_URLS:
-            logger.warning(f"No pretrained weights available for {self.variant}")
-            return
-
-        cache_dir = Path.home() / ".cache" / "yolox"
-        checkpoint_path = cache_dir / f"yolox_{self.variant}.pth"
-
-        if not checkpoint_path.exists():
-            url = YOLOX_CHECKPOINT_URLS[self.variant]
-            download_checkpoint(url, checkpoint_path)
-
-        self._load_weights(str(checkpoint_path))
-
     def _load_weights(self, checkpoint_path: str):
         """Load weights from checkpoint."""
         logger.info(f"Loading weights from {checkpoint_path}")
         try:
             checkpoint = torch.load(checkpoint_path, map_location="cpu")
-            if "model" in checkpoint:
-                state_dict = checkpoint["model"]
-            else:
-                state_dict = checkpoint
+            state_dict = checkpoint["model"] if "model" in checkpoint else checkpoint
 
             # Create new state dict with mapping
             model_state_dict = self.model.state_dict()
@@ -252,7 +185,7 @@ class YOLOXLightningModel(BaseDetectionModel):
                     unmatched.append(k)
 
             # Log summary
-            logger.info(f"Checkpoint match summary for {self.variant}:")
+            logger.info("Checkpoint match summary:")
             logger.info(f"  Matched: {len(matched)} / {len(model_state_dict)}")
             if class_mismatch:
                 logger.info(f"  Class mismatch (skipped): {len(class_mismatch)}")
@@ -494,58 +427,3 @@ class YOLOXLightningModel(BaseDetectionModel):
                 "frequency": 1,
             },
         }
-
-
-# Register model variants with Hydra
-@register(name="YOLOXNano")
-class YOLOXNanoModel(YOLOXLightningModel):
-    """YOLOX Nano model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="nano", **kwargs)
-
-
-@register(name="YOLOXTiny")
-class YOLOXTinyModel(YOLOXLightningModel):
-    """YOLOX Tiny model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="tiny", **kwargs)
-
-
-@register(name="YOLOXS")
-class YOLOXSModel(YOLOXLightningModel):
-    """YOLOX Small model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="s", **kwargs)
-
-
-@register(name="YOLOXM")
-class YOLOXMModel(YOLOXLightningModel):
-    """YOLOX Medium model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="m", **kwargs)
-
-
-@register(name="YOLOXL")
-class YOLOXLModel(YOLOXLightningModel):
-    """YOLOX Large model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="l", **kwargs)
-
-
-@register(name="YOLOXX")
-class YOLOXXModel(YOLOXLightningModel):
-    """YOLOX X-Large model for Hydra instantiation."""
-
-    def __init__(self, **kwargs):
-        kwargs.pop("variant", None)
-        super().__init__(variant="x", **kwargs)

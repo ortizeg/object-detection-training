@@ -18,7 +18,7 @@ import numpy as np
 import onnx.helper
 from hydra.core.hydra_config import HydraConfig
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 
 # Import models to ensure they are registered in Hydra's ConfigStore
 import object_detection_training.models  # noqa: F401
@@ -112,6 +112,12 @@ def main(cfg: DictConfig) -> None:
     # Auto-detect num_classes from data if model doesn't specify it
     num_classes = datamodule.num_classes
     logger.info(f"Auto-detected num_classes={num_classes} from dataset")
+
+    # Inject num_classes into the config so interpolations can resolve
+    with open_dict(cfg):
+        cfg.num_classes = num_classes
+        if "models" in cfg:
+            cfg.models.num_classes = num_classes
 
     logger.info("Instantiating model...")
     model = instantiate_model(cfg.models, num_classes=num_classes)

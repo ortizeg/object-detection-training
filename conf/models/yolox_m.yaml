@@ -1,4 +1,7 @@
 defaults:
-  - YOLOXM
   - yolox_base
   - _self_
+
+depth: 0.67
+width: 0.75
+weights_url: "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_m.pth"

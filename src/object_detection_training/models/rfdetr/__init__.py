@@ -1,9 +1,4 @@
-# ------------------------------------------------------------------------
-# Copyright (c) 2024 Roboflow. All Rights Reserved.
-# Original source: https://github.com/roboflow/rf-detr
-# This code is copied for use in this framework with original license.
-# ------------------------------------------------------------------------
-"""RFDETR datasets module."""
+"""RFDETR module."""
 
 from object_detection_training.models.rfdetr.coco import (
     CocoDetection,
@@ -11,6 +6,11 @@ from object_detection_training.models.rfdetr.coco import (
     collate_fn,
     compute_multi_scale_scales,
     make_coco_transforms,
+)
+from object_detection_training.models.rfdetr.lwdetr import (
+    PostProcess,
+    build_criterion_and_postprocessors,
+    build_model,
 )
 from object_detection_training.models.rfdetr.transforms import (
     Compose,
@@ -39,4 +39,8 @@ __all__ = [
     "RandomSizeCrop",
     "SquareResize",
     "ToTensor",
+    # Model
+    "build_model",
+    "build_criterion_and_postprocessors",
+    "PostProcess",
 ]

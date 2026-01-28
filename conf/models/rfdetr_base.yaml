@@ -1,11 +1,96 @@
+# RF-DETR Base Configuration
+# Based on official RFDETRBaseConfig from Roboflow
+
 defaults:
   - base
   - _self_
 
-# RFDETR Base Configuration
+_target_: object_detection_training.models.rfdetr_lightning.RFDETRLightningModel
+
+# RF-DETR Base Variant Configuration (matches official Roboflow config)
+weights_url: "https://storage.googleapis.com/rfdetr/base_coco/checkpoint_best_regular.pth"
+encoder_type: "dinov2_windowed_small"
+pretrained_encoder: "facebook/dinov2-small"
+
+# Architecture params - official RF-DETR Base defaults
+hidden_dim: 256
+dim_feedforward: 2048
+num_decoder_layers: 3
+num_queries: 300
+two_stage: true
+lite_refpoint_refine: true
+projector_scale: ["P4"]
+num_feature_levels: 1
+sa_nhead: 8
+ca_nhead: 16
+dec_n_points: 2
+drop_path: 0.0
+
+# Input configuration
+image_mean: [123.675, 116.28, 103.53]
+image_std: [58.395, 57.12, 57.375]
+
+# Structure
+model:
+  _target_: object_detection_training.models.rfdetr.lwdetr.LWDETR
+  num_classes: ${models.num_classes}
+  num_queries: ${models.num_queries}
+  aux_loss: true
+  group_detr: 13
+  two_stage: ${models.two_stage}
+  lite_refpoint_refine: ${models.lite_refpoint_refine}
+  backbone:
+    _target_: object_detection_training.models.rfdetr.backbone.build_backbone
+    encoder: ${models.encoder_type}
+    pretrained_encoder: ${models.pretrained_encoder}
+    drop_path: ${models.drop_path}
+    out_channels: ${models.hidden_dim}
+    out_feature_indexes: [2, 5, 8, 11]
+    projector_scale: ${models.projector_scale}
+    use_cls_token: true
+    patch_size: 14
+    num_windows: 4
+    positional_encoding_size: 37
+    hidden_dim: ${models.hidden_dim}
+  transformer:
+    _target_: object_detection_training.models.rfdetr.transformer.Transformer
+    d_model: ${models.hidden_dim}
+    dropout: 0.0
+    sa_nhead: ${models.sa_nhead}
+    ca_nhead: ${models.ca_nhead}
+    num_queries: ${models.num_queries}
+    dim_feedforward: ${models.dim_feedforward}
+    num_decoder_layers: ${models.num_decoder_layers}
+    num_feature_levels: ${models.num_feature_levels}
+    two_stage: ${models.two_stage}
+    bbox_reparam: true
+    lite_refpoint_refine: ${models.lite_refpoint_refine}
+    return_intermediate_dec: true
+    dec_n_points: ${models.dec_n_points}
+  segmentation_head: null
+
+criterion:
+  _target_: object_detection_training.models.rfdetr.lwdetr.SetCriterion
+  num_classes: ${models.num_classes}
+  matcher:
+    _target_: object_detection_training.models.rfdetr.matcher.HungarianMatcher
+    cost_class: 2.0
+    cost_bbox: 5.0
+    cost_giou: 2.0
+  weight_dict:
+    loss_ce: 2.0
+    loss_bbox: 5.0
+    loss_giou: 2.0
+  focal_alpha: 0.25
+  losses: ["labels", "boxes", "cardinality"]
+
+postprocessors:
+  _target_: object_detection_training.models.rfdetr.lwdetr.PostProcess
+  num_select: ${models.num_queries}
+
+# Training Hyperparams
 lr_encoder: 1.5e-4
 lr_vit_layer_decay: 0.8
 lr_component_decay: 0.7
-out_feature_indexes: [3, 6, 9, 12]
 download_pretrained: true
 pretrain_weights: null

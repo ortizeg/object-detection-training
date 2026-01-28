@@ -17,7 +17,7 @@ Collate utilities for detection training.
 Contains NestedTensor and collate_fn for handling variable-size images
 from multi-scale training.
 
-Originally from rfdetr.util.misc, copied here for clarity and stability.
+Originally from object_detection_training.models.rfdetr.util.misc, copied here for clarity and stability.
 """
 
 from typing import List, Optional

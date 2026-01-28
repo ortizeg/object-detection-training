@@ -9,10 +9,13 @@
 import torch
 import torch.nn as nn
 
+from object_detection_training.utils.hydra import register
+
 from .darknet import CSPDarknet
 from .network_blocks import BaseConv, CSPLayer, DWConv
 
 
+@register(group="backbone", name="yolo_pafpn")
 class YOLOPAFPN(nn.Module):
     """YOLOv3 model. Darknet 53 is the default backbone of this model."""
 
