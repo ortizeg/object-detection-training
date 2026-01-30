@@ -29,25 +29,14 @@ dependencies = [
 train-detect = "object_detection_training.task_manager:main"
 
 [tool.ruff]
-# Same as Black.
 line-length = 88
 indent-width = 4
-
-# Assume Python 3.11
 target-version = "py311"
 
 [tool.ruff.lint]
-# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
-# Unlike Flake8, Ruff doesn't enable all `E` and `F` codes by default.
-# See https://docs.astral.sh/ruff/rules/ for a full list of rules.
-select = ["E4", "E7", "E9", "F", "I"]
-ignore = ["E203"]
-
-# Allow fix for all enabled rules (when `--fix`) is provided.
+select = ["E", "F", "I", "N", "UP", "S", "B", "A", "C4", "T20", "SIM"]
 fixable = ["ALL"]
 unfixable = []
-
-# Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.format]
