@@ -16,8 +16,10 @@ from loguru import logger
 from PIL import Image
 
 from object_detection_training.data.detection_dataset import DetectionDataset
-from object_detection_training.models.rfdetr.collate import collate_fn
+from object_detection_training.models.rfdetr.collate import collate_fn as collate_fn
 from object_detection_training.utils.json_utils import load_json
+
+__all__ = ["COCODetectionDataset", "collate_fn", "collate_fn_with_image_ids"]
 
 
 class COCODetectionDataset(DetectionDataset):
@@ -189,7 +191,7 @@ class COCODetectionDataset(DetectionDataset):
         info = self.get_image_info(image_id)
         if info is None:
             return None
-        return self.img_folder / info["file_name"]
+        return self.img_folder / str(info["file_name"])
 
     def _load_image(self, image_id: int) -> Image.Image:
         """Load an image by its ID.
@@ -221,18 +223,18 @@ def collate_fn_with_image_ids(
         Tuple of (nested_tensor_images, list_of_targets, list_of_image_ids).
     """
     # Use rfdetr collate_fn for the images and targets
-    samples, targets = collate_fn(batch)
+    samples, targets = collate_fn(batch)  # type: ignore[no-untyped-call]
 
     # Extract image IDs
-    image_ids = []
+    image_ids: list[int] = []
     for target in targets:
         if "image_id" in target:
             image_ids.append(
-                target["image_id"].item()
+                int(target["image_id"].item())
                 if torch.is_tensor(target["image_id"])
-                else target["image_id"]
+                else int(target["image_id"])
             )
         else:
             image_ids.append(-1)
 
-    return samples, targets, image_ids
+    return samples, list(targets), image_ids

@@ -8,14 +8,12 @@ import lightning as L
 import torch
 from loguru import logger
 
-from object_detection_training.data.coco_detection_dataset import (
-    COCODetectionDataset,
-    collate_fn,
-)
+from object_detection_training.data.coco_detection_dataset import COCODetectionDataset
 from object_detection_training.models.rfdetr.coco import (
     make_coco_transforms,
     make_coco_transforms_square_div_64,
 )
+from object_detection_training.models.rfdetr.collate import collate_fn
 from object_detection_training.utils.hydra import register
 
 
@@ -108,7 +106,7 @@ class COCODataModule(L.LightningDataModule):
 
         # Cache for num_classes and mapping
         self._num_classes: int | None = None
-        self._class_names: list | None = None
+        self._class_names: list[str] | None = None
         self._label_map: dict[int, int] | None = None
 
         # Category filtering and size thresholds
@@ -116,23 +114,27 @@ class COCODataModule(L.LightningDataModule):
         self.size_thresholds = size_thresholds or {"small": 32, "medium": 96}
 
         # Lazy-loaded detection dataset for DataFrame access
-        self._train_detection_dataset = None
+        self._train_detection_dataset: COCODetectionDataset | None = None
 
     @property
     def num_classes(self) -> int:
         """Returns the number of classes in the training set."""
         if self._num_classes is None:
             self._load_metadata()
+        if self._num_classes is None:
+            raise RuntimeError("Failed to load num_classes from metadata")
         return self._num_classes
 
     @property
-    def class_names(self) -> list:
+    def class_names(self) -> list[str]:
         """Returns the human-readable class names."""
         if self._class_names is None:
             self._load_metadata()
+        if self._class_names is None:
+            raise RuntimeError("Failed to load class_names from metadata")
         return self._class_names
 
-    def _load_metadata(self):
+    def _load_metadata(self) -> None:
         """Loads metadata from training annotation file."""
         ann_file = self.train_path / "_annotations.coco.json"
         if not ann_file.exists():
@@ -184,7 +186,7 @@ class COCODataModule(L.LightningDataModule):
                 f"{self._class_names}"
             )
 
-    def _get_transforms(self, image_set: str):
+    def _get_transforms(self, image_set: str) -> Any:
         """Get transforms based on configuration and normalization parameters."""
         if self.square_resize_div_64:
             return make_coco_transforms_square_div_64(
@@ -236,7 +238,7 @@ class COCODataModule(L.LightningDataModule):
             class_names=self._class_names,
         )
 
-    def setup_train_dataset(self) -> Any:
+    def setup_train_dataset(self) -> COCODetectionDataset:
         """Helper to create training dataset for visualization/stats."""
         if self._train_detection_dataset is None:
             self._train_detection_dataset = self._create_detection_dataset(
@@ -246,7 +248,7 @@ class COCODataModule(L.LightningDataModule):
         self._train_detection_dataset.transforms = self._get_transforms("train")
         return self._train_detection_dataset
 
-    def train_dataloader(self):
+    def train_dataloader(self) -> torch.utils.data.DataLoader[Any]:
         """Return training data loader using new COCODetectionDataset."""
         if self._train_detection_dataset is None:
             self._train_detection_dataset = self._create_detection_dataset(
@@ -254,7 +256,7 @@ class COCODataModule(L.LightningDataModule):
             )
             # Update class info from the dataset
             self._num_classes = self._train_detection_dataset.num_classes
-            self._class_names = self._train_detection_dataset.class_names
+            self._class_names = list(self._train_detection_dataset.class_names)
             self._label_map = self._train_detection_dataset.label_map
 
         self._train_detection_dataset.transforms = self._get_transforms("train")
@@ -268,7 +270,7 @@ class COCODataModule(L.LightningDataModule):
             persistent_workers=self.persistent_workers,
         )
 
-    def val_dataloader(self):
+    def val_dataloader(self) -> torch.utils.data.DataLoader[Any]:
         """Return validation data loader using new COCODetectionDataset."""
         val_dataset = self._create_detection_dataset(self.val_path, "val")
         val_dataset.transforms = self._get_transforms("val")
@@ -282,7 +284,7 @@ class COCODataModule(L.LightningDataModule):
             persistent_workers=self.persistent_workers,
         )
 
-    def test_dataloader(self):
+    def test_dataloader(self) -> torch.utils.data.DataLoader[Any] | None:
         """Return test data loader if test dataset exists."""
         if not self.test_path:
             return None
@@ -310,4 +312,7 @@ class COCODataModule(L.LightningDataModule):
 
     def export_labels_mapping(self, save_path: Path) -> None:
         """Export labels mapping JSON for model outputs."""
-        self.train_detection_dataset.export_labels_mapping(save_path)
+        dataset = self.train_detection_dataset
+        if dataset is None:
+            raise RuntimeError("Training detection dataset not initialized")
+        dataset.export_labels_mapping(save_path)

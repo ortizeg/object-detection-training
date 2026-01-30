@@ -56,7 +56,7 @@ class VisualizationCallback(L.Callback):
 
         self.confidence_threshold = confidence_threshold
 
-    def _denormalize(self, tensor: torch.Tensor) -> np.ndarray:
+    def _denormalize(self, tensor: torch.Tensor) -> np.ndarray[Any, np.dtype[Any]]:
         """Denormalize image tensor to numpy array [H, W, 3] (0-255)."""
         # tensor is [3, H, W]
         tensor = tensor.cpu()
@@ -67,7 +67,7 @@ class VisualizationCallback(L.Callback):
         array = tensor.permute(1, 2, 0).numpy()
         return np.clip(array, 0, 255).astype(np.uint8)
 
-    def _collect_samples(self, dataloader, num: int) -> list[dict[str, Any]]:
+    def _collect_samples(self, dataloader: Any, num: int) -> list[dict[str, Any]]:
         """Collect random samples from dataloader."""
         samples = []
         dataset = dataloader.dataset
@@ -94,8 +94,9 @@ class VisualizationCallback(L.Callback):
         self, trainer: L.Trainer, pl_module: L.LightningModule
     ) -> None:
         """Collect validation samples on first epoch."""
-        if trainer.datamodule:
-            class_names = getattr(trainer.datamodule, "class_names", "ATTR_MISSING")
+        datamodule = trainer.datamodule  # type: ignore[attr-defined]
+        if datamodule:
+            class_names = getattr(datamodule, "class_names", "ATTR_MISSING")
             logger.info(
                 f"Validation Epoch Start: Datamodule found. Classes: {class_names}"
             )
@@ -107,9 +108,9 @@ class VisualizationCallback(L.Callback):
                 f"Collecting {self.num_samples} validation samples for visualization..."
             )
             # We assume datamodule is available
-            if trainer.datamodule and trainer.datamodule.val_dataloader():
+            if datamodule and datamodule.val_dataloader():
                 self.val_samples = self._collect_samples(
-                    trainer.datamodule.val_dataloader(), self.num_samples
+                    datamodule.val_dataloader(), self.num_samples
                 )
 
     def on_validation_epoch_end(
@@ -134,7 +135,7 @@ class VisualizationCallback(L.Callback):
 
                 # Model forward
                 outputs = pl_module(batch_imgs)
-                preds = pl_module.get_predictions(outputs, confidence_threshold=0.01)[0]
+                preds = pl_module.get_predictions(outputs, confidence_threshold=0.01)[0]  # type: ignore[operator]
 
                 # Denormalize image for drawing
                 image_np = self._denormalize(img_tensor.cpu())
@@ -171,9 +172,12 @@ class VisualizationCallback(L.Callback):
                     )
 
                 # Filter by confidence? Default 0.3 for viz
-                detections = detections[
-                    detections.confidence > self.confidence_threshold
-                ]
+                if detections.confidence is not None:
+                    filtered = detections[
+                        detections.confidence > self.confidence_threshold
+                    ]
+                    if isinstance(filtered, sv.Detections):
+                        detections = filtered
 
                 # Draw Predictions
                 pred_image = image_np.copy()
@@ -184,12 +188,13 @@ class VisualizationCallback(L.Callback):
                 # Use class names for predictions
                 # We prioritize class names from datamodule
                 pred_labels_list: list[str] | None = None
-                class_names = getattr(trainer.datamodule, "class_names", None)
+                datamodule = trainer.datamodule  # type: ignore[attr-defined]
+                class_names = getattr(datamodule, "class_names", None)
 
                 if class_names is None:
-                    logger.info(f"trainer.datamodule: {trainer.datamodule}")
-                    if trainer.datamodule:
-                        logger.info(f"datamodule attributes: {dir(trainer.datamodule)}")
+                    logger.info(f"trainer.datamodule: {datamodule}")
+                    if datamodule:
+                        logger.info(f"datamodule attributes: {dir(datamodule)}")
 
                 if class_names and detections.class_id is not None:
                     pred_labels_list = []
@@ -225,13 +230,10 @@ class VisualizationCallback(L.Callback):
         self, trainer: L.Trainer, pl_module: L.LightningModule
     ) -> None:
         """Collect test samples."""
-        if (
-            not self.test_samples
-            and trainer.datamodule
-            and trainer.datamodule.test_dataloader()
-        ):
+        datamodule = trainer.datamodule  # type: ignore[attr-defined]
+        if not self.test_samples and datamodule and datamodule.test_dataloader():
             self.test_samples = self._collect_samples(
-                trainer.datamodule.test_dataloader(), self.num_samples
+                datamodule.test_dataloader(), self.num_samples
             )
 
     def on_test_epoch_end(
@@ -252,7 +254,7 @@ class VisualizationCallback(L.Callback):
             for sample in self.test_samples:
                 img_tensor = sample["image"].to(device)
                 outputs = pl_module(img_tensor.unsqueeze(0))
-                preds = pl_module.get_predictions(outputs, confidence_threshold=0.0)[0]
+                preds = pl_module.get_predictions(outputs, confidence_threshold=0.0)[0]  # type: ignore[operator]
 
                 image_np = self._denormalize(img_tensor.cpu())
                 img_h, img_w = image_np.shape[:2]
@@ -269,9 +271,12 @@ class VisualizationCallback(L.Callback):
                 )
 
                 # Filter by confidence for test viz as well (using 0.3 as default)
-                detections = detections[
-                    detections.confidence > self.confidence_threshold
-                ]
+                if detections.confidence is not None:
+                    filtered = detections[
+                        detections.confidence > self.confidence_threshold
+                    ]
+                    if isinstance(filtered, sv.Detections):
+                        detections = filtered
 
                 annotated_image = image_np.copy()
                 annotated_image = self.box_annotator.annotate(
@@ -280,8 +285,13 @@ class VisualizationCallback(L.Callback):
 
                 # Fetch class names
                 pred_labels_list = None
-                class_names = getattr(trainer.datamodule, "class_names", None)
-                if class_names:
+                datamodule = trainer.datamodule  # type: ignore[attr-defined]
+                class_names = getattr(datamodule, "class_names", None)
+                if (
+                    class_names
+                    and detections.class_id is not None
+                    and detections.confidence is not None
+                ):
                     pred_labels_list = []
                     for cid, conf in zip(
                         detections.class_id, detections.confidence, strict=True
@@ -370,14 +380,11 @@ class VisualizationCallback(L.Callback):
 
             # Use class names if available
             labels_list = None
-            if (
-                hasattr(trainer.datamodule, "class_names")
-                and trainer.datamodule.class_names
-            ):
+            datamodule = trainer.datamodule  # type: ignore[attr-defined]
+            if hasattr(datamodule, "class_names") and datamodule.class_names:
                 try:
                     labels_list = [
-                        trainer.datamodule.class_names[int(class_id)]
-                        for class_id in labels
+                        datamodule.class_names[int(class_id)] for class_id in labels
                     ]
                 except IndexError:
                     logger.warning(f"Class ID out of range for class names: {labels}")
@@ -417,7 +424,8 @@ class VisualizationCallback(L.Callback):
         """Collect and visualize ground truth samples at the start of training."""
         logger.info("Visualizing ground truth samples...")
 
-        if not trainer.datamodule:
+        datamodule = trainer.datamodule  # type: ignore[attr-defined]
+        if not datamodule:
             logger.warning("No datamodule found, skipping ground truth visualization.")
             return
 
@@ -431,26 +439,23 @@ class VisualizationCallback(L.Callback):
 
         # Train
         try:
-            if trainer.datamodule.train_dataloader():
-                splits.append(("train", trainer.datamodule.train_dataloader()))
+            if datamodule.train_dataloader():
+                splits.append(("train", datamodule.train_dataloader()))
         except Exception as e:
             logger.warning(f"Could not get train dataloader for visualization: {e}")
 
         # Val
         try:
-            if trainer.datamodule.val_dataloader():
-                splits.append(("val", trainer.datamodule.val_dataloader()))
+            if datamodule.val_dataloader():
+                splits.append(("val", datamodule.val_dataloader()))
         except Exception as e:
             logger.warning(f"Could not get val dataloader for visualization: {e}")
 
         # Test
         try:
             # Some datamodules might not have test_dataloader implemented or set up
-            if (
-                hasattr(trainer.datamodule, "test_dataloader")
-                and trainer.datamodule.test_dataloader()
-            ):
-                splits.append(("test", trainer.datamodule.test_dataloader()))
+            if hasattr(datamodule, "test_dataloader") and datamodule.test_dataloader():
+                splits.append(("test", datamodule.test_dataloader()))
         except Exception as e:
             # This is fine, test might not be available
             logger.debug(f"Could not get test dataloader for visualization: {e}")

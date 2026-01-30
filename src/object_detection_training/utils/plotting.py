@@ -9,8 +9,8 @@ import torch
 
 
 def plot_pr_curve(
-    recall: np.ndarray,
-    precision: np.ndarray,
+    recall: np.ndarray[Any, np.dtype[Any]],
+    precision: np.ndarray[Any, np.dtype[Any]],
     class_name: str,
     save_path: Path,
     ap: float | None = None,
@@ -51,7 +51,7 @@ def plot_pr_curve(
 
 
 def save_detection_curves_plots(
-    curves_data: dict[str, Any],
+    curves_data: dict[int | str, Any],
     class_names: list[str] | None,
     output_dir: Path,
     prefix: str = "",

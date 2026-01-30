@@ -22,14 +22,14 @@ class TrainingHistoryPlotter(L.Callback):
         """
         super().__init__()
         self.output_dir = Path(output_dir)
-        self.history = {
+        self.history: dict[str, list[float | None]] = {
             "train_loss": [],
             "val_loss": [],
             "val_mAP": [],
             "val_mAP50": [],
             "val_mAP75": [],
         }
-        self.epochs = []
+        self.epochs: list[int] = []
 
     def on_train_epoch_end(
         self, trainer: L.Trainer, pl_module: L.LightningModule
@@ -96,7 +96,7 @@ class TrainingHistoryPlotter(L.Callback):
 
             logger.error(traceback.format_exc())
 
-    def _plot_metrics(self):
+    def _plot_metrics(self) -> None:
         """Draw and save plots, overwriting existing files."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -104,11 +104,17 @@ class TrainingHistoryPlotter(L.Callback):
         plt.figure(figsize=(10, 6))
         if any(v is not None for v in self.history["train_loss"]):
             plt.plot(
-                self.epochs, self.history["train_loss"], label="Train Loss", marker="o"
+                self.epochs,
+                self.history["train_loss"],  # type: ignore[arg-type]
+                label="Train Loss",
+                marker="o",
             )
         if any(v is not None for v in self.history["val_loss"]):
             plt.plot(
-                self.epochs, self.history["val_loss"], label="Val Loss", marker="s"
+                self.epochs,
+                self.history["val_loss"],  # type: ignore[arg-type]
+                label="Val Loss",
+                marker="s",
             )
 
         plt.title("Training and Validation Loss")
@@ -132,7 +138,7 @@ class TrainingHistoryPlotter(L.Callback):
         any_plotted = False
         for key, (label, marker) in metrics_to_plot.items():
             if any(v is not None for v in self.history[key]):
-                plt.plot(self.epochs, self.history[key], label=label, marker=marker)
+                plt.plot(self.epochs, self.history[key], label=label, marker=marker)  # type: ignore[arg-type]
                 any_plotted = True
 
         plt.title("Validation mAP")

@@ -7,6 +7,7 @@ Automatically exports models to ONNX format during training.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import lightning as L
 import omegaconf
@@ -65,7 +66,7 @@ class ONNXExportCallback(L.Callback):
         """Export model to ONNX."""
         try:
             if hasattr(pl_module, "export_onnx"):
-                return pl_module.export_onnx(
+                return pl_module.export_onnx(  # type: ignore[operator, no-any-return]
                     output_path=str(output_path),
                     input_height=self.input_height,
                     input_width=self.input_width,
@@ -98,7 +99,7 @@ class ONNXExportCallback(L.Callback):
 
         # Export best model
         if self.export_best and trainer.checkpoint_callback:
-            best_path = trainer.checkpoint_callback.best_model_path
+            best_path = trainer.checkpoint_callback.best_model_path  # type: ignore[attr-defined]
             if best_path:
                 try:
                     # Load best checkpoint
@@ -135,7 +136,7 @@ class ONNXExportCallback(L.Callback):
 
         # Export all checkpoints
         if self.export_all_checkpoints and trainer.checkpoint_callback:
-            checkpoint_dir = Path(trainer.checkpoint_callback.dirpath)
+            checkpoint_dir = Path(trainer.checkpoint_callback.dirpath)  # type: ignore[attr-defined]
             for ckpt_file in checkpoint_dir.glob("*.ckpt"):
                 if ckpt_file.stem in ["last", "best"]:
                     continue
@@ -166,10 +167,10 @@ class ONNXExportCallback(L.Callback):
 
         logger.info(f"Exported {len(self._exported_checkpoints)} ONNX models")
 
-    def state_dict(self):
+    def state_dict(self) -> dict[str, Any]:
         """Return callback state."""
         return {"exported_checkpoints": self._exported_checkpoints}
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load callback state."""
         self._exported_checkpoints = state_dict.get("exported_checkpoints", [])

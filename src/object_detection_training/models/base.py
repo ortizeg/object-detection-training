@@ -66,13 +66,13 @@ class BaseDetectionModel(L.LightningModule):
         self.save_hyperparameters()
 
     @abstractmethod
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Any:
         """Configure optimizers and schedulers."""
         raise NotImplementedError
 
     @abstractmethod
     def forward(
-        self, images: torch.Tensor, targets: list[dict] | None = None
+        self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
     ) -> dict[str, torch.Tensor]:
         """
         Forward pass of the model.
@@ -126,7 +126,7 @@ class BaseDetectionModel(L.LightningModule):
         input_width: int = 640,
         opset_version: int = 17,
         simplify: bool = True,
-        dynamic_axes: dict | None = None,
+        dynamic_axes: dict[str, Any] | None = None,
     ) -> str:
         """
         Export model to ONNX format.
@@ -158,15 +158,15 @@ class BaseDetectionModel(L.LightningModule):
                 "labels": {0: "batch_size"},
             }
 
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            logger.info(f"Exporting model to ONNX: {output_path}")
+            logger.info(f"Exporting model to ONNX: {out_path}")
             torch.onnx.export(
                 self,
-                dummy_input,
-                str(output_path),
+                (dummy_input,),
+                str(out_path),
                 opset_version=opset_version,
                 input_names=["images"],
                 output_names=["boxes", "scores", "labels"],
@@ -177,10 +177,10 @@ class BaseDetectionModel(L.LightningModule):
                 try:
                     import onnxsim
 
-                    model = onnx.load(str(output_path))
+                    model = onnx.load(str(out_path))
                     model_simp, check = onnxsim.simplify(model)
                     if check:
-                        onnx.save(model_simp, str(output_path))
+                        onnx.save(model_simp, str(out_path))
                         logger.info("ONNX model simplified successfully")
                     else:
                         logger.warning(
@@ -194,11 +194,11 @@ class BaseDetectionModel(L.LightningModule):
             import traceback
 
             logger.error(traceback.format_exc())
-            if output_path.exists():
-                output_path.unlink()
+            if out_path.exists():
+                out_path.unlink()
 
         self.set_export_mode(False)
-        return str(output_path)
+        return str(out_path)
 
     def compute_model_stats(
         self,
@@ -348,7 +348,7 @@ class BaseDetectionModel(L.LightningModule):
 
         return sv_preds, sv_targets
 
-    def training_step(self, batch, batch_idx) -> torch.Tensor:
+    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         """Training step."""
         images, targets = batch
         outputs = self(images, targets)
@@ -377,14 +377,14 @@ class BaseDetectionModel(L.LightningModule):
             )
         self.log("train/loss", total_loss, on_step=True, on_epoch=True, prog_bar=True)
 
-        return total_loss
+        return torch.as_tensor(total_loss)
 
     def on_validation_epoch_start(self) -> None:
         """Initialize validation storage."""
-        self.val_preds_storage = []
-        self.val_targets_storage = []
+        self.val_preds_storage: list[dict[str, torch.Tensor]] = []
+        self.val_targets_storage: list[dict[str, torch.Tensor]] = []
 
-    def validation_step(self, batch, batch_idx) -> None:
+    def validation_step(self, batch: Any, batch_idx: int) -> None:
         """Validation step."""
         images, targets = batch
         outputs = self(images, targets)
@@ -458,7 +458,9 @@ class BaseDetectionModel(L.LightningModule):
         self.log("val/mAP_75", result.map75)
 
         # Log per-class mAP if available
-        class_names = getattr(self.trainer.datamodule, "class_names", None)
+        class_names: list[str] | None = getattr(
+            getattr(self.trainer, "datamodule", None), "class_names", None
+        )
 
         if class_names and result.ap_per_class is not None:
             # Create a mapping from class_id to AP (average across IoU thresholds)
@@ -500,10 +502,10 @@ class BaseDetectionModel(L.LightningModule):
         self.val_targets_storage = []
 
     def on_test_epoch_start(self) -> None:
-        self.test_preds_storage = []
-        self.test_targets_storage = []
+        self.test_preds_storage: list[dict[str, torch.Tensor]] = []
+        self.test_targets_storage: list[dict[str, torch.Tensor]] = []
 
-    def test_step(self, batch, batch_idx) -> None:
+    def test_step(self, batch: Any, batch_idx: int) -> None:
         """Test step."""
         images, targets = batch
         outputs = self(images)
@@ -552,7 +554,9 @@ class BaseDetectionModel(L.LightningModule):
         self.log("test/mAP_50", result.map50)
         self.log("test/mAP_75", result.map75)
 
-        class_names = getattr(self.trainer.datamodule, "class_names", None)
+        class_names: list[str] | None = getattr(
+            getattr(self.trainer, "datamodule", None), "class_names", None
+        )
 
         if class_names and result.ap_per_class is not None:
             # Create a mapping from class_id to AP (average across IoU thresholds)

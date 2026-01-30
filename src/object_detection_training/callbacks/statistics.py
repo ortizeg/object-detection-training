@@ -8,6 +8,7 @@ using the DatasetStatistics class.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import lightning as L
 from loguru import logger
@@ -65,7 +66,7 @@ class DatasetStatisticsCallback(L.Callback):
 
         logger.info(f"Dataset statistics exported to {self.output_dir}")
 
-    def _get_detection_dataset(self, datamodule, split: str):
+    def _get_detection_dataset(self, datamodule: Any, split: str) -> Any:
         """Get the underlying DetectionDataset for a split."""
         # Try to get detection dataset directly from COCODataModule
         if split == "train" and hasattr(datamodule, "train_detection_dataset"):
@@ -91,7 +92,9 @@ class DatasetStatisticsCallback(L.Callback):
 
         return None
 
-    def _print_summary_table(self, stats_list):
+    def _print_summary_table(
+        self, stats_list: list[tuple[str, DatasetStatistics]]
+    ) -> None:
         """Print a summary table with rich formatting."""
         console = Console()
         table = Table(
@@ -136,7 +139,9 @@ class DatasetStatisticsCallback(L.Callback):
         logger.info("\nDataset Summary:")
         console.print(table)
 
-    def _print_class_table(self, stats_list):
+    def _print_class_table(
+        self, stats_list: list[tuple[str, DatasetStatistics]]
+    ) -> None:
         """Print class distribution table."""
         if not stats_list:
             return
@@ -174,10 +179,10 @@ class DatasetStatisticsCallback(L.Callback):
         logger.info("\nClass Distribution:")
         console.print(table)
 
-    def state_dict(self):
+    def state_dict(self) -> dict[str, Any]:
         """Return callback state."""
         return {}
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load callback state."""
         pass

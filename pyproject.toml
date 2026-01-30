@@ -75,10 +75,13 @@ module = [
     "object_detection_training.models.rfdetr.collate",
     "object_detection_training.models.rfdetr.transforms",
 ]
+strict = false
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 disallow_untyped_calls = false
 check_untyped_defs = false
+warn_return_any = false
+disable_error_code = ["type-arg", "misc", "assignment", "arg-type"]
 
 [tool.semantic_release]
 version_variable = "pyproject.toml:version"

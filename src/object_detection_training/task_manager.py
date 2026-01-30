@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import sys
+from typing import Any
 
 import hydra
 import numpy as np
@@ -38,16 +39,18 @@ from object_detection_training.utils.hydra import (
 if not hasattr(onnx.helper, "float32_to_bfloat16"):
     logger.warning("Monkey-patching onnx.helper.float32_to_bfloat16 for compatibility")
 
-    def float32_to_bfloat16(x: np.ndarray) -> np.ndarray:
+    def float32_to_bfloat16(
+        x: np.ndarray[Any, np.dtype[Any]],
+    ) -> np.ndarray[Any, np.dtype[Any]]:
         # bfloat16 is the top 16 bits of float32
         y = np.ascontiguousarray(x).view(np.uint32)
         return (y >> 16).astype(np.uint16)
 
-    onnx.helper.float32_to_bfloat16 = float32_to_bfloat16
+    onnx.helper.float32_to_bfloat16 = float32_to_bfloat16  # type: ignore[attr-defined]
 
 
 # Configure loguru to show logs based on level
-def setup_loguru(log_level="INFO"):
+def setup_loguru(log_level: str = "INFO") -> None:
     logger.remove()
     logger.add(
         sys.stderr,
@@ -59,7 +62,7 @@ def setup_loguru(log_level="INFO"):
     )
 
 
-def setup_logging(log_level="INFO"):
+def setup_logging(log_level: str = "INFO") -> None:
     """Configure logging to show logs based on level."""
     import logging
     import warnings
@@ -82,7 +85,7 @@ def setup_logging(log_level="INFO"):
     if log_level.upper() == "DEBUG":
         import torch
 
-        torch.set_printoptions(profile="full")
+        torch.set_printoptions(profile="full")  # type: ignore[no-untyped-call]
 
 
 @hydra.main(version_base=None, config_path="../../conf", config_name="train")

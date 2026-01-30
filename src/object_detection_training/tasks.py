@@ -66,12 +66,12 @@ class TrainTask(BaseTask):
     )
 
     # Callbacks
-    callbacks: list | None = Field(
+    callbacks: list[Any] | None = Field(
         default=None, description="List of callbacks (instantiated via Hydra)"
     )
 
     # Loggers
-    loggers: list | None = Field(
+    loggers: list[Any] | None = Field(
         default=None, description="List of loggers (instantiated via Hydra)"
     )
 
@@ -112,7 +112,8 @@ class TrainTask(BaseTask):
             logger.info("Pretrained weights will be downloaded by the model wrapper.")
 
         # Ensure output directory exists
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        if self.output_dir is not None:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Output directory: {self.output_dir}")
 
         # Setup trainer with callbacks and loggers
@@ -126,7 +127,7 @@ class TrainTask(BaseTask):
             trainer_kwargs["callbacks"] = self.callbacks
         if self.loggers:
             trainer_kwargs["logger"] = self.loggers
-        trainer_kwargs["default_root_dir"] = str(self.output_dir)
+        trainer_kwargs["default_root_dir"] = str(self.output_dir)  # type: ignore[assignment]
 
         # Merge trainer config with additional kwargs
         if isinstance(self.trainer, L.Trainer):
@@ -162,7 +163,7 @@ class TrainTask(BaseTask):
 
         return {
             "best_model_path": (
-                trainer.checkpoint_callback.best_model_path
+                getattr(trainer.checkpoint_callback, "best_model_path", None)
                 if trainer.checkpoint_callback
                 else None
             ),

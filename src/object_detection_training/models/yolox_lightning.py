@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -149,20 +150,20 @@ class YOLOXLightningModel(BaseDetectionModel):
         logger.info(f"Initializing YOLOX {variant} model")
 
         in_channels = [256, 512, 1024]
-        backbone = YOLOPAFPN(
+        backbone = YOLOPAFPN(  # type: ignore[no-untyped-call]
             depth=depth,
             width=width,
             in_channels=in_channels,
             depthwise=depthwise,
         )
-        head = YOLOXHead(
+        head = YOLOXHead(  # type: ignore[no-untyped-call]
             num_classes=num_classes,
             width=width,
             in_channels=in_channels,
             depthwise=depthwise,
         )
 
-        self.model = YOLOX(backbone=backbone, head=head)
+        self.model = YOLOX(backbone=backbone, head=head)  # type: ignore[no-untyped-call]
 
         # Initialize BatchNorm with official YOLOX settings
         for m in self.model.modules():
@@ -185,7 +186,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         self.save_hyperparameters()
 
-    def _reinitialize_cls_biases(self):
+    def _reinitialize_cls_biases(self) -> None:
         """Reinitialize classification prediction biases after weight loading.
 
         When loading pretrained weights with different num_classes, the cls_preds
@@ -200,7 +201,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
 
-    def _download_and_load_weights(self):
+    def _download_and_load_weights(self) -> None:
         """Download and load pretrained weights."""
         if self.variant not in YOLOX_CHECKPOINT_URLS:
             logger.warning(f"No pretrained weights available for {self.variant}")
@@ -215,7 +216,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         self._load_weights(str(checkpoint_path))
 
-    def _load_weights(self, checkpoint_path: str):
+    def _load_weights(self, checkpoint_path: str) -> None:
         """Load weights from checkpoint."""
         logger.info(f"Loading weights from {checkpoint_path}")
         try:
@@ -262,7 +263,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         except Exception as e:
             logger.error(f"Failed to load weights: {e}")
 
-    def training_step(self, batch, batch_idx) -> torch.Tensor:
+    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         """Training step."""
         images, targets = batch
         # self(images, targets) returns dict from YOLOX.forward
@@ -289,24 +290,26 @@ class YOLOXLightningModel(BaseDetectionModel):
         self.log("train/l1_loss", l1_loss, on_step=True, on_epoch=True, prog_bar=False)
 
         # Log num_fg
+        num_fg_val: float | torch.Tensor
         if isinstance(num_fg, torch.Tensor):
             num_fg_val = num_fg.float().mean()
         else:
             num_fg_val = float(num_fg)
         self.log("train/num_fg", num_fg_val, on_step=True, on_epoch=True, prog_bar=True)
 
-        return loss
+        return torch.as_tensor(loss)
 
     def forward(
-        self, images: torch.Tensor, targets: list[dict] | None = None
-    ) -> dict[str, torch.Tensor]:
+        self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
         """Forward pass."""
         # Handle NestedTensor from rfdetr collation
         if hasattr(images, "tensors"):
             images = images.tensors
 
         if self._export_mode:
-            return self.model(images)
+            result: dict[str, torch.Tensor] = self.model(images)
+            return result
 
         if targets is not None:
             # Un-normalize targets for YOLOX loss calculation
@@ -325,16 +328,16 @@ class YOLOXLightningModel(BaseDetectionModel):
                     new_t["boxes"] = boxes
                 unnormalized_targets.append(new_t)
 
-            outputs = self.model(images, unnormalized_targets)
+            outputs: dict[str, Any] = self.model(images, unnormalized_targets)
             # Add images shape to outputs for post-processing resolution retrieval
             if "image_shape" not in outputs:
                 outputs["image_shape"] = images.shape[2:]
             return outputs
         else:
             with torch.no_grad():
-                outputs = self.model(images)
+                raw_outputs = self.model(images)
             # Add images shape to outputs for post-processing resolution retrieval
-            return {"predictions": outputs, "image_shape": images.shape[2:]}
+            return {"predictions": raw_outputs, "image_shape": images.shape[2:]}
 
     def get_predictions(
         self,
@@ -343,7 +346,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         confidence_threshold: float = 0.1,
     ) -> list[dict[str, torch.Tensor]]:
         """Convert model outputs to prediction format."""
-        predictions = []
+        predictions: list[dict[str, torch.Tensor]] = []
 
         pred = outputs.get("predictions")
         if pred is None:
@@ -414,7 +417,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         return predictions
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Any:
         """
         Configure optimizer and learning rate scheduler.
 
@@ -449,8 +452,9 @@ class YOLOXLightningModel(BaseDetectionModel):
         )
 
         # Scheduler with warmup + cosine annealing
+        total_steps: int
         if self.trainer and hasattr(self.trainer, "estimated_stepping_batches"):
-            total_steps = self.trainer.estimated_stepping_batches
+            total_steps = int(self.trainer.estimated_stepping_batches)
         else:
             # Fallback for testing or when trainer is not yet fully initialized
             total_steps = 10000
@@ -460,7 +464,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         # Warmup scheduler
         warmup_epochs = self.warmup_epochs
-        max_epochs = self.trainer.max_epochs if self.trainer else 100
+        max_epochs: int = (self.trainer.max_epochs or 100) if self.trainer else 100
 
         # Calculate warmup steps
         warmup_steps = int(total_steps * (warmup_epochs / max(1, max_epochs)))
@@ -499,7 +503,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 class YOLOXNanoModel(YOLOXLightningModel):
     """YOLOX Nano model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="nano", **kwargs)
 
@@ -508,7 +512,7 @@ class YOLOXNanoModel(YOLOXLightningModel):
 class YOLOXTinyModel(YOLOXLightningModel):
     """YOLOX Tiny model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="tiny", **kwargs)
 
@@ -517,7 +521,7 @@ class YOLOXTinyModel(YOLOXLightningModel):
 class YOLOXSModel(YOLOXLightningModel):
     """YOLOX Small model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="s", **kwargs)
 
@@ -526,7 +530,7 @@ class YOLOXSModel(YOLOXLightningModel):
 class YOLOXMModel(YOLOXLightningModel):
     """YOLOX Medium model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="m", **kwargs)
 
@@ -535,7 +539,7 @@ class YOLOXMModel(YOLOXLightningModel):
 class YOLOXLModel(YOLOXLightningModel):
     """YOLOX Large model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="l", **kwargs)
 
@@ -544,6 +548,6 @@ class YOLOXLModel(YOLOXLightningModel):
 class YOLOXXModel(YOLOXLightningModel):
     """YOLOX X-Large model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="x", **kwargs)

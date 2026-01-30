@@ -9,12 +9,20 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
+from typing import Any
 
 import omegaconf
 import torch
 from loguru import logger
-from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
-from rfdetr.models import build_criterion_and_postprocessors
+from rfdetr import (  # type: ignore[attr-defined]
+    RFDETRLarge,
+    RFDETRMedium,
+    RFDETRNano,
+    RFDETRSmall,
+)
+from rfdetr.models import (  # type: ignore[attr-defined]
+    build_criterion_and_postprocessors,
+)
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 from object_detection_training.models.base import BaseDetectionModel
@@ -66,7 +74,7 @@ class RFDETRLightningModel(BaseDetectionModel):
     """
 
     # Model variant configurations
-    MODEL_VARIANTS = {
+    MODEL_VARIANTS: dict[str, dict[str, Any]] = {
         "nano": {"class": RFDETRNano, "checkpoint_key": "nano"},
         "small": {"class": RFDETRSmall, "checkpoint_key": "small"},
         "medium": {"class": RFDETRMedium, "checkpoint_key": "medium"},
@@ -185,9 +193,9 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         # Build criterion for training
         logger.info("Building criterion for training...")
-        if build_criterion_and_postprocessors:
+        if build_criterion_and_postprocessors is not None:
             # args are in the wrapper
-            self.criterion, self.postprocessors = build_criterion_and_postprocessors(
+            self.criterion, self.postprocessors = build_criterion_and_postprocessors(  # type: ignore[no-untyped-call]
                 self.rfdetr_wrapper.model.args
             )
         else:
@@ -196,14 +204,14 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         self.save_hyperparameters()
 
-    def training_step(self, batch, batch_idx) -> torch.Tensor:
+    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         """Custom training step to handle RFDETR weighted losses."""
         images, targets = batch
 
         # self(images, targets) returns dict with 'loss' and 'train/...' keys
         outputs = self(images, targets)
         # Individual loss components for logging (scalars only)
-        total_loss = outputs["loss"]
+        total_loss: torch.Tensor = outputs["loss"]
 
         # Log total loss
         self.log("train/loss", total_loss, on_step=True, on_epoch=True, prog_bar=True)
@@ -216,7 +224,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         return total_loss
 
     def forward(
-        self, images: torch.Tensor, targets: list[dict] | None = None
+        self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
     ) -> dict[str, torch.Tensor]:
         """
         Forward pass.
@@ -240,7 +248,7 @@ class RFDETRLightningModel(BaseDetectionModel):
             return self._forward_inference(images)
 
     def _forward_train(
-        self, images: torch.Tensor, targets: list[dict]
+        self, images: torch.Tensor, targets: list[dict[str, Any]]
     ) -> dict[str, torch.Tensor]:
         """Forward pass for training."""
         # self.model is now the LWDETR nn.Module
@@ -271,12 +279,12 @@ class RFDETRLightningModel(BaseDetectionModel):
     def _forward_inference(self, images: torch.Tensor) -> dict[str, torch.Tensor]:
         """Forward pass for inference."""
         with torch.no_grad():
-            outputs = self.model(images)
+            outputs: dict[str, torch.Tensor] = self.model(images)
         return outputs
 
-    def _forward_for_export(self, images: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    def _forward_for_export(self, images: torch.Tensor) -> dict[str, torch.Tensor]:
         """Forward pass for ONNX export."""
-        outputs = self.model(images)
+        outputs: dict[str, torch.Tensor] = self.model(images)
         # Return in export format (boxes, scores, labels)
         return outputs
 
@@ -291,7 +299,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         Uses sigmoid activation to match rfdetr package's PostProcess.
         RFDETR uses focal loss which is multi-label, so sigmoid is correct.
         """
-        predictions = []
+        predictions: list[dict[str, torch.Tensor]] = []
 
         pred_logits = outputs.get("pred_logits")
         pred_boxes = outputs.get("pred_boxes")
@@ -350,12 +358,12 @@ class RFDETRLightningModel(BaseDetectionModel):
         input_width: int = 640,
         opset_version: int = 17,
         simplify: bool = True,
-        dynamic_axes: dict | None = None,
+        dynamic_axes: dict[str, Any] | None = None,
     ) -> str:
         """Export using RFDETR's built-in export method."""
 
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
 
         torch.serialization.add_safe_globals(
             [
@@ -367,7 +375,7 @@ class RFDETRLightningModel(BaseDetectionModel):
             ]
         )
 
-        logger.info(f"Exporting RFDETR model to ONNX: {output_path}")
+        logger.info(f"Exporting RFDETR model to ONNX: {out_path}")
 
         # Forcing legacy ONNX exporter as the new Dynamo exporter (torch.export)
         # has issues with RF-DETR's architectural complexities (like unallocated
@@ -379,7 +387,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         # will fall back to the legacy TorchScript-based path.
         original_export = torch.onnx.export
 
-        def monkeypatched_export(*args, **kwargs):
+        def monkeypatched_export(*args: Any, **kwargs: Any) -> Any:
             kwargs["dynamo"] = False
             return original_export(*args, **kwargs)
 
@@ -388,7 +396,7 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         # Use RFDETR's built-in export
         self.rfdetr_wrapper.export(
-            output_dir=str(output_path.parent),
+            output_dir=str(out_path.parent),
             simplify=simplify,
             opset_version=opset_version,
         )
@@ -396,9 +404,9 @@ class RFDETRLightningModel(BaseDetectionModel):
         # Restore original export
         torch.onnx.export = original_export
 
-        return str(output_path)
+        return str(out_path)
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Any:
         """Configure optimizers and schedulers matching rfdetr package."""
         # Parameters values are now passed via Hydra config
         lr_vit_layer_decay = self.lr_vit_layer_decay
@@ -454,7 +462,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         optimizer = torch.optim.AdamW(param_dicts)
 
         # Learning rate scheduler: Linear Warmup + Cosine Annealing
-        max_epochs = self.trainer.max_epochs if self.trainer else 300
+        max_epochs: int = (self.trainer.max_epochs or 300) if self.trainer else 300
         warmup_epochs = max(
             1, self.warmup_epochs
         )  # Ensure at least 1 epoch for LinearLR
@@ -497,7 +505,7 @@ class RFDETRLightningModel(BaseDetectionModel):
 class RFDETRNanoModel(RFDETRLightningModel):
     """RFDETR Nano model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="nano", **kwargs)
 
@@ -506,7 +514,7 @@ class RFDETRNanoModel(RFDETRLightningModel):
 class RFDETRSmallModel(RFDETRLightningModel):
     """RFDETR Small model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="small", **kwargs)
 
@@ -515,7 +523,7 @@ class RFDETRSmallModel(RFDETRLightningModel):
 class RFDETRMediumModel(RFDETRLightningModel):
     """RFDETR Medium model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="medium", **kwargs)
 
@@ -524,6 +532,6 @@ class RFDETRMediumModel(RFDETRLightningModel):
 class RFDETRLargeModel(RFDETRLightningModel):
     """RFDETR Large model for Hydra instantiation."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
         super().__init__(variant="large", **kwargs)

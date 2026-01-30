@@ -20,7 +20,8 @@ def load_json(path: Path) -> dict[str, Any]:
         Parsed JSON data as a dictionary.
     """
     with open(path, "rb") as f:
-        return orjson.loads(f.read())
+        result: dict[str, Any] = orjson.loads(f.read())
+        return result
 
 
 def save_json(data: dict[str, Any], path: Path, indent: bool = True) -> None:

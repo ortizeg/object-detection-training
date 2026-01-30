@@ -57,7 +57,7 @@ class ModelInfoCallback(L.Callback):
 
         if hasattr(pl_module, "compute_model_stats"):
             try:
-                self.model_info = pl_module.compute_model_stats(
+                self.model_info = pl_module.compute_model_stats(  # type: ignore[operator]
                     input_height=self.input_height,
                     input_width=self.input_width,
                 )
@@ -169,11 +169,11 @@ class ModelInfoCallback(L.Callback):
             "input_shape": [1, 3, self.input_height, self.input_width],
         }
 
-    def state_dict(self):
+    def state_dict(self) -> dict[str, Any]:
         """Return callback state."""
         return {"model_info": self.model_info}
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load callback state."""
         self.model_info = state_dict.get("model_info", {})
 
@@ -188,7 +188,7 @@ class ModelInfoCallback(L.Callback):
             save_dir: Directory to save the labels mapping file.
         """
         try:
-            datamodule = trainer.datamodule
+            datamodule = trainer.datamodule  # type: ignore[attr-defined]
 
             # Try using new train_detection_dataset if available
             if hasattr(datamodule, "train_detection_dataset"):

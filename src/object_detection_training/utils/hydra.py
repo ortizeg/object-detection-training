@@ -129,7 +129,7 @@ def instantiate_callbacks(cfg: DictConfig) -> list[Any]:
 
     for name, callback_cfg in cfg.items():
         if callback_cfg is not None and "_target_" in callback_cfg:
-            logger.debug(f"Instantiating callback: {name}")
+            logger.debug(f"Instantiating callback: {name}")  # type: ignore[str-bytes-safe]
             callback = hydra.utils.instantiate(callback_cfg)
             callbacks.append(callback)
             logger.info(f"Callback instantiated: {type(callback).__name__}")
@@ -155,7 +155,7 @@ def instantiate_loggers(cfg: DictConfig) -> list[Any]:
 
     for name, logger_cfg in cfg.items():
         if logger_cfg is not None and "_target_" in logger_cfg:
-            logger.debug(f"Instantiating logger: {name}")
+            logger.debug(f"Instantiating logger: {name}")  # type: ignore[str-bytes-safe]
             log_instance = hydra.utils.instantiate(logger_cfg)
             loggers.append(log_instance)
             logger.info(f"Logger instantiated: {type(log_instance).__name__}")
@@ -197,7 +197,7 @@ def instantiate_trainer(
     # Remove _target_ if present (we instantiate Trainer directly)
     trainer_kwargs.pop("_target_", None)
 
-    trainer = L.Trainer(**trainer_kwargs)
+    trainer = L.Trainer(**trainer_kwargs)  # type: ignore[misc]
     logger.info(f"Trainer instantiated with {len(callbacks or [])} callbacks")
 
     return trainer

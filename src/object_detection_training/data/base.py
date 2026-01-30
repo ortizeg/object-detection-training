@@ -60,7 +60,7 @@ class BaseDataModule(L.LightningDataModule):
         return None
 
     @abstractmethod
-    def collate_fn(self, batch):
+    def collate_fn(self, batch: Any) -> Any:
         """Custom collate function for batching."""
         pass
 
@@ -73,10 +73,10 @@ class BaseDataModule(L.LightningDataModule):
         if stage == "test" or stage is None:
             self.test_dataset = self.setup_test_dataset()
 
-    def train_dataloader(self) -> DataLoader:
+    def train_dataloader(self) -> DataLoader[Any]:
         """Return training data loader."""
         return DataLoader(
-            self.train_dataset,
+            self.train_dataset,  # type: ignore[arg-type]
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
@@ -86,10 +86,10 @@ class BaseDataModule(L.LightningDataModule):
             drop_last=True,
         )
 
-    def val_dataloader(self) -> DataLoader:
+    def val_dataloader(self) -> DataLoader[Any]:
         """Return validation data loader."""
         return DataLoader(
-            self.val_dataset,
+            self.val_dataset,  # type: ignore[arg-type]
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
@@ -98,7 +98,7 @@ class BaseDataModule(L.LightningDataModule):
             collate_fn=self.collate_fn,
         )
 
-    def test_dataloader(self) -> DataLoader | None:
+    def test_dataloader(self) -> DataLoader[Any] | None:
         """Return test data loader if test dataset exists."""
         if self.test_dataset is None:
             return None

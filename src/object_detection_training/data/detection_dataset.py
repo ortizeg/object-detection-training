@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,7 @@ import numpy as np
 import pandas as pd
 import torch
 from PIL import Image
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 
 class SizeThresholds(BaseModel):
@@ -39,13 +40,13 @@ class SizeThresholds(BaseModel):
 
     @field_validator("medium")
     @classmethod
-    def medium_gt_small(cls, v: float, info) -> float:
+    def medium_gt_small(cls, v: float, info: ValidationInfo) -> float:
         if "small" in info.data and v <= info.data["small"]:
             raise ValueError("medium threshold must be greater than small threshold")
         return v
 
 
-class DetectionDataset(torch.utils.data.Dataset, ABC):
+class DetectionDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]], ABC):
     """Base class for detection datasets with pandas DataFrame storage.
 
     Inherits from torch.utils.data.Dataset to provide standard indexing.
@@ -106,6 +107,8 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         """Image metadata DataFrame."""
         if self._images_df is None:
             self._load_and_process()
+        if self._images_df is None:
+            raise RuntimeError("Failed to load images DataFrame")
         return self._images_df
 
     @property
@@ -113,6 +116,8 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         """Detection annotations DataFrame with computed metadata."""
         if self._annotations_df is None:
             self._load_and_process()
+        if self._annotations_df is None:
+            raise RuntimeError("Failed to load annotations DataFrame")
         return self._annotations_df
 
     @property
@@ -120,6 +125,8 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         """Category ID to name mapping (after filtering)."""
         if self._categories is None:
             self._load_and_process()
+        if self._categories is None:
+            raise RuntimeError("Failed to load categories")
         return self._categories
 
     @property
@@ -127,6 +134,8 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         """Mapping from original category IDs to contiguous 0-indexed IDs."""
         if self._label_map is None:
             self._load_and_process()
+        if self._label_map is None:
+            raise RuntimeError("Failed to load label map")
         return self._label_map
 
     @property
@@ -290,7 +299,7 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         return matches.iloc[0]
 
     def add_computed_column(
-        self, column_name: str, compute_fn: callable, **kwargs
+        self, column_name: str, compute_fn: Callable[..., pd.Series], **kwargs: Any
     ) -> None:
         """Add a custom computed column to annotations_df.
 
@@ -307,6 +316,8 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         """
         if self._annotations_df is None:
             self._load_and_process()
+        if self._annotations_df is None:
+            raise RuntimeError("Failed to load annotations DataFrame")
         self._annotations_df[column_name] = compute_fn(self._annotations_df, **kwargs)
 
     def __len__(self) -> int:
@@ -346,10 +357,10 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
 
         # Build target dict in COCO/DETR format
         # boxes in [x, y, w, h] format -> convert to [x1, y1, x2, y2]
-        boxes = []
-        labels = []
-        areas = []
-        iscrowd = []
+        boxes_list: list[list[Any]] = []
+        labels_list: list[int] = []
+        areas_list: list[Any] = []
+        iscrowd_list: list[int] = []
 
         label_map = self.label_map
 
@@ -369,23 +380,23 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
             if x2 <= x or y2 <= y:
                 continue
 
-            boxes.append([x, y, x2, y2])
+            boxes_list.append([x, y, x2, y2])
             # Map to contiguous labels
-            labels.append(label_map[ann["category_id"]])
-            areas.append(ann["area"] if "area" in ann else bw * bh)
-            iscrowd.append(1 if ann.get("is_crowd", False) else 0)
+            labels_list.append(label_map[ann["category_id"]])
+            areas_list.append(ann["area"] if "area" in ann else bw * bh)
+            iscrowd_list.append(1 if ann.get("is_crowd", False) else 0)
 
-        # Handle empty annotations
-        if len(boxes) == 0:
+        # Convert to tensors (handle empty annotations)
+        if len(boxes_list) == 0:
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             labels = torch.zeros((0,), dtype=torch.int64)
             areas = torch.zeros((0,), dtype=torch.float32)
             iscrowd = torch.zeros((0,), dtype=torch.int64)
         else:
-            boxes = torch.as_tensor(boxes, dtype=torch.float32)
-            labels = torch.as_tensor(labels, dtype=torch.int64)
-            areas = torch.as_tensor(areas, dtype=torch.float32)
-            iscrowd = torch.as_tensor(iscrowd, dtype=torch.int64)
+            boxes = torch.as_tensor(boxes_list, dtype=torch.float32)
+            labels = torch.as_tensor(labels_list, dtype=torch.int64)
+            areas = torch.as_tensor(areas_list, dtype=torch.float32)
+            iscrowd = torch.as_tensor(iscrowd_list, dtype=torch.int64)
 
         target = {
             "boxes": boxes,

@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import matplotlib.figure
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -96,7 +97,7 @@ class DatasetStatistics:
         save_path: Path | None = None,
         figsize: tuple[int, int] = (12, 6),
         bins: int = 50,
-    ) -> plt.Figure:
+    ) -> matplotlib.figure.Figure:
         """Generate histogram of box sizes with small/medium/large regions.
 
         Args:
@@ -218,7 +219,7 @@ class DatasetStatistics:
         save_path: Path | None = None,
         figsize: tuple[int, int] = (12, 6),
         horizontal: bool = False,
-    ) -> plt.Figure:
+    ) -> matplotlib.figure.Figure:
         """Generate bar chart of class distribution.
 
         Args:
@@ -342,7 +343,7 @@ class DatasetStatistics:
         summary = self.summary()
 
         # Convert numpy types to Python types
-        def convert(obj):
+        def convert(obj: Any) -> Any:
             if isinstance(obj, np.integer):
                 return int(obj)
             elif isinstance(obj, np.floating):
