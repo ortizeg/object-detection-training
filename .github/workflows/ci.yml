@@ -10,6 +10,8 @@ jobs:
   check:
     name: Lint and Test
     runs-on: ubuntu-latest
+    env:
+      CONDA_OVERRIDE_CUDA: "12.1"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
