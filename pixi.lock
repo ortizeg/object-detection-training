@@ -4207,7 +4207,7 @@ packages:
 - pypi: ./
   name: object-detection-training
   version: 0.0.1
-  sha256: 26581a3a2f31bbd619996c426deec755a34f1e5ea810783674195cfb83d5adb6
+  sha256: 44bf9064c9584f00f4870c5c0118beaadedb12eb6dcc41de15e6a201bba7dd12
   requires_dist:
   - hydra-core
   - loguru
