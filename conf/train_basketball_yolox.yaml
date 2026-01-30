@@ -1,53 +1,48 @@
-# Basketball YOLOX Training Configuration
-# ==========================================
+# Basketball YOLOX Cloud Training Configuration
+# ================================================
+# Tuned for NVIDIA L4 (24 GB) / T4 (16 GB) GPUs.
 #
-# Usage:
-#   pixi run python -m object_detection_training.task_manager \
+# Usage (GCP / cloud):
+#   python -m object_detection_training.task_manager \
 #       --config-name train_basketball_yolox \
 #       data.train_path=/path/to/train \
 #       data.val_path=/path/to/val
 #
-# Overfit test (small subset):
-#   pixi run python -m object_detection_training.task_manager \
-#       --config-name train_basketball_yolox \
-#       data.train_path=/path/to/train \
-#       data.val_path=/path/to/val \
-#       trainer.max_epochs=50 \
-#       trainer.limit_train_batches=10 \
-#       trainer.limit_val_batches=5
+# For T4 (16 GB) reduce batch size:
+#   ... data.batch_size=16 trainer.accumulate_grad_batches=4
 
 defaults:
   - _self_
   - task: train
-  - model: yolox_nano
+  - model: yolox_s
   - data: data_basketball
   - trainer: trainer_yolox
   - callbacks: default
   - logging: null
 
 # Global Parameters
-input_height: 416
-input_width: 416
+input_height: 640
+input_width: 640
 log_level: INFO
 
 # Override model for basketball (10 classes)
 models:
   num_classes: 10
-  learning_rate: 0.005
+  learning_rate: 0.01
   weight_decay: 5e-4
   warmup_epochs: 5
   input_height: ${input_height}
   input_width: ${input_width}
 
-# Override data for basketball
+# Data — L4 fits batch_size=32 at 640x640 for yolox_s
 data:
-  batch_size: 16
-  num_workers: 4
+  batch_size: 32
+  num_workers: 8
 
-# Override trainer for local testing
+# Trainer — cloud GPU settings
 trainer:
   max_epochs: 300
-  precision: 32-true
+  precision: 16-mixed
   gradient_clip_val: 5.0
   accumulate_grad_batches: 2
   val_check_interval: 1.0
@@ -55,7 +50,7 @@ trainer:
 # Hydra configuration
 hydra:
   run:
-    dir: outputs/${now:%Y-%m-%d}/yolox_nano_basketball_${now:%H-%M-%S}
+    dir: outputs/${now:%Y-%m-%d}/yolox_s_basketball_${now:%H-%M-%S}
   sweep:
-    dir: outputs/multirun/${now:%Y-%m-%d}/yolox_nano_basketball_${now:%H-%M-%S}
+    dir: outputs/multirun/${now:%Y-%m-%d}/yolox_s_basketball_${now:%H-%M-%S}
     subdir: ${hydra.job.num}
