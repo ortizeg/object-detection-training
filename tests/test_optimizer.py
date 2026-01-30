@@ -50,19 +50,19 @@ def test_yolox_optimizer_config():
     assert optimizer.defaults["nesterov"] is True
 
     # 2. Check Parameter Groups
-    # We expect 2 groups: one with weight decay, one without (bias/norm)
+    # Official YOLOX uses 3 groups:
+    #   pg0: BN weights (no decay)
+    #   pg1: other weights (with decay)
+    #   pg2: biases (no decay)
     param_groups = optimizer.param_groups
-    assert len(param_groups) == 2
+    assert len(param_groups) == 3
 
-    # Identify groups by weight_decay
-    decay_group = [g for g in param_groups if g["weight_decay"] > 0]
-    no_decay_group = [g for g in param_groups if g["weight_decay"] == 0]
-
-    assert len(decay_group) == 1
-    assert len(no_decay_group) == 1
-
-    assert decay_group[0]["weight_decay"] == 0.0005
-    assert no_decay_group[0]["weight_decay"] == 0.0
+    # pg0 = BN weights (base group, no decay)
+    assert param_groups[0]["weight_decay"] == 0.0
+    # pg1 = other weights (with decay)
+    assert param_groups[1]["weight_decay"] == 0.0005
+    # pg2 = biases (no decay)
+    assert param_groups[2]["weight_decay"] == 0.0
 
     # 3. Check Scheduler
     if scheduler_config:

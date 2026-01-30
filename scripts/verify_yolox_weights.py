@@ -113,7 +113,7 @@ def verify_checkpoint_loading():
     for k in common:
         if state_dict[k].shape != model_sd[k].shape:
             mismatches.append(
-                f"  {k}: ckpt={state_dict[k].shape} " f"vs model={model_sd[k].shape}"
+                f"  {k}: ckpt={state_dict[k].shape} vs model={model_sd[k].shape}"
             )
 
     print(f"\n4. Shape mismatches: {len(mismatches)}")
