@@ -26,6 +26,7 @@ import pycocotools.mask as coco_mask
 import torch
 import torch.utils.data
 import torchvision
+from loguru import logger
 
 import object_detection_training.models.rfdetr.transforms as T
 from object_detection_training.models.rfdetr.collate import collate_fn
@@ -252,7 +253,7 @@ def make_coco_transforms_square_div_64(
         )
         if skip_random_resize:
             scales = [scales[-1]]
-        print(scales)
+        logger.debug("Multi-scale sizes: {}", scales)
 
     if image_set == "train":
         return T.Compose(
