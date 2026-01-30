@@ -1,0 +1,30 @@
+# Basketball RF-DETR Training Configuration
+# ==========================================
+#
+# Usage:
+#   python -m object_detection_training.task_manager \
+#       --config-name train_basketball_rfdetr \
+#       train_path=/path/to/train \
+#       val_path=/path/to/val
+
+defaults:
+  - _self_
+  - task: train
+  - models: rfdetr_small
+  - data: data_basketball
+  - trainer: default
+  - callbacks: default
+  - logging: null
+
+# Global Parameters
+input_height: 512
+input_width: 512
+log_level: INFO
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

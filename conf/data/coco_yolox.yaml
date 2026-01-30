@@ -1,0 +1,25 @@
+# Optimized COCO Dataset Configuration for YOLOX
+# Uses model's input resolution for consistency
+_target_: object_detection_training.data.coco_data_module.COCODataModule
+train_path: ??? # Required - path to training data
+val_path: ??? # Required - path to validation data
+test_path: null # Optional - path to test data
+
+# Optimized for total batch size 32 (16 * 2 accumulation) on L4 GPU
+batch_size: 16
+num_workers: 8 # Leveraging higher CPU count on GCP instance
+
+input_height: ${models.input_height}
+input_width: ${models.input_width}
+multi_scale: true
+expanded_scales: true
+skip_random_resize: false
+patch_size: 16
+num_windows: 2
+pin_memory: true
+persistent_workers: true
+square_resize_div_64: true
+
+# Normalization parameters linked from model config (keeps 0-255 scale)
+image_mean: ${models.image_mean}
+image_std: ${models.image_std}

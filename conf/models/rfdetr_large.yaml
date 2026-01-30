@@ -1,0 +1,24 @@
+# RF-DETR Large Configuration
+# Based on official RFDETRLargeConfig from Roboflow (2026 version)
+
+defaults:
+  - rfdetr_base
+  - _self_
+
+# Large-specific overrides
+encoder_type: "dinov2_windowed_small"
+pretrained_encoder: "facebook/dinov2-small"
+weights_url: "https://storage.googleapis.com/rfdetr/rf-detr-large-2026.pth"
+
+# Architecture overrides for Large
+num_decoder_layers: 4        # Large uses 4 layers
+input_height: 704            # 704 resolution for higher accuracy
+input_width: 704
+
+# Backbone overrides
+model:
+  backbone:
+    out_feature_indexes: [3, 6, 9, 12]   # Large uses [3,6,9,12]
+    patch_size: 16           # Large uses patch_size=16
+    num_windows: 2           # Large uses 2 windows
+    positional_encoding_size: 44         # 704 / 16 = 44
