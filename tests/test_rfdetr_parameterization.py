@@ -17,7 +17,6 @@ import torch
 sys.path.append(join(dirname(__file__), "../src"))
 import object_detection_training.models as _  # noqa: F401, E402
 
-
 # ---------------------------------------------------------------------------
 # Variant parameter definitions (source of truth: Pydantic config classes)
 # ---------------------------------------------------------------------------
@@ -37,9 +36,13 @@ VARIANT_EXPECTED_PARAMS = {
         "bbox_reparam": True,
         "lite_refpoint_refine": True,
         "layer_norm": True,
+        "amp": True,
         "group_detr": 13,
+        "gradient_checkpointing": False,
         "ia_bce_loss": True,
         "cls_loss_coef": 1.0,
+        "segmentation_head": False,
+        "mask_downsample_ratio": 4,
         "projector_scale": ["P4"],
         "num_queries": 300,
         "num_select": 300,
@@ -61,9 +64,13 @@ VARIANT_EXPECTED_PARAMS = {
         "bbox_reparam": True,
         "lite_refpoint_refine": True,
         "layer_norm": True,
+        "amp": True,
         "group_detr": 13,
+        "gradient_checkpointing": False,
         "ia_bce_loss": True,
         "cls_loss_coef": 1.0,
+        "segmentation_head": False,
+        "mask_downsample_ratio": 4,
         "projector_scale": ["P4"],
         "num_queries": 300,
         "num_select": 300,
@@ -85,9 +92,13 @@ VARIANT_EXPECTED_PARAMS = {
         "bbox_reparam": True,
         "lite_refpoint_refine": True,
         "layer_norm": True,
+        "amp": True,
         "group_detr": 13,
+        "gradient_checkpointing": False,
         "ia_bce_loss": True,
         "cls_loss_coef": 1.0,
+        "segmentation_head": False,
+        "mask_downsample_ratio": 4,
         "projector_scale": ["P4"],
         "num_queries": 300,
         "num_select": 300,
@@ -109,9 +120,13 @@ VARIANT_EXPECTED_PARAMS = {
         "bbox_reparam": True,
         "lite_refpoint_refine": True,
         "layer_norm": True,
+        "amp": True,
         "group_detr": 13,
+        "gradient_checkpointing": False,
         "ia_bce_loss": True,
         "cls_loss_coef": 1.0,
+        "segmentation_head": False,
+        "mask_downsample_ratio": 4,
         "projector_scale": ["P3", "P5"],
         "num_queries": 300,
         "num_select": 300,
@@ -134,6 +149,7 @@ VARIANT_YAML_MAP = {
 # Hydra config completeness tests
 # ---------------------------------------------------------------------------
 
+
 class TestHydraConfigCompleteness:
     """Verify YAML configs contain all required architecture parameters."""
 
@@ -144,9 +160,7 @@ class TestHydraConfigCompleteness:
         expected = VARIANT_EXPECTED_PARAMS[variant]
 
         with hydra.initialize(version_base=None, config_path="../conf"):
-            cfg = hydra.compose(
-                config_name="train", overrides=[f"models={yaml_name}"]
-            )
+            cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
 
         for key, expected_val in expected.items():
             assert key in cfg.models, (
@@ -164,26 +178,33 @@ class TestHydraConfigCompleteness:
     def test_base_params_present(self):
         """rfdetr_base.yaml must define common loss/matcher/scheduler params."""
         with hydra.initialize(version_base=None, config_path="../conf"):
-            cfg = hydra.compose(
-                config_name="train", overrides=["models=rfdetr_small"]
-            )
+            cfg = hydra.compose(config_name="train", overrides=["models=rfdetr_small"])
 
         base_params = [
-            "set_cost_class", "set_cost_bbox", "set_cost_giou",
-            "bbox_loss_coef", "giou_loss_coef", "focal_alpha", "aux_loss",
-            "warmup_start_factor", "cosine_eta_min_factor",
-            "dim_feedforward", "decoder_norm", "vit_encoder_num_layers",
-            "position_embedding", "amp", "gradient_checkpointing",
+            "set_cost_class",
+            "set_cost_bbox",
+            "set_cost_giou",
+            "bbox_loss_coef",
+            "giou_loss_coef",
+            "focal_alpha",
+            "aux_loss",
+            "warmup_start_factor",
+            "cosine_eta_min_factor",
+            "dim_feedforward",
+            "decoder_norm",
+            "vit_encoder_num_layers",
+            "position_embedding",
+            "amp",
+            "gradient_checkpointing",
         ]
         for param in base_params:
-            assert param in cfg.models, (
-                f"Missing base param '{param}' in rfdetr config"
-            )
+            assert param in cfg.models, f"Missing base param '{param}' in rfdetr config"
 
 
 # ---------------------------------------------------------------------------
 # YAML-to-Pydantic equivalence tests
 # ---------------------------------------------------------------------------
+
 
 class TestYamlPydanticEquivalence:
     """Verify YAML params match Pydantic config class values."""
@@ -209,18 +230,33 @@ class TestYamlPydanticEquivalence:
 
         yaml_name = VARIANT_YAML_MAP[variant]
         with hydra.initialize(version_base=None, config_path="../conf"):
-            cfg = hydra.compose(
-                config_name="train", overrides=[f"models={yaml_name}"]
-            )
+            cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
 
         # Check architecture params that exist in both Pydantic and YAML
         arch_params = [
-            "encoder", "hidden_dim", "dec_layers", "patch_size", "num_windows",
-            "sa_nheads", "ca_nheads", "dec_n_points", "two_stage",
-            "bbox_reparam", "lite_refpoint_refine", "layer_norm", "amp",
-            "group_detr", "gradient_checkpointing", "ia_bce_loss",
-            "cls_loss_coef", "segmentation_head", "mask_downsample_ratio",
-            "num_queries", "num_select", "resolution", "positional_encoding_size",
+            "encoder",
+            "hidden_dim",
+            "dec_layers",
+            "patch_size",
+            "num_windows",
+            "sa_nheads",
+            "ca_nheads",
+            "dec_n_points",
+            "two_stage",
+            "bbox_reparam",
+            "lite_refpoint_refine",
+            "layer_norm",
+            "amp",
+            "group_detr",
+            "gradient_checkpointing",
+            "ia_bce_loss",
+            "cls_loss_coef",
+            "segmentation_head",
+            "mask_downsample_ratio",
+            "num_queries",
+            "num_select",
+            "resolution",
+            "positional_encoding_size",
         ]
 
         for param in arch_params:
@@ -254,9 +290,7 @@ class TestYamlPydanticEquivalence:
 
         yaml_name = VARIANT_YAML_MAP[variant]
         with hydra.initialize(version_base=None, config_path="../conf"):
-            cfg = hydra.compose(
-                config_name="train", overrides=[f"models={yaml_name}"]
-            )
+            cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
         yaml_scale = list(cfg.models.projector_scale)
         assert yaml_scale == pydantic_scale, (
             f"projector_scale mismatch for {variant}: "
@@ -282,9 +316,7 @@ class TestYamlPydanticEquivalence:
 
         yaml_name = VARIANT_YAML_MAP[variant]
         with hydra.initialize(version_base=None, config_path="../conf"):
-            cfg = hydra.compose(
-                config_name="train", overrides=[f"models={yaml_name}"]
-            )
+            cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
         yaml_indexes = list(cfg.models.out_feature_indexes)
         assert yaml_indexes == pydantic_indexes, (
             f"out_feature_indexes mismatch for {variant}: "
@@ -295,6 +327,7 @@ class TestYamlPydanticEquivalence:
 # ---------------------------------------------------------------------------
 # Model architecture equivalence tests
 # ---------------------------------------------------------------------------
+
 
 class TestModelArchitectureEquivalence:
     """Verify YAML-parameterized models match Pydantic-config models."""
@@ -322,14 +355,18 @@ class TestModelArchitectureEquivalence:
         pydantic_model = Model(**config.model_dump())
         pydantic_state = pydantic_model.model.state_dict()
 
-        # Build via YAML params (new path)
+        # Build via YAML params (new path) - must include device
         expected = VARIANT_EXPECTED_PARAMS[variant]
-        yaml_params = {
-            k: v for k, v in expected.items()
-            if k != "checkpoint_name"
-        }
+        yaml_params = {k: v for k, v in expected.items() if k != "checkpoint_name"}
         yaml_params["num_classes"] = 2
         yaml_params["pretrain_weights"] = None
+        # Match Pydantic config's device auto-detection
+        if torch.cuda.is_available():
+            yaml_params["device"] = "cuda"
+        elif torch.backends.mps.is_available():
+            yaml_params["device"] = "mps"
+        else:
+            yaml_params["device"] = "cpu"
         yaml_model = Model(**yaml_params)
         yaml_state = yaml_model.model.state_dict()
 
@@ -378,29 +415,27 @@ class TestModelArchitectureEquivalence:
 # Scheduler params configurable tests
 # ---------------------------------------------------------------------------
 
+
 class TestSchedulerParamsConfigurable:
     """Verify scheduler params are passed through from YAML."""
 
     def test_warmup_start_factor_stored(self):
         """warmup_start_factor must be stored on the model instance."""
         with hydra.initialize(version_base=None, config_path="../conf"):
-            cfg = hydra.compose(
-                config_name="train", overrides=["models=rfdetr_small"]
-            )
+            cfg = hydra.compose(config_name="train", overrides=["models=rfdetr_small"])
         assert cfg.models.warmup_start_factor == 1e-3
 
     def test_cosine_eta_min_factor_stored(self):
         """cosine_eta_min_factor must be stored on the model instance."""
         with hydra.initialize(version_base=None, config_path="../conf"):
-            cfg = hydra.compose(
-                config_name="train", overrides=["models=rfdetr_small"]
-            )
+            cfg = hydra.compose(config_name="train", overrides=["models=rfdetr_small"])
         assert cfg.models.cosine_eta_min_factor == 0.05
 
 
 # ---------------------------------------------------------------------------
 # Hydra override tests
 # ---------------------------------------------------------------------------
+
 
 class TestHydraOverride:
     """Verify Hydra overrides reach the composed config."""
