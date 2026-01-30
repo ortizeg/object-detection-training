@@ -13,10 +13,37 @@ dependencies = [
     "rfdetr",
 ]
 
-[tool.black]
+[tool.ruff]
+target-version = "py311"
 line-length = 88
-target-version = ['py311']
-include = '\.pyi?$'
 
-[tool.isort]
-profile = "black"
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "S",    # bandit (security)
+    "A",    # builtins
+    "C4",   # comprehensions
+    "RUF",  # ruff-specific
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+"src/object_detection_training/models/yolox/**" = ["ALL"]
+"src/object_detection_training/models/rfdetr/**" = ["ALL"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "albumentations.*", "torchvision.*", "rfdetr.*", "hydra.*", "omegaconf.*", "torch.*", "lightning.*", "tensorboard.*"]
+ignore_missing_imports = true
