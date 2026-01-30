@@ -2,3 +2,12 @@ defaults:
   - RFDETRSmall
   - rfdetr_base
   - _self_
+
+# Small-specific architecture
+out_feature_indexes: [3, 6, 9, 12]
+num_windows: 2
+dec_layers: 3
+patch_size: 16
+resolution: 512
+positional_encoding_size: 32
+checkpoint_name: "rf-detr-small.pth"

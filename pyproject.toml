@@ -18,11 +18,25 @@ dependencies = [
     "wandb>=0.23.1,<0.24",
     "iopath>=0.1.10,<0.2",
     "colored>=2.3.1,<3",
-    "rfdetr",
+    "torch",
+    "torchvision",
+    "pycocotools",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "Pillow",
+    "opencv-python",
+    "rich",
+    "transformers<4.49.0",
+    "scipy",
+    "requests",
+    "tqdm",
     "torchmetrics",
     "python-dotenv",
     "orjson",
     "tensorboard",
+    "supervision",
+    "peft",
 ]
 
 [project.scripts]
@@ -74,6 +88,16 @@ module = [
     "object_detection_training.models.rfdetr.coco",
     "object_detection_training.models.rfdetr.collate",
     "object_detection_training.models.rfdetr.transforms",
+    "object_detection_training.models.rfdetr.lwdetr",
+    "object_detection_training.models.rfdetr.transformer",
+    "object_detection_training.models.rfdetr.matcher",
+    "object_detection_training.models.rfdetr.model_factory",
+    "object_detection_training.models.rfdetr.config",
+    "object_detection_training.models.rfdetr.position_encoding",
+    "object_detection_training.models.rfdetr.segmentation_head",
+    "object_detection_training.models.rfdetr.backbone.*",
+    "object_detection_training.models.rfdetr.ops.*",
+    "object_detection_training.models.rfdetr.util.*",
 ]
 strict = false
 disallow_untyped_defs = false

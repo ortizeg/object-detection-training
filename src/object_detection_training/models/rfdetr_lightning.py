@@ -2,6 +2,8 @@
 RFDETR model wrappers for PyTorch Lightning.
 
 This module wraps the rfdetr models to work with the Lightning training framework.
+Uses local model architecture code instead of the rfdetr PyPI package.
+All architecture parameters are configured via Hydra YAML configs.
 """
 
 from __future__ import annotations
@@ -14,37 +16,21 @@ from typing import Any
 import omegaconf
 import torch
 from loguru import logger
-from rfdetr import (  # type: ignore[attr-defined]
-    RFDETRLarge,
-    RFDETRMedium,
-    RFDETRNano,
-    RFDETRSmall,
-)
-from rfdetr.models import (  # type: ignore[attr-defined]
-    build_criterion_and_postprocessors,
-)
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 from object_detection_training.models.base import BaseDetectionModel
+from object_detection_training.models.rfdetr.lwdetr import (
+    build_criterion_and_postprocessors,
+)
+from object_detection_training.models.rfdetr.model_factory import (
+    HOSTED_MODELS,
+    Model,
+)
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.hydra import register
 
-# Model checkpoint URLs for download
-CHECKPOINT_URLS = {
-    "nano": (
-        "https://storage.googleapis.com/rfdetr/nano_coco/checkpoint_best_regular.pth"
-    ),
-    "small": (
-        "https://storage.googleapis.com/rfdetr/small_coco/checkpoint_best_regular.pth"
-    ),
-    "medium": (
-        "https://storage.googleapis.com/rfdetr/medium_coco/checkpoint_best_regular.pth"
-    ),
-    "large": "https://storage.googleapis.com/rfdetr/rf-detr-large.pth",
-}
 
-
-def download_checkpoint(url: str, destination: Path) -> Path:
+def _download_checkpoint(url: str, destination: Path) -> Path:
     """Download a checkpoint file if it doesn't exist."""
     import urllib.request
 
@@ -70,52 +56,72 @@ class RFDETRLightningModel(BaseDetectionModel):
     """
     PyTorch Lightning wrapper for RFDETR models.
 
-    Wraps the rfdetr package models to work with Lightning training framework.
+    All architecture parameters are passed directly from Hydra YAML configs.
+    No Pydantic config classes are used at runtime.
     """
-
-    # Model variant configurations
-    MODEL_VARIANTS: dict[str, dict[str, Any]] = {
-        "nano": {"class": RFDETRNano, "checkpoint_key": "nano"},
-        "small": {"class": RFDETRSmall, "checkpoint_key": "small"},
-        "medium": {"class": RFDETRMedium, "checkpoint_key": "medium"},
-        "large": {"class": RFDETRLarge, "checkpoint_key": "large"},
-    }
 
     def __init__(
         self,
-        variant: str = "small",
+        # --- Base training params (from base.yaml) ---
         num_classes: int = 80,
-        pretrain_weights: str | None = None,
         learning_rate: float = 2.5e-4,
-        lr_encoder: float = 1.5e-4,
         weight_decay: float = 1e-4,
-        warmup_epochs: int = 0,  # Match rfdetr TrainConfig default
+        warmup_epochs: int = 0,
         input_height: int = 512,
         input_width: int = 512,
-        lr_vit_layer_decay: float = 0.8,
-        lr_component_decay: float = 0.7,
-        out_feature_indexes: list[int] | None = None,
-        download_pretrained: bool = True,
         output_dir: str = "outputs",
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
+        # --- RFDETR training params (from rfdetr_base.yaml) ---
+        lr_encoder: float = 1.5e-4,
+        lr_vit_layer_decay: float = 0.8,
+        lr_component_decay: float = 0.7,
+        download_pretrained: bool = True,
+        pretrain_weights: str | None = None,
+        # --- Scheduler params ---
+        warmup_start_factor: float = 1e-3,
+        cosine_eta_min_factor: float = 0.05,
+        # --- Architecture params (from rfdetr_base.yaml + variant overrides) ---
+        encoder: str = "dinov2_windowed_small",
+        hidden_dim: int = 256,
+        dec_layers: int = 3,
+        patch_size: int = 16,
+        num_windows: int = 2,
+        sa_nheads: int = 8,
+        ca_nheads: int = 16,
+        dec_n_points: int = 2,
+        two_stage: bool = True,
+        bbox_reparam: bool = True,
+        lite_refpoint_refine: bool = True,
+        layer_norm: bool = True,
+        amp: bool = True,
+        group_detr: int = 13,
+        gradient_checkpointing: bool = False,
+        positional_encoding_size: int = 32,
+        ia_bce_loss: bool = True,
+        cls_loss_coef: float = 1.0,
+        segmentation_head: bool = False,
+        mask_downsample_ratio: int = 4,
+        projector_scale: list[str] | None = None,
+        num_queries: int = 300,
+        num_select: int = 300,
+        resolution: int | None = None,
+        out_feature_indexes: list[int] | None = None,
+        dim_feedforward: int = 2048,
+        decoder_norm: str = "LN",
+        vit_encoder_num_layers: int = 12,
+        position_embedding: str = "sine",
+        # --- Loss / Matcher params ---
+        set_cost_class: int = 2,
+        set_cost_bbox: int = 5,
+        set_cost_giou: int = 2,
+        bbox_loss_coef: int = 5,
+        giou_loss_coef: int = 2,
+        focal_alpha: float = 0.25,
+        aux_loss: bool = True,
+        # --- Checkpoint identification ---
+        checkpoint_name: str | None = None,
     ):
-        """
-        Initialize RFDETR Lightning model.
-
-        Args:
-            variant: Model variant (nano, small, medium, large).
-            num_classes: Number of detection classes.
-            pretrain_weights: Path to pretrained weights file.
-            input_height: Input image height.
-            input_width: Input image width.
-            learning_rate: Base learning rate.
-            lr_encoder: Learning rate for encoder.
-            weight_decay: Weight decay.
-            warmup_epochs: Number of warmup epochs.
-            download_pretrained: Download pretrained weights if not available.
-            output_dir: Base directory for outputting results.
-        """
         super().__init__(
             num_classes=num_classes,
             learning_rate=learning_rate,
@@ -131,76 +137,115 @@ class RFDETRLightningModel(BaseDetectionModel):
         )
         self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
 
+        # Training params
         self.lr_encoder = lr_encoder
-        self.variant = variant
-        self.pretrain_weights = pretrain_weights
-        self.download_pretrained = download_pretrained
         self.lr_vit_layer_decay = lr_vit_layer_decay
         self.lr_component_decay = lr_component_decay
-        self.out_feature_indexes = (
-            out_feature_indexes if out_feature_indexes is not None else [3, 6, 9, 12]
+        self.download_pretrained = download_pretrained
+        self.pretrain_weights = pretrain_weights
+
+        # Scheduler params (previously hardcoded)
+        self.warmup_start_factor = warmup_start_factor
+        self.cosine_eta_min_factor = cosine_eta_min_factor
+
+        # Resolve defaults
+        resolved_out_feature_indexes = (
+            list(out_feature_indexes)
+            if out_feature_indexes is not None
+            else [3, 6, 9, 12]
+        )
+        self.out_feature_indexes = resolved_out_feature_indexes
+
+        resolved_resolution = resolution if resolution is not None else input_height
+        resolved_projector_scale = (
+            list(projector_scale) if projector_scale is not None else ["P4"]
         )
 
-        if variant not in self.MODEL_VARIANTS:
-            raise ValueError(
-                f"Unknown variant: {variant}. "
-                f"Choose from {list(self.MODEL_VARIANTS.keys())}"
-            )
-
-        # Initialize the RFDETR model
-        model_config = self.MODEL_VARIANTS[variant]
-        model_class = model_config["class"]
-
-        # Handle pretrained weights
-        if pretrain_weights is None and download_pretrained:
+        # Handle pretrained weights download
+        if pretrain_weights is None and download_pretrained and checkpoint_name:
             cache_dir = Path.home() / ".cache" / "rfdetr"
-            checkpoint_path = cache_dir / f"rf-detr-{variant}.pth"
-            if not checkpoint_path.exists():
-                url = CHECKPOINT_URLS[model_config["checkpoint_key"]]
-                download_checkpoint(url, checkpoint_path)
-            pretrain_weights = str(checkpoint_path)
+            checkpoint_path = cache_dir / checkpoint_name
+            if not checkpoint_path.exists() and checkpoint_name in HOSTED_MODELS:
+                url = HOSTED_MODELS[checkpoint_name]
+                _download_checkpoint(url, checkpoint_path)
+            if checkpoint_path.exists():
+                pretrain_weights = str(checkpoint_path)
 
-        logging_info = f"Initializing RFDETR {variant} model"
-        logger.info(logging_info)
-        self.rfdetr_wrapper = model_class(
-            pretrain_weights=pretrain_weights,
-            num_classes=num_classes,
-            resolution=input_height,
+        logger.info(
+            "Initializing RFDETR model (encoder={}, hidden_dim={}, dec_layers={}, "
+            "resolution={})",
+            encoder,
+            hidden_dim,
+            dec_layers,
+            resolved_resolution,
         )
+
+        # Build Model directly from params (no Pydantic config intermediary)
+        # Always use CPU for initial construction; Lightning handles device placement.
+        model_params = {
+            "device": "cpu",
+            "encoder": encoder,
+            "hidden_dim": hidden_dim,
+            "dec_layers": dec_layers,
+            "patch_size": patch_size,
+            "num_windows": num_windows,
+            "sa_nheads": sa_nheads,
+            "ca_nheads": ca_nheads,
+            "dec_n_points": dec_n_points,
+            "two_stage": two_stage,
+            "bbox_reparam": bbox_reparam,
+            "lite_refpoint_refine": lite_refpoint_refine,
+            "layer_norm": layer_norm,
+            "amp": amp,
+            "group_detr": group_detr,
+            "gradient_checkpointing": gradient_checkpointing,
+            "positional_encoding_size": positional_encoding_size,
+            "ia_bce_loss": ia_bce_loss,
+            "cls_loss_coef": cls_loss_coef,
+            "segmentation_head": segmentation_head,
+            "mask_downsample_ratio": mask_downsample_ratio,
+            "projector_scale": resolved_projector_scale,
+            "num_queries": num_queries,
+            "num_select": num_select,
+            "resolution": resolved_resolution,
+            "out_feature_indexes": resolved_out_feature_indexes,
+            "dim_feedforward": dim_feedforward,
+            "decoder_norm": decoder_norm,
+            "vit_encoder_num_layers": vit_encoder_num_layers,
+            "position_embedding": position_embedding,
+            "set_cost_class": set_cost_class,
+            "set_cost_bbox": set_cost_bbox,
+            "set_cost_giou": set_cost_giou,
+            "bbox_loss_coef": bbox_loss_coef,
+            "giou_loss_coef": giou_loss_coef,
+            "focal_alpha": focal_alpha,
+            "aux_loss": aux_loss,
+            "num_classes": num_classes,
+            "pretrain_weights": pretrain_weights,
+        }
+        self._rfdetr_model = Model(**model_params)
 
         # Ensure the model head matches the target number of classes.
-        # rfdetr's Model.__init__ grows the head to match checkpoints (e.g. 91 for COCO)
-        # but the native training script shrinks it back before training.
-        current_out_features = self.rfdetr_wrapper.model.model.class_embed.weight.shape[
-            0
-        ]
+        current_out_features = self._rfdetr_model.model.class_embed.weight.shape[0]
         if current_out_features != num_classes + 1:
             logger.info(
                 "Reinitializing detection head from {} to {} classes",
                 current_out_features,
                 num_classes + 1,
             )
-            self.rfdetr_wrapper.model.reinitialize_detection_head(num_classes + 1)
+            self._rfdetr_model.reinitialize_detection_head(num_classes + 1)
 
         # Register the actual nn.Module so Lightning/Optimizer can see parameters
-        # valid chain based on forward usage: self.model.model.model
-        # We assign it to self.model which is a standard name
-        self.model = self.rfdetr_wrapper.model.model
+        self.model = self._rfdetr_model.model
 
         # Store internal model reference for export if needed
-        # (though self.model is the nn.Module now)
         self._internal_model = self.model
 
         # Build criterion for training
         logger.info("Building criterion for training...")
-        if build_criterion_and_postprocessors is not None:
-            # args are in the wrapper
-            self.criterion, self.postprocessors = build_criterion_and_postprocessors(  # type: ignore[no-untyped-call]
-                self.rfdetr_wrapper.model.args
-            )
-        else:
-            self.criterion = None
-            self.postprocessors = None
+        self.criterion, self.postprocessors = build_criterion_and_postprocessors(
+            self._rfdetr_model.args
+        )
 
         self.save_hyperparameters()
 
@@ -360,7 +405,8 @@ class RFDETRLightningModel(BaseDetectionModel):
         simplify: bool = True,
         dynamic_axes: dict[str, Any] | None = None,
     ) -> str:
-        """Export using RFDETR's built-in export method."""
+        """Export model to ONNX format."""
+        from copy import deepcopy
 
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -394,32 +440,38 @@ class RFDETRLightningModel(BaseDetectionModel):
         # Replace temporarily
         torch.onnx.export = monkeypatched_export
 
-        # Use RFDETR's built-in export
-        self.rfdetr_wrapper.export(
-            output_dir=str(out_path.parent),
-            simplify=simplify,
-            opset_version=opset_version,
-        )
+        device = self._rfdetr_model.device
+        model = deepcopy(self.model.cpu())
+        model.to(device)
+        model.eval()
+        model.export()
+
+        resolution = self._rfdetr_model.resolution
+        dummy_input = torch.randn(1, 3, resolution, resolution, device=device)
+
+        with torch.no_grad():
+            torch.onnx.export(
+                model,
+                dummy_input,
+                str(out_path),
+                input_names=["input"],
+                output_names=["dets", "labels"],
+                opset_version=opset_version,
+            )
 
         # Restore original export
         torch.onnx.export = original_export
+        self.model.to(device)
 
         return str(out_path)
 
     def configure_optimizers(self) -> Any:
         """Configure optimizers and schedulers matching rfdetr package."""
-        # Parameters values are now passed via Hydra config
         lr_vit_layer_decay = self.lr_vit_layer_decay
         lr_component_decay = self.lr_component_decay
         num_layers = self.out_feature_indexes[-1] + 1
 
         param_dicts = []
-
-        # We need to map our local param names to what get_dinov2_lr_decay_rate expects
-        # Our model is at self.model (which is internal model)
-        # Parameters look like: transformer.decoder..., etc.
-        # But wait, our self.model is self.rfdetr_wrapper.model.model
-        # Let's check the prefixes.
 
         for n, p in self.model.named_parameters():
             if not p.requires_grad:
@@ -468,20 +520,17 @@ class RFDETRLightningModel(BaseDetectionModel):
         )  # Ensure at least 1 epoch for LinearLR
         cosine_epochs = max(1, max_epochs - warmup_epochs)
 
-        # Linear warmup from 0.1% to 100% of base LR
         warmup_scheduler = LinearLR(
             optimizer,
-            start_factor=1e-3,
+            start_factor=self.warmup_start_factor,
             end_factor=1.0,
             total_iters=warmup_epochs,
         )
 
-        # Cosine annealing decay after warmup
-        # eta_min set to 5% of base LR to prevent training stall at end
         cosine_scheduler = CosineAnnealingLR(
             optimizer,
             T_max=cosine_epochs,
-            eta_min=self.learning_rate * 0.05,
+            eta_min=self.learning_rate * self.cosine_eta_min_factor,
         )
 
         # Combine: warmup first, then cosine decay
@@ -505,33 +554,41 @@ class RFDETRLightningModel(BaseDetectionModel):
 class RFDETRNanoModel(RFDETRLightningModel):
     """RFDETR Nano model for Hydra instantiation."""
 
+    _checkpoint_name = "rf-detr-nano.pth"
+
     def __init__(self, **kwargs: Any) -> None:
-        kwargs.pop("variant", None)
-        super().__init__(variant="nano", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
 
 
 @register(name="RFDETRSmall")
 class RFDETRSmallModel(RFDETRLightningModel):
     """RFDETR Small model for Hydra instantiation."""
 
+    _checkpoint_name = "rf-detr-small.pth"
+
     def __init__(self, **kwargs: Any) -> None:
-        kwargs.pop("variant", None)
-        super().__init__(variant="small", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
 
 
 @register(name="RFDETRMedium")
 class RFDETRMediumModel(RFDETRLightningModel):
     """RFDETR Medium model for Hydra instantiation."""
 
+    _checkpoint_name = "rf-detr-medium.pth"
+
     def __init__(self, **kwargs: Any) -> None:
-        kwargs.pop("variant", None)
-        super().__init__(variant="medium", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
 
 
 @register(name="RFDETRLarge")
 class RFDETRLargeModel(RFDETRLightningModel):
     """RFDETR Large model for Hydra instantiation."""
 
+    _checkpoint_name = "rf-detr-large.pth"
+
     def __init__(self, **kwargs: Any) -> None:
-        kwargs.pop("variant", None)
-        super().__init__(variant="large", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
