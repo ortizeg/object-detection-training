@@ -61,6 +61,25 @@ line-ending = "auto"
 [tool.ruff.lint.isort]
 known-first-party = ["object_detection_training"]
 
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "object_detection_training.models.yolox.*",
+    "object_detection_training.models.rfdetr.coco",
+    "object_detection_training.models.rfdetr.collate",
+    "object_detection_training.models.rfdetr.transforms",
+]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+check_untyped_defs = false
+
 [tool.semantic_release]
 version_variable = "pyproject.toml:version"
 branch = "main"
