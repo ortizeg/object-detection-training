@@ -1,0 +1,38 @@
+name: Test Engineer
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pixi
+        uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          pixi-version: latest
+          cache: true
+
+      - name: Run tests with coverage
+        run: |
+          pixi run pytest \
+            --cov=src \
+            --cov-report=term \
+            --cov-report=xml \
+            --cov-report=html
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+      - name: Check for skipped tests
+        run: |
+          if pixi run pytest --collect-only -q 2>&1 | grep -q "skipped"; then
+            echo "::warning::Skipped tests found. Fix or remove them."
+          fi
