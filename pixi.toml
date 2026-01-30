@@ -38,6 +38,7 @@ matplotlib = "*"
 seaborn = "*"
 pillow = "*"
 opencv = "*"
+rich = "*"
 
 [feature.dev.dependencies]
 pytest = "*"

@@ -26,6 +26,7 @@ dependencies = [
     "seaborn",
     "Pillow",
     "opencv-python",
+    "rich",
     "transformers<4.49.0",
     "scipy",
     "requests",
