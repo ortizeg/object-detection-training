@@ -4,6 +4,8 @@ YOLOX model wrapper for PyTorch Lightning.
 This module provides Lightning-compatible wrappers for YOLOX models.
 """
 
+from __future__ import annotations
+
 import math
 from pathlib import Path
 

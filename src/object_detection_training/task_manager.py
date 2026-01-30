@@ -11,6 +11,8 @@ Usage:
     python -m object_detection_training.task_manager trainer.max_epochs=50
 """
 
+from __future__ import annotations
+
 import sys
 
 import hydra

@@ -5,6 +5,8 @@ Computes and visualizes dataset statistics at the start of training
 using the DatasetStatistics class.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import lightning as L

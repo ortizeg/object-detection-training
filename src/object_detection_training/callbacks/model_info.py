@@ -4,6 +4,8 @@ Model info callback for PyTorch Lightning.
 Computes and logs model statistics at training start.
 """
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any

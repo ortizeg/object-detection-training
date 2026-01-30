@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ------------------------------------------------------------------------
 # LW-DETR
 # Copyright (c) 2024 Baidu. All Rights Reserved.

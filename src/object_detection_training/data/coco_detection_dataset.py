@@ -5,6 +5,8 @@ Efficiently loads COCO JSON annotations into pandas DataFrames without pycocotoo
 Uses json.load() + pd.json_normalize() for fast parsing.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 

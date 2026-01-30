@@ -7,6 +7,8 @@ Provides abstract base class for detection datasets with:
 - Computed metadata (area, max_dim, size_class)
 """
 
+from __future__ import annotations
+
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path

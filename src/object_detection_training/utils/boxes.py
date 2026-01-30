@@ -2,6 +2,8 @@
 Utilities for bounding box conversions and manipulations.
 """
 
+from __future__ import annotations
+
 import torch
 
 

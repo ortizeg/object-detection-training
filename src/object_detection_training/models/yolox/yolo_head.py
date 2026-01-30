@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+
+from __future__ import annotations
+
 # Copyright (c) Megvii Inc. All rights reserved.
 #
 # Original source: https://github.com/Megvii-BaseDetection/YOLOX

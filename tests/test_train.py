@@ -1,5 +1,7 @@
 """Tests for the object detection training framework."""
 
+from __future__ import annotations
+
 import sys
 from os.path import dirname, join
 

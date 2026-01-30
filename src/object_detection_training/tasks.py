@@ -5,6 +5,8 @@ This module provides the base task interface and concrete task implementations
 for the object detection training framework.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any

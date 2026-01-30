@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ------------------------------------------------------------------------
 # Copyright (c) 2024 Roboflow. All Rights Reserved.
 # Original source: https://github.com/roboflow/rf-detr

@@ -1,5 +1,7 @@
 """Tests for optimizer configuration."""
 
+from __future__ import annotations
+
 import torch
 
 from object_detection_training.models.yolox_lightning import YOLOXSModel

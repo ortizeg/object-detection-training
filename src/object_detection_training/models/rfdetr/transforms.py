@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ------------------------------------------------------------------------
 # Copyright (c) 2024 Roboflow. All Rights Reserved.
 # Based on RT-DETR/DINO/Deformable DETR code.

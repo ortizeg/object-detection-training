@@ -2,6 +2,8 @@
 Base detection model abstraction using PyTorch Lightning.
 """
 
+from __future__ import annotations
+
 import time
 from abc import abstractmethod
 from pathlib import Path

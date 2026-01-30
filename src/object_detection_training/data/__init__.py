@@ -1,5 +1,7 @@
 """Data modules for object detection training."""
 
+from __future__ import annotations
+
 from object_detection_training.data.base import BaseDataModule
 from object_detection_training.data.coco_data_module import COCODataModule
 from object_detection_training.data.coco_detection_dataset import (

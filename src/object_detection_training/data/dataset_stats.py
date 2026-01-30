@@ -10,6 +10,8 @@ Computes and visualizes statistics for detection datasets:
 Designed to be called from callbacks or standalone analysis scripts.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
 

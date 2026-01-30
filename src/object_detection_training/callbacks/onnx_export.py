@@ -4,6 +4,8 @@ ONNX export callback for PyTorch Lightning.
 Automatically exports models to ONNX format during training.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 
 import lightning as L

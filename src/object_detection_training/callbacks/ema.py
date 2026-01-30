@@ -4,6 +4,8 @@ EMA (Exponential Moving Average) callback for PyTorch Lightning.
 Maintains a shadow copy of model weights using exponential moving average.
 """
 
+from __future__ import annotations
+
 import copy
 from typing import Any
 

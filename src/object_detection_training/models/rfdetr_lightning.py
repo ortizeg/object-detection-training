@@ -4,6 +4,8 @@ RFDETR model wrappers for PyTorch Lightning.
 This module wraps the rfdetr models to work with the Lightning training framework.
 """
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
