@@ -2,10 +2,48 @@ defaults:
   - base
   - _self_
 
-# RFDETR Base Configuration
+# --- Encoder / Training LR ---
 lr_encoder: 1.5e-4
 lr_vit_layer_decay: 0.8
 lr_component_decay: 0.7
-out_feature_indexes: [3, 6, 9, 12]
 download_pretrained: true
 pretrain_weights: null
+
+# --- Architecture (common defaults for Nano/Small/Medium) ---
+encoder: "dinov2_windowed_small"
+hidden_dim: 256
+sa_nheads: 8
+ca_nheads: 16
+dec_n_points: 2
+two_stage: true
+bbox_reparam: true
+lite_refpoint_refine: true
+layer_norm: true
+amp: true
+group_detr: 13
+gradient_checkpointing: false
+segmentation_head: false
+mask_downsample_ratio: 4
+projector_scale:
+  - "P4"
+num_queries: 300
+num_select: 300
+dim_feedforward: 2048
+decoder_norm: "LN"
+vit_encoder_num_layers: 12
+position_embedding: "sine"
+
+# --- Loss / Matcher ---
+cls_loss_coef: 1.0
+ia_bce_loss: true
+set_cost_class: 2
+set_cost_bbox: 5
+set_cost_giou: 2
+bbox_loss_coef: 5
+giou_loss_coef: 2
+focal_alpha: 0.25
+aux_loss: true
+
+# --- Scheduler ---
+warmup_start_factor: 1.0e-3
+cosine_eta_min_factor: 0.05

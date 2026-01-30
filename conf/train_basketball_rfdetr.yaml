@@ -10,7 +10,7 @@
 defaults:
   - _self_
   - task: train
-  - model: rfdetr_small
+  - models: rfdetr_small
   - data: data_basketball
   - trainer: default
   - callbacks: default

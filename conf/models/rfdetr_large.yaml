@@ -2,3 +2,20 @@ defaults:
   - RFDETRLarge
   - rfdetr_base
   - _self_
+
+# Large overrides multiple base defaults
+encoder: "dinov2_windowed_base"
+hidden_dim: 384
+sa_nheads: 12
+ca_nheads: 24
+dec_n_points: 4
+projector_scale:
+  - "P3"
+  - "P5"
+out_feature_indexes: [2, 5, 8, 11]
+num_windows: 4
+dec_layers: 3
+patch_size: 14
+resolution: 560
+positional_encoding_size: 37
+checkpoint_name: "rf-detr-large.pth"
