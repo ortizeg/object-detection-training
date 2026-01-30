@@ -38,7 +38,7 @@ from object_detection_training.utils.hydra import (
 if not hasattr(onnx.helper, "float32_to_bfloat16"):
     logger.warning("Monkey-patching onnx.helper.float32_to_bfloat16 for compatibility")
 
-    def float32_to_bfloat16(x):
+    def float32_to_bfloat16(x: np.ndarray) -> np.ndarray:
         # bfloat16 is the top 16 bits of float32
         y = np.ascontiguousarray(x).view(np.uint32)
         return (y >> 16).astype(np.uint16)
@@ -95,7 +95,6 @@ def main(cfg: DictConfig) -> None:
     """
     log_level = cfg.get("log_level", "INFO")
     setup_loguru(log_level)
-    # setup_logging(log_level)
 
     logger.info("=" * 60)
     logger.info("Object Detection Training Framework")

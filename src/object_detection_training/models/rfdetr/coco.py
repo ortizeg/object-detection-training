@@ -247,7 +247,6 @@ def make_coco_transforms_square_div_64(
 
     scales = [input_height]
     if multi_scale:
-        # scales = [448, 512, 576, 640, 704, 768, 832, 896]
         scales = compute_multi_scale_scales(
             input_height, expanded_scales, patch_size, num_windows
         )

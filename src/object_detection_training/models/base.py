@@ -100,11 +100,6 @@ class BaseDetectionModel(L.LightningModule):
         Args:
             outputs: Raw model outputs.
             original_sizes: Original image sizes for rescaling boxes.
-
-        Returns:
-        Args:
-            outputs: Raw model outputs.
-            original_sizes: Original image sizes for rescaling boxes.
             confidence_threshold: Threshold for filtering predictions.
 
         Returns:

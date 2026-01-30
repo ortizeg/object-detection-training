@@ -585,15 +585,6 @@ class YOLOXHead(nn.Module):
             .repeat(1, total_num_anchors)
         )
 
-        # b_l = x_centers_per_image - gt_bboxes_per_image_l
-        # b_r = gt_bboxes_per_image_r - x_centers_per_image
-        # b_t = y_centers_per_image - gt_bboxes_per_image_t
-        # b_b = gt_bboxes_per_image_b - y_centers_per_image
-        # bbox_deltas = torch.stack([b_l, b_b, b_r, b_t], 2)
-
-        # is_in_boxes = bbox_deltas.min(dim=-1).values > 0.0
-        # is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
-
         # Center sampling (matches official YOLOX)
         center_radius = 1.5
 
