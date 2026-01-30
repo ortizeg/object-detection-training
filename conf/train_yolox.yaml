@@ -2,13 +2,13 @@
 # Focused on YOLOX model variants
 
 defaults:
-  - _self_
   - task: train
   - models: yolox_s
   - data: coco_yolox
   - trainer: trainer_yolox
   - callbacks: default
   - logging: null
+  - _self_
 
 # Global Parameters
 input_height: 640

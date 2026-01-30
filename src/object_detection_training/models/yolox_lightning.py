@@ -58,8 +58,15 @@ YOLOX_CONFIGS = {
 }
 
 
-def download_checkpoint(url: str, destination: Path) -> Path:
-    """Download a checkpoint file if it doesn't exist."""
+def download_checkpoint(url: str, destination: Path, timeout: int = 120) -> Path:
+    """Download a checkpoint file if it doesn't exist.
+
+    Args:
+        url: URL to download from.
+        destination: Local path to save the file.
+        timeout: Download timeout in seconds (default 120s).
+    """
+    import shutil
     import urllib.request
 
     destination = Path(destination)
@@ -68,12 +75,17 @@ def download_checkpoint(url: str, destination: Path) -> Path:
         return destination
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Downloading checkpoint from {url}")
+    logger.info(f"Downloading checkpoint from {url} (timeout={timeout}s)")
 
     try:
-        urllib.request.urlretrieve(url, destination)  # noqa: S310
+        req = urllib.request.urlopen(url, timeout=timeout)  # noqa: S310
+        with open(destination, "wb") as f:
+            shutil.copyfileobj(req, f)
         logger.info(f"Checkpoint downloaded to {destination}")
     except Exception as e:
+        # Clean up partial download
+        if destination.exists():
+            destination.unlink()
         logger.error(f"Failed to download checkpoint: {e}")
         raise
 
