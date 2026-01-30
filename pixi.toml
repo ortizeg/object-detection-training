@@ -43,8 +43,10 @@ default = ["dev"]
 prod = []
 
 [pypi-dependencies]
-rfdetr = { version = "*", extras = ["metrics", "onnxexport"] }
-transformers = { version = "<4.49.0" }  # rfdetr uses removed find_pruneable_heads_and_indices
+transformers = { version = "<4.49.0" }  # DINOv2 backbone needs find_pruneable_heads_and_indices
+scipy = { version = "*" }  # Hungarian matching in matcher
+requests = { version = "*" }  # Checkpoint downloading
+tqdm = { version = "*" }  # Download progress bars
 torchmetrics = { version = "*" }
 object-detection-training = { path = ".", editable = true }
 dotenv = "*"
