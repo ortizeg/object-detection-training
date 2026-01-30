@@ -421,54 +421,52 @@ class YOLOXLightningModel(BaseDetectionModel):
         """
         Configure optimizer and learning rate scheduler.
 
+        Matches official YOLOX parameter group structure:
+        - pg0: BatchNorm weights (no weight decay)
+        - pg1: Other weights (with weight decay)
+        - pg2: Biases (no weight decay)
+
         Returns:
             Optimizer and scheduler configuration.
         """
-        # Separate parameters into groups
-        # (apply weight decay to weights, not biases/norm)
-        decay = []
-        no_decay = []
-        for name, param in self.named_parameters():
-            if not param.requires_grad:
-                continue
+        pg0: list[nn.Parameter] = []  # BN weights - no decay
+        pg1: list[nn.Parameter] = []  # Other weights - with decay
+        pg2: list[nn.Parameter] = []  # Biases - no decay
 
-            if "bias" in name or "bn" in name or "norm" in name:
-                no_decay.append(param)
-            else:
-                decay.append(param)
+        for k, v in self.model.named_modules():
+            if hasattr(v, "bias") and isinstance(v.bias, nn.Parameter):
+                pg2.append(v.bias)
+            if isinstance(v, nn.BatchNorm2d) or "bn" in k:
+                pg0.append(v.weight)
+            elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
+                pg1.append(v.weight)
 
-        # Configurable optimizer parameters
         momentum = 0.9
         nesterov = True
 
         optimizer = torch.optim.SGD(
-            [
-                {"params": decay, "weight_decay": self.weight_decay},
-                {"params": no_decay, "weight_decay": 0.0},
-            ],
+            pg0,
             lr=self.learning_rate,
             momentum=momentum,
             nesterov=nesterov,
         )
+        optimizer.add_param_group({"params": pg1, "weight_decay": self.weight_decay})
+        optimizer.add_param_group({"params": pg2})
 
         # Scheduler with warmup + cosine annealing
         total_steps: int
         if self.trainer and hasattr(self.trainer, "estimated_stepping_batches"):
             total_steps = int(self.trainer.estimated_stepping_batches)
         else:
-            # Fallback for testing or when trainer is not yet fully initialized
             total_steps = 10000
 
-        # Avoid 0 total steps
         total_steps = max(1, total_steps)
 
-        # Warmup scheduler
         warmup_epochs = self.warmup_epochs
         max_epochs: int = (self.trainer.max_epochs or 100) if self.trainer else 100
 
         # Calculate warmup steps
         warmup_steps = int(total_steps * (warmup_epochs / max(1, max_epochs)))
-        # Ensure warmup doesn't take more than half of training
         warmup_steps = min(warmup_steps, total_steps // 2)
         warmup_steps = max(1, warmup_steps)
 
@@ -476,7 +474,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             optimizer, start_factor=0.001, end_factor=1.0, total_iters=warmup_steps
         )
 
-        # Main scheduler (Cosine Annealing) - starts after warmup
+        # Main scheduler (Cosine Annealing)
         main_steps = max(1, total_steps - warmup_steps)
         scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=main_steps, eta_min=self.learning_rate * 0.05

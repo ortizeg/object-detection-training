@@ -1,0 +1,61 @@
+# Basketball YOLOX Training Configuration
+# ==========================================
+#
+# Usage:
+#   pixi run python -m object_detection_training.task_manager \
+#       --config-name train_basketball_yolox \
+#       data.train_path=/path/to/train \
+#       data.val_path=/path/to/val
+#
+# Overfit test (small subset):
+#   pixi run python -m object_detection_training.task_manager \
+#       --config-name train_basketball_yolox \
+#       data.train_path=/path/to/train \
+#       data.val_path=/path/to/val \
+#       trainer.max_epochs=50 \
+#       trainer.limit_train_batches=10 \
+#       trainer.limit_val_batches=5
+
+defaults:
+  - _self_
+  - task: train
+  - model: yolox_nano
+  - data: data_basketball
+  - trainer: trainer_yolox
+  - callbacks: default
+  - logging: null
+
+# Global Parameters
+input_height: 416
+input_width: 416
+log_level: INFO
+
+# Override model for basketball (10 classes)
+models:
+  num_classes: 10
+  learning_rate: 0.005
+  weight_decay: 5e-4
+  warmup_epochs: 5
+  input_height: ${input_height}
+  input_width: ${input_width}
+
+# Override data for basketball
+data:
+  batch_size: 16
+  num_workers: 4
+
+# Override trainer for local testing
+trainer:
+  max_epochs: 300
+  precision: 32-true
+  gradient_clip_val: 5.0
+  accumulate_grad_batches: 2
+  val_check_interval: 1.0
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/yolox_nano_basketball_${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/yolox_nano_basketball_${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
