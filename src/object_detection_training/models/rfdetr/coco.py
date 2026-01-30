@@ -93,13 +93,13 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         include_masks=False,
         label_map: dict | None = None,
     ):
-        super(CocoDetection, self).__init__(img_folder, ann_file)
+        super().__init__(img_folder, ann_file)
         self._transforms = transforms
         self.include_masks = include_masks
         self.prepare = ConvertCoco(include_masks=include_masks, label_map=label_map)
 
     def __getitem__(self, idx):
-        img, target = super(CocoDetection, self).__getitem__(idx)
+        img, target = super().__getitem__(idx)
         image_id = self.ids[idx]
         target = {"image_id": image_id, "annotations": target}
         img, target = self.prepare(img, target)
@@ -146,9 +146,7 @@ class ConvertCoco:
 
         # for conversion to coco api
         area = torch.tensor([obj["area"] for obj in anno])
-        iscrowd = torch.tensor(
-            [obj["iscrowd"] if "iscrowd" in obj else 0 for obj in anno]
-        )
+        iscrowd = torch.tensor([obj.get("iscrowd", 0) for obj in anno])
         target["area"] = area[keep]
         target["iscrowd"] = iscrowd[keep]
 
@@ -182,10 +180,12 @@ def make_coco_transforms(
     skip_random_resize=False,
     patch_size=16,
     num_windows=4,
-    mean=[123.675, 116.28, 103.53],
-    std=[58.395, 57.12, 57.375],
+    mean: list[float] | None = None,
+    std: list[float] | None = None,
 ):
     # Always use PILToTensor (keeps 0-255 range)
+    mean = mean if mean is not None else [123.675, 116.28, 103.53]
+    std = std if std is not None else [58.395, 57.12, 57.375]
     normalize = T.Compose([T.PILToTensor(), T.Normalize(mean, std)])
 
     scales = [input_height]
@@ -238,11 +238,13 @@ def make_coco_transforms_square_div_64(
     skip_random_resize=False,
     patch_size=16,
     num_windows=4,
-    mean=[123.675, 116.28, 103.53],
-    std=[58.395, 57.12, 57.375],
+    mean: list[float] | None = None,
+    std: list[float] | None = None,
 ):
     """ """
     # Always use PILToTensor (keeps 0-255 range)
+    mean = mean if mean is not None else [123.675, 116.28, 103.53]
+    std = std if std is not None else [58.395, 57.12, 57.375]
     normalize = T.Compose([T.PILToTensor(), T.Normalize(mean, std)])
 
     scales = [input_height]

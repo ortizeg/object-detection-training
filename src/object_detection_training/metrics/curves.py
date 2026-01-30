@@ -30,7 +30,7 @@ def compute_detection_curves(
     class_gts = {c: [] for c in range(num_classes)}
 
     # Organize data by class
-    for i, (pred, target) in enumerate(zip(preds, targets)):
+    for i, (pred, target) in enumerate(zip(preds, targets, strict=True)):
         p_boxes = pred["boxes"]
         p_scores = pred["scores"]
         p_labels = pred["labels"]
@@ -76,7 +76,7 @@ def compute_detection_curves(
         flat_preds = []
         for p in c_preds:
             img_id = p["image_id"]
-            for box, score in zip(p["boxes"], p["scores"]):
+            for box, score in zip(p["boxes"], p["scores"], strict=True):
                 flat_preds.append(
                     {"box": box, "score": score.item(), "image_id": img_id}
                 )
@@ -152,7 +152,7 @@ def compute_detection_curves(
 
         for p in c_preds:
             img_id = p["image_id"]
-            for box, score in zip(p["boxes"], p["scores"]):
+            for box, score in zip(p["boxes"], p["scores"], strict=True):
                 all_flat_preds.append(
                     {
                         "box": box,
@@ -198,12 +198,14 @@ def compute_detection_curves(
                     max_iou, max_idx = ious.max(0)
                     max_idx = max_idx.item()
 
-                    if max_iou >= iou_threshold:
-                        if max_idx not in global_seen_gts[c][img_id]:
-                            tps.append(1)
-                            fps.append(0)
-                            global_seen_gts[c][img_id].add(max_idx)
-                            matched = True
+                    if (
+                        max_iou >= iou_threshold
+                        and max_idx not in global_seen_gts[c][img_id]
+                    ):
+                        tps.append(1)
+                        fps.append(0)
+                        global_seen_gts[c][img_id].add(max_idx)
+                        matched = True
 
             if not matched:
                 tps.append(0)

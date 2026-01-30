@@ -409,7 +409,7 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         This is the inverse of label_map: contiguous_id -> class_name.
         Useful for interpreting model outputs.
         """
-        return {idx: name for idx, name in enumerate(self.class_names)}
+        return dict(enumerate(self.class_names))
 
     def export_labels_mapping(
         self,

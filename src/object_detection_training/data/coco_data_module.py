@@ -47,8 +47,8 @@ class COCODataModule(L.LightningDataModule):
         pin_memory: bool = True,
         persistent_workers: bool = True,
         square_resize_div_64: bool = True,
-        image_mean: list[float] = [123.675, 116.28, 103.53],
-        image_std: list[float] = [58.395, 57.12, 57.375],
+        image_mean: list[float] | None = None,
+        image_std: list[float] | None = None,
         selected_categories: list[str] | None = None,
         size_thresholds: dict[str, float] | None = None,
     ):
@@ -101,8 +101,10 @@ class COCODataModule(L.LightningDataModule):
         self.patch_size = patch_size
         self.num_windows = num_windows
         self.square_resize_div_64 = square_resize_div_64
-        self.image_mean = image_mean
-        self.image_std = image_std
+        self.image_mean = (
+            image_mean if image_mean is not None else [123.675, 116.28, 103.53]
+        )
+        self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
 
         # Cache for num_classes and mapping
         self._num_classes: int | None = None
@@ -170,7 +172,7 @@ class COCODataModule(L.LightningDataModule):
         else:
             # Filter out supercategories with no annotations (like "basketball")
             annotations = data.get("annotations", [])
-            used_cat_ids = set(ann["category_id"] for ann in annotations)
+            used_cat_ids = {ann["category_id"] for ann in annotations}
             categories = [cat for cat in all_categories if cat["id"] in used_cat_ids]
 
             self._class_names = [cat["name"] for cat in categories]

@@ -61,7 +61,7 @@ class EMACallback(L.Callback):
 
         # Compute EMA update
         model_state = pl_module.state_dict()
-        for key in self.ema_state_dict.keys():
+        for key in self.ema_state_dict:
             if model_state[key].dtype.is_floating_point:
                 self.ema_state_dict[key].mul_(self.decay).add_(
                     model_state[key], alpha=1 - self.decay

@@ -6,6 +6,7 @@ This module wraps the rfdetr models to work with the Lightning training framewor
 
 from __future__ import annotations
 
+import contextlib
 import os
 from pathlib import Path
 
@@ -48,7 +49,7 @@ def download_checkpoint(url: str, destination: Path) -> Path:
     logger.info(f"Downloading checkpoint from {url}")
 
     try:
-        urllib.request.urlretrieve(url, destination)
+        urllib.request.urlretrieve(url, destination)  # noqa: S310
         logger.info(f"Checkpoint downloaded to {destination}")
     except Exception as e:
         logger.error(f"Failed to download checkpoint: {e}")
@@ -85,11 +86,11 @@ class RFDETRLightningModel(BaseDetectionModel):
         input_width: int = 512,
         lr_vit_layer_decay: float = 0.8,
         lr_component_decay: float = 0.7,
-        out_feature_indexes: list[int] = [3, 6, 9, 12],
+        out_feature_indexes: list[int] | None = None,
         download_pretrained: bool = True,
         output_dir: str = "outputs",
-        image_mean: list[float] = [123.675, 116.28, 103.53],
-        image_std: list[float] = [58.395, 57.12, 57.375],
+        image_mean: list[float] | None = None,
+        image_std: list[float] | None = None,
     ):
         """
         Initialize RFDETR Lightning model.
@@ -117,8 +118,10 @@ class RFDETRLightningModel(BaseDetectionModel):
             output_dir=output_dir,
         )
 
-        self.image_mean = image_mean
-        self.image_std = image_std
+        self.image_mean = (
+            image_mean if image_mean is not None else [123.675, 116.28, 103.53]
+        )
+        self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
 
         self.lr_encoder = lr_encoder
         self.variant = variant
@@ -126,7 +129,9 @@ class RFDETRLightningModel(BaseDetectionModel):
         self.download_pretrained = download_pretrained
         self.lr_vit_layer_decay = lr_vit_layer_decay
         self.lr_component_decay = lr_component_decay
-        self.out_feature_indexes = out_feature_indexes
+        self.out_feature_indexes = (
+            out_feature_indexes if out_feature_indexes is not None else [3, 6, 9, 12]
+        )
 
         if variant not in self.MODEL_VARIANTS:
             raise ValueError(
@@ -250,7 +255,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         # Calculate total weighted loss
         weight_dict = self.criterion.weight_dict
         losses = sum(
-            loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict
+            loss_dict[k] * weight_dict[k] for k in loss_dict if k in weight_dict
         )
 
         # Prepare log dict
@@ -425,10 +430,8 @@ class RFDETRLightningModel(BaseDetectionModel):
                     layer_id = 0
                 elif ".layer." in n and ".residual." not in n:
                     # e.g. backbone.0.encoder.encoder.layer.5...
-                    try:
+                    with contextlib.suppress(IndexError, ValueError):
                         layer_id = int(n[n.find(".layer.") :].split(".")[2]) + 1
-                    except (IndexError, ValueError):
-                        pass
 
                 lr_decay = lr_vit_layer_decay ** (num_layers + 1 - layer_id)
                 lr = self.lr_encoder * lr_decay * (lr_component_decay**2)

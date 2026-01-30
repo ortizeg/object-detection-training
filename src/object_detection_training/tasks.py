@@ -82,7 +82,7 @@ class TrainTask(BaseTask):
     seed: int | None = Field(default=42, description="Random seed for training")
 
     @model_validator(mode="after")
-    def validate_task(self) -> "TrainTask":
+    def validate_task(self) -> TrainTask:
         """Validate task configuration."""
         # Ensure output_dir is set
         if self.output_dir is None:

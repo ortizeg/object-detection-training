@@ -37,10 +37,7 @@ class NestedTensor:
     def to(self, device):
         cast_tensor = self.tensors.to(device)
         mask = self.mask
-        if mask is not None:
-            cast_mask = mask.to(device)
-        else:
-            cast_mask = None
+        cast_mask = mask.to(device) if mask is not None else None
         return NestedTensor(cast_tensor, cast_mask)
 
     def decompose(self):
@@ -82,7 +79,7 @@ def nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTensor:
         tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
         mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
 
-        for img, pad_img, m in zip(tensor_list, tensor, mask):
+        for img, pad_img, m in zip(tensor_list, tensor, mask, strict=True):
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
             m[: img.shape[1], : img.shape[2]] = False
     else:
@@ -105,7 +102,7 @@ def _onnx_nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTen
     padded_imgs = []
     padded_masks = []
     for img in tensor_list:
-        padding = [(s1 - s2) for s1, s2 in zip(max_size, tuple(img.shape))]
+        padding = [(s1 - s2) for s1, s2 in zip(max_size, tuple(img.shape), strict=True)]
         padded_img = torch.nn.functional.pad(
             img, (0, padding[2], 0, padding[1], 0, padding[0])
         )
@@ -136,6 +133,6 @@ def collate_fn(batch):
     Returns:
         Tuple of (NestedTensor, list of targets).
     """
-    batch = list(zip(*batch))
+    batch = list(zip(*batch, strict=True))
     batch[0] = nested_tensor_from_tensor_list(batch[0])
     return tuple(batch)

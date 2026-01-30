@@ -155,7 +155,7 @@ class DatasetStatistics:
             verticalalignment="top",
             horizontalalignment="left",
             fontsize=10,
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+            bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8},
         )
 
         ax1.set_xlabel("Max Dimension (pixels)")
@@ -172,7 +172,7 @@ class DatasetStatistics:
         bars = ax2.bar(size_order, counts, color=colors, edgecolor="black")
 
         # Add count labels on bars
-        for bar, count in zip(bars, counts):
+        for bar, count in zip(bars, counts, strict=True):
             height = bar.get_height()
             ax2.annotate(
                 f"{count:,}",

@@ -119,16 +119,18 @@ def save_detection_curves_plots(
                                     ap = float(ap.mean())
                     else:
                         # Fallback to direct indexing if classes tensor missing
-                        if isinstance(map_per_class, torch.Tensor):
-                            if c_idx_int < len(map_per_class):
-                                ap = map_per_class[c_idx_int].item()
-                        elif isinstance(map_per_class, (list, np.ndarray)):
-                            if c_idx_int < len(map_per_class):
-                                ap = map_per_class[c_idx_int]
-                                if isinstance(
-                                    ap, (np.ndarray, torch.Tensor)
-                                ) and hasattr(ap, "mean"):
-                                    ap = float(ap.mean())
+                        if isinstance(map_per_class, torch.Tensor) and c_idx_int < len(
+                            map_per_class
+                        ):
+                            ap = map_per_class[c_idx_int].item()
+                        elif isinstance(
+                            map_per_class, (list, np.ndarray)
+                        ) and c_idx_int < len(map_per_class):
+                            ap = map_per_class[c_idx_int]
+                            if isinstance(ap, (np.ndarray, torch.Tensor)) and hasattr(
+                                ap, "mean"
+                            ):
+                                ap = float(ap.mean())
                 except (ValueError, TypeError):
                     pass
 

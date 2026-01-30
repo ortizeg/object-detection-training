@@ -27,8 +27,8 @@ class VisualizationCallback(L.Callback):
         num_samples: int = 10,
         confidence_threshold: float = 0.3,
         output_dir: str = "outputs",
-        mean: list[float] = [123.675, 116.28, 103.53],
-        std: list[float] = [58.395, 57.12, 57.375],
+        mean: list[float] | None = None,
+        std: list[float] | None = None,
     ):
         """
         Initialize visualization callback.
@@ -42,8 +42,10 @@ class VisualizationCallback(L.Callback):
         super().__init__()
         self.num_samples = num_samples
         self.output_dir = Path(output_dir)
-        self.mean = torch.tensor(mean).view(3, 1, 1)
-        self.std = torch.tensor(std).view(3, 1, 1)
+        _mean = mean if mean is not None else [123.675, 116.28, 103.53]
+        _std = std if std is not None else [58.395, 57.12, 57.375]
+        self.mean = torch.tensor(_mean).view(3, 1, 1)
+        self.std = torch.tensor(_std).view(3, 1, 1)
 
         self.val_samples: list[dict[str, Any]] = []
         self.test_samples: list[dict[str, Any]] = []
@@ -223,11 +225,14 @@ class VisualizationCallback(L.Callback):
         self, trainer: L.Trainer, pl_module: L.LightningModule
     ) -> None:
         """Collect test samples."""
-        if not self.test_samples:
-            if trainer.datamodule and trainer.datamodule.test_dataloader():
-                self.test_samples = self._collect_samples(
-                    trainer.datamodule.test_dataloader(), self.num_samples
-                )
+        if (
+            not self.test_samples
+            and trainer.datamodule
+            and trainer.datamodule.test_dataloader()
+        ):
+            self.test_samples = self._collect_samples(
+                trainer.datamodule.test_dataloader(), self.num_samples
+            )
 
     def on_test_epoch_end(
         self, trainer: L.Trainer, pl_module: L.LightningModule
@@ -278,7 +283,9 @@ class VisualizationCallback(L.Callback):
                 class_names = getattr(trainer.datamodule, "class_names", None)
                 if class_names:
                     pred_labels_list = []
-                    for cid, conf in zip(detections.class_id, detections.confidence):
+                    for cid, conf in zip(
+                        detections.class_id, detections.confidence, strict=True
+                    ):
                         cid_int = int(cid)
                         if cid_int < len(class_names):
                             name = class_names[cid_int]

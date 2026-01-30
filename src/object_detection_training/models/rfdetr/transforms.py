@@ -34,12 +34,10 @@ def box_xyxy_to_cxcywh(x):
     return torch.stack(b, dim=-1)
 
 
-def interpolate(
-    input, size=None, scale_factor=None, mode="nearest", align_corners=None
-):
+def interpolate(x, size=None, scale_factor=None, mode="nearest", align_corners=None):
     """Interpolate wrapper for masks."""
     return torch.nn.functional.interpolate(
-        input,
+        x,
         size=size,
         scale_factor=scale_factor,
         mode=mode,
@@ -145,7 +143,8 @@ def resize(image, target, size, max_size=None):
         return rescaled_image, None
 
     ratios = tuple(
-        float(s) / float(s_orig) for s, s_orig in zip(rescaled_image.size, image.size)
+        float(s) / float(s_orig)
+        for s, s_orig in zip(rescaled_image.size, image.size, strict=True)
     )
     ratio_width, ratio_height = ratios
 
@@ -204,8 +203,8 @@ class RandomSizeCrop:
         self.max_size = max_size
 
     def __call__(self, img: PIL.Image.Image, target: dict):
-        w = random.randint(self.min_size, min(img.width, self.max_size))
-        h = random.randint(self.min_size, min(img.height, self.max_size))
+        w = random.randint(self.min_size, min(img.width, self.max_size))  # noqa: S311
+        h = random.randint(self.min_size, min(img.height, self.max_size))  # noqa: S311
         region = T.RandomCrop.get_params(img, [h, w])
         return crop(img, target, region)
 
@@ -227,7 +226,7 @@ class RandomHorizontalFlip:
         self.p = p
 
     def __call__(self, img, target):
-        if random.random() < self.p:
+        if random.random() < self.p:  # noqa: S311
             return hflip(img, target)
         return img, target
 
@@ -239,7 +238,7 @@ class RandomResize:
         self.max_size = max_size
 
     def __call__(self, img, target=None):
-        size = random.choice(self.sizes)
+        size = random.choice(self.sizes)  # noqa: S311
         return resize(img, target, size, self.max_size)
 
 
@@ -249,13 +248,14 @@ class SquareResize:
         self.sizes = sizes
 
     def __call__(self, img, target=None):
-        size = random.choice(self.sizes)
+        size = random.choice(self.sizes)  # noqa: S311
         rescaled_img = F.resize(img, (size, size))
         w, h = rescaled_img.size
         if target is None:
             return rescaled_img, None
         ratios = tuple(
-            float(s) / float(s_orig) for s, s_orig in zip(rescaled_img.size, img.size)
+            float(s) / float(s_orig)
+            for s, s_orig in zip(rescaled_img.size, img.size, strict=True)
         )
         ratio_width, ratio_height = ratios
 
@@ -282,8 +282,8 @@ class RandomPad:
         self.max_pad = max_pad
 
     def __call__(self, img, target):
-        pad_x = random.randint(0, self.max_pad)
-        pad_y = random.randint(0, self.max_pad)
+        pad_x = random.randint(0, self.max_pad)  # noqa: S311
+        pad_y = random.randint(0, self.max_pad)  # noqa: S311
         return pad(img, target, (pad_x, pad_y))
 
 
@@ -410,17 +410,17 @@ class RandomExpand:
         self.fill_value = fill_value
 
     def __call__(self, img, target):
-        if np.random.uniform(0.0, 1.0) < self.prob:
+        if np.random.uniform(0.0, 1.0) < self.prob:  # noqa: S311
             return img, target
 
         height, width = img.shape[:2]
-        ratio = np.random.uniform(1.0, self.ratio)
+        ratio = np.random.uniform(1.0, self.ratio)  # noqa: S311
         h = int(height * ratio)
         w = int(width * ratio)
         if not h > height or not w > width:
             return img, target
-        y = np.random.randint(0, h - height)
-        x = np.random.randint(0, w - width)
+        y = np.random.randint(0, h - height)  # noqa: S311
+        x = np.random.randint(0, w - width)  # noqa: S311
         offsets, size = [x, y], [h, w]
 
         padder = Pad(size, pad_mode=-1, offsets=offsets, fill_value=self.fill_value)
@@ -440,7 +440,7 @@ class RandomSelect:
         self.p = p
 
     def __call__(self, img, target):
-        if random.random() < self.p:
+        if random.random() < self.p:  # noqa: S311
             return self.transforms1(img, target)
         return self.transforms2(img, target)
 

@@ -53,7 +53,7 @@ class IOUloss(nn.Module):
     """IoU loss for bounding box regression."""
 
     def __init__(self, reduction="none", loss_type="iou"):
-        super(IOUloss, self).__init__()
+        super().__init__()
         self.reduction = reduction
         self.loss_type = loss_type
 
@@ -105,8 +105,8 @@ class YOLOXHead(nn.Module):
         self,
         num_classes,
         width=1.0,
-        strides=[8, 16, 32],
-        in_channels=[256, 512, 1024],
+        strides=[8, 16, 32],  # noqa: B006
+        in_channels=[256, 512, 1024],  # noqa: B006
         act="silu",
         depthwise=False,
     ):
@@ -186,7 +186,7 @@ class YOLOXHead(nn.Module):
         expanded_strides = []
 
         for k, (cls_conv, reg_conv, stride_this_level, x) in enumerate(
-            zip(self.cls_convs, self.reg_convs, self.strides, xin)
+            zip(self.cls_convs, self.reg_convs, self.strides, xin, strict=True)
         ):
             x = self.stems[k](x)
             cls_x = x
@@ -273,7 +273,7 @@ class YOLOXHead(nn.Module):
     def decode_outputs(self, outputs, dtype):
         grids = []
         strides = []
-        for (hsize, wsize), stride in zip(self.hw, self.strides):
+        for (hsize, wsize), stride in zip(self.hw, self.strides, strict=True):
             yv, xv = meshgrid(torch.arange(hsize), torch.arange(wsize))
             grid = torch.stack((xv, yv), 2).view(1, -1, 2)
             grids.append(grid)

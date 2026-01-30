@@ -70,7 +70,7 @@ def download_checkpoint(url: str, destination: Path) -> Path:
     logger.info(f"Downloading checkpoint from {url}")
 
     try:
-        urllib.request.urlretrieve(url, destination)
+        urllib.request.urlretrieve(url, destination)  # noqa: S310
         logger.info(f"Checkpoint downloaded to {destination}")
     except Exception as e:
         logger.error(f"Failed to download checkpoint: {e}")
@@ -98,8 +98,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         input_height: int = 640,
         input_width: int = 640,
         output_dir: str = "outputs",
-        image_mean: list[float] = [0.0, 0.0, 0.0],
-        image_std: list[float] = [1.0, 1.0, 1.0],
+        image_mean: list[float] | None = None,
+        image_std: list[float] | None = None,
     ):
         """
         Initialize YOLOX Lightning model.
@@ -126,8 +126,8 @@ class YOLOXLightningModel(BaseDetectionModel):
             output_dir=output_dir,
         )
 
-        self.image_mean = image_mean
-        self.image_std = image_std
+        self.image_mean = image_mean if image_mean is not None else [0.0, 0.0, 0.0]
+        self.image_std = image_std if image_std is not None else [1.0, 1.0, 1.0]
 
         self.variant = variant
         self.pretrain_weights = pretrain_weights
@@ -220,10 +220,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         logger.info(f"Loading weights from {checkpoint_path}")
         try:
             checkpoint = torch.load(checkpoint_path, map_location="cpu")
-            if "model" in checkpoint:
-                state_dict = checkpoint["model"]
-            else:
-                state_dict = checkpoint
+            state_dict = checkpoint.get("model", checkpoint)
 
             # Create new state dict with mapping
             model_state_dict = self.model.state_dict()

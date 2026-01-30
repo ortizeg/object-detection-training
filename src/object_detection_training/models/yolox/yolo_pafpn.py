@@ -23,7 +23,7 @@ class YOLOPAFPN(nn.Module):
         depth=1.0,
         width=1.0,
         in_features=("dark3", "dark4", "dark5"),
-        in_channels=[256, 512, 1024],
+        in_channels=[256, 512, 1024],  # noqa: B006
         depthwise=False,
         act="silu",
     ):
@@ -84,17 +84,17 @@ class YOLOPAFPN(nn.Module):
             act=act,
         )
 
-    def forward(self, input):
+    def forward(self, x):
         """
         Args:
-            inputs: input images.
+            x: input images.
 
         Returns:
             Tuple[Tensor]: FPN feature.
         """
 
         #  backbone
-        out_features = self.backbone(input)
+        out_features = self.backbone(x)
         features = [out_features[f] for f in self.in_features]
         [x2, x1, x0] = features
 
