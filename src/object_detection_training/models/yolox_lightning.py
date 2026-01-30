@@ -58,37 +58,45 @@ YOLOX_CONFIGS = {
 }
 
 
-def download_checkpoint(url: str, destination: Path, timeout: int = 120) -> Path:
+def download_checkpoint(url: str, destination: Path) -> Path:
     """Download a checkpoint file if it doesn't exist.
+
+    Uses torch.hub.download_url_to_file which handles redirects,
+    shows progress, and is proven to work across environments
+    (local, Docker, GCP).
 
     Args:
         url: URL to download from.
         destination: Local path to save the file.
-        timeout: Download timeout in seconds (default 120s).
-    """
-    import shutil
-    import urllib.request
 
+    Raises:
+        RuntimeError: If download fails for any reason.
+    """
     destination = Path(destination)
     if destination.exists():
-        logger.info(f"Checkpoint already exists: {destination}")
+        logger.info(f"Checkpoint already cached: {destination}")
         return destination
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Downloading checkpoint from {url} (timeout={timeout}s)")
+    logger.info(f"Downloading checkpoint from {url}")
 
     try:
-        req = urllib.request.urlopen(url, timeout=timeout)  # noqa: S310
-        with open(destination, "wb") as f:
-            shutil.copyfileobj(req, f)
-        logger.info(f"Checkpoint downloaded to {destination}")
+        torch.hub.download_url_to_file(url, str(destination), progress=True)
     except Exception as e:
         # Clean up partial download
         if destination.exists():
             destination.unlink()
-        logger.error(f"Failed to download checkpoint: {e}")
-        raise
+        raise RuntimeError(
+            f"Failed to download pretrained weights from {url}: {e}"
+        ) from e
 
+    if not destination.exists():
+        raise RuntimeError(
+            f"Download appeared to succeed but file not found at {destination}"
+        )
+
+    size_mb = destination.stat().st_size / (1024 * 1024)
+    logger.info(f"Checkpoint downloaded to {destination} ({size_mb:.1f} MB)")
     return destination
 
 
@@ -214,66 +222,83 @@ class YOLOXLightningModel(BaseDetectionModel):
         logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
 
     def _download_and_load_weights(self) -> None:
-        """Download and load pretrained weights."""
+        """Download and load pretrained weights.
+
+        Raises:
+            RuntimeError: If the variant has no checkpoint URL, or if
+                download/loading fails. Training must not proceed
+                without pretrained weights when they were requested.
+        """
         if self.variant not in YOLOX_CHECKPOINT_URLS:
-            logger.warning(f"No pretrained weights available for {self.variant}")
-            return
+            raise RuntimeError(
+                f"download_pretrained=True but no checkpoint URL for "
+                f"variant '{self.variant}'. Available: "
+                f"{list(YOLOX_CHECKPOINT_URLS.keys())}"
+            )
 
         cache_dir = Path.home() / ".cache" / "yolox"
         checkpoint_path = cache_dir / f"yolox_{self.variant}.pth"
 
-        if not checkpoint_path.exists():
-            url = YOLOX_CHECKPOINT_URLS[self.variant]
-            download_checkpoint(url, checkpoint_path)
-
+        url = YOLOX_CHECKPOINT_URLS[self.variant]
+        download_checkpoint(url, checkpoint_path)
         self._load_weights(str(checkpoint_path))
 
     def _load_weights(self, checkpoint_path: str) -> None:
-        """Load weights from checkpoint."""
+        """Load weights from checkpoint.
+
+        Raises:
+            RuntimeError: If the checkpoint cannot be loaded or contains
+                no matching parameters.
+        """
         logger.info(f"Loading weights from {checkpoint_path}")
-        try:
-            checkpoint = torch.load(checkpoint_path, map_location="cpu")
-            state_dict = checkpoint.get("model", checkpoint)
 
-            # Create new state dict with mapping
-            model_state_dict = self.model.state_dict()
-            filtered_state_dict = {}
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        state_dict = checkpoint.get("model", checkpoint)
 
-            # Match parameters
-            matched = []
-            unmatched = []
-            class_mismatch = []
+        # Create new state dict with mapping
+        model_state_dict = self.model.state_dict()
+        filtered_state_dict = {}
 
-            for k, v in state_dict.items():
-                if k in model_state_dict:
-                    # Check for class dimension mismatch in head
-                    if "cls_preds" in k and v.shape[0] != self.num_classes:
-                        class_mismatch.append(k)
-                        continue
+        # Match parameters
+        matched = []
+        unmatched = []
+        class_mismatch = []
 
-                    if v.shape == model_state_dict[k].shape:
-                        filtered_state_dict[k] = v
-                        matched.append(k)
-                    else:
-                        unmatched.append(
-                            f"{k} (shape mismatch: {v.shape} vs "
-                            f"{model_state_dict[k].shape})"
-                        )
+        for k, v in state_dict.items():
+            if k in model_state_dict:
+                # Check for class dimension mismatch in head
+                if "cls_preds" in k and v.shape[0] != self.num_classes:
+                    class_mismatch.append(k)
+                    continue
+
+                if v.shape == model_state_dict[k].shape:
+                    filtered_state_dict[k] = v
+                    matched.append(k)
                 else:
-                    unmatched.append(k)
+                    unmatched.append(
+                        f"{k} (shape mismatch: {v.shape} vs "
+                        f"{model_state_dict[k].shape})"
+                    )
+            else:
+                unmatched.append(k)
 
-            # Log summary
-            logger.info(f"Checkpoint match summary for {self.variant}:")
-            logger.info(f"  Matched: {len(matched)} / {len(model_state_dict)}")
-            if class_mismatch:
-                logger.info(f"  Class mismatch (skipped): {len(class_mismatch)}")
-            if unmatched:
-                logger.debug(f"  Unmatched: {unmatched[:10]}...")
+        # Log summary
+        logger.info(f"Checkpoint match summary for {self.variant}:")
+        logger.info(f"  Matched: {len(matched)} / {len(model_state_dict)}")
+        if class_mismatch:
+            logger.info(f"  Class mismatch (skipped): {len(class_mismatch)}")
+        if unmatched:
+            logger.debug(f"  Unmatched: {unmatched[:10]}...")
 
-            self.model.load_state_dict(filtered_state_dict, strict=False)
-            logger.info("Weights loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load weights: {e}")
+        if not filtered_state_dict:
+            raise RuntimeError(
+                f"Checkpoint at {checkpoint_path} has 0 matching parameters. "
+                f"Checkpoint keys: {len(state_dict)}, "
+                f"Model keys: {len(model_state_dict)}"
+            )
+
+        self.model.load_state_dict(filtered_state_dict, strict=False)
+        logger.info("Weights loaded successfully")
 
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         """Training step."""
