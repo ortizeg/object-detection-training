@@ -282,12 +282,15 @@ class TestCheckpointEquivalence:
 
         # Download checkpoint to cache
         cache_dir = Path.home() / ".cache" / "rfdetr"
+        cache_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_path = cache_dir / info["checkpoint_name"]
         if not checkpoint_path.exists():
             from object_detection_training.models.rfdetr.model_factory import (
-                download_pretrain_weights,
+                HOSTED_MODELS,
+                _download_file,
             )
-            download_pretrain_weights(info["checkpoint_name"])
+            url = HOSTED_MODELS[info["checkpoint_name"]]
+            _download_file(url, str(checkpoint_path))
 
         # Build via rfdetr PyPI package
         pkg_wrapper = rfdetr_class(
