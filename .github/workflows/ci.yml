@@ -20,8 +20,14 @@ jobs:
           pixi-version: v0.39.0
           cache: true
 
-      - name: Run pre-commit
-        run: pixi run precommit
+      - name: Check formatting
+        run: pixi run -- ruff format --check .
+
+      - name: Lint
+        run: pixi run -- ruff check .
+
+      - name: Type check
+        run: pixi run typecheck
 
       - name: Run tests
         run: pixi run test
