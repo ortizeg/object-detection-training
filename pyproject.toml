@@ -18,6 +18,14 @@ dependencies = [
     "wandb>=0.23.1,<0.24",
     "iopath>=0.1.10,<0.2",
     "colored>=2.3.1,<3",
+    "torch",
+    "torchvision",
+    "pycocotools",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "Pillow",
+    "opencv-python",
     "transformers<4.49.0",
     "scipy",
     "requests",
@@ -26,6 +34,8 @@ dependencies = [
     "python-dotenv",
     "orjson",
     "tensorboard",
+    "supervision",
+    "peft",
 ]
 
 [project.scripts]
