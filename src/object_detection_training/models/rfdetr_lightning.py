@@ -180,18 +180,10 @@ class RFDETRLightningModel(BaseDetectionModel):
             resolved_resolution,
         )
 
-        # Auto-detect device for Model construction
-        # (Model.__init__ moves weights to device; Lightning manages placement after)
-        if torch.cuda.is_available():
-            _device = "cuda"
-        elif torch.backends.mps.is_available():
-            _device = "mps"
-        else:
-            _device = "cpu"
-
         # Build Model directly from params (no Pydantic config intermediary)
+        # Always use CPU for initial construction; Lightning handles device placement.
         model_params = {
-            "device": _device,
+            "device": "cpu",
             "encoder": encoder,
             "hidden_dim": hidden_dim,
             "dec_layers": dec_layers,

@@ -351,22 +351,16 @@ class TestModelArchitectureEquivalence:
             "large": "RFDETRLargeConfig",
         }
         config_cls = getattr(config_mod, config_class_map[variant])
-        config = config_cls(pretrain_weights=None, num_classes=2)
+        config = config_cls(pretrain_weights=None, num_classes=2, device="cpu")
         pydantic_model = Model(**config.model_dump())
         pydantic_state = pydantic_model.model.state_dict()
 
-        # Build via YAML params (new path) - must include device
+        # Build via YAML params (new path)
         expected = VARIANT_EXPECTED_PARAMS[variant]
         yaml_params = {k: v for k, v in expected.items() if k != "checkpoint_name"}
         yaml_params["num_classes"] = 2
         yaml_params["pretrain_weights"] = None
-        # Match Pydantic config's device auto-detection
-        if torch.cuda.is_available():
-            yaml_params["device"] = "cuda"
-        elif torch.backends.mps.is_available():
-            yaml_params["device"] = "mps"
-        else:
-            yaml_params["device"] = "cpu"
+        yaml_params["device"] = "cpu"
         yaml_model = Model(**yaml_params)
         yaml_state = yaml_model.model.state_dict()
 
