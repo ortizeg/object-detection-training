@@ -1,0 +1,13 @@
+defaults:
+  - RFDETRNano
+  - rfdetr_base
+  - _self_
+
+# Nano-specific architecture
+out_feature_indexes: [3, 6, 9, 12]
+num_windows: 2
+dec_layers: 2
+patch_size: 16
+resolution: 384
+positional_encoding_size: 24
+checkpoint_name: "rf-detr-nano.pth"

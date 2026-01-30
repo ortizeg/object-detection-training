@@ -1,0 +1,5 @@
+# Training Task Configuration
+_target_: object_detection_training.tasks.TrainTask
+name: object_detection_training
+seed: 42
+ckpt_path: null

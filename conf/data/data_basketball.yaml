@@ -1,0 +1,54 @@
+# Basketball Detection Dataset Configuration
+# Uses custom DetectionDataset with category filtering
+
+_target_: object_detection_training.data.coco_data_module.COCODataModule
+
+# Required paths
+train_path: ??? # Required - path to training data
+val_path: ??? # Required - path to validation data
+test_path: null # Optional - path to test data
+
+# Category filter - only these classes are loaded
+# Set to null to keep all categories with annotations
+# Note: "basketball" supercategory has 0 annotations, excluded by default
+selected_categories:
+  - ball
+  - ball-in-basket
+  - number
+  - player
+  - player-in-possession
+  - player-jump-shot
+  - player-layup-dunk
+  - player-shot-block
+  - referee
+  - rim
+
+# Box size classification thresholds (in original image pixels)
+# Boxes classified by max(width, height):
+# - small: max_dim <= 32px
+# - medium: 32px < max_dim <= 96px
+# - large: max_dim > 96px
+size_thresholds:
+  small: 32
+  medium: 96
+
+# DataLoader settings
+num_workers: 8
+input_height: ${models.input_height}
+input_width: ${models.input_width}
+
+# Multi-scale augmentation (from base coco config)
+multi_scale: true
+expanded_scales: true
+skip_random_resize: false
+patch_size: 16
+num_windows: 2
+
+# Memory settings
+pin_memory: true
+persistent_workers: true
+square_resize_div_64: true
+
+# Normalization (from model config)
+image_mean: ${models.image_mean}
+image_std: ${models.image_std}

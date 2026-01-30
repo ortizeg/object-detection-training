@@ -1,0 +1,4 @@
+defaults:
+  - YOLOXTiny
+  - yolox_base
+  - _self_

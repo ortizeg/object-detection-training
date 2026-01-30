@@ -1,0 +1,4 @@
+defaults:
+  - YOLOXM
+  - yolox_base
+  - _self_

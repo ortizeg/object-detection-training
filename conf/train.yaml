@@ -1,25 +1,29 @@
+# Object Detection Training Configuration
+# =========================================
+#
+# Usage:
+#   python -m object_detection_training.task_manager
+#   python -m object_detection_training.task_manager model=rfdetr_nano
+#   python -m object_detection_training.task_manager model=yolox_s
+
 defaults:
   - _self_
-  - models: RFDETRSmall
+  - task: train
+  - models: rfdetr_small
+  - data: coco
+  - trainer: default
+  - callbacks: default
+  - logging: null
 
-training:
-  epochs: 100
-  batch_size: 8
-  num_workers: 4
-  lr: 1e-4
-  lr_encoder: 1.5e-4
-  grad_accum_steps: 2
-  amp: true
-  early_stopping: true
-  early_stopping_patience: 10
-  use_ema: true
-  ema_decay: 0.9999
-  # distributed training parameters
-  device: 'cuda'
-  world_size: 1
-  dist_url: 'env://'
-  tensorboard: true
-  eval: true
-  dataset_dir: "/path/to/dataset"  # You should override this with your dataset path
-  output_dir: null
-  pretrain_weights: null
+# Global Parameters
+input_height: 512
+input_width: 512
+log_level: INFO
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

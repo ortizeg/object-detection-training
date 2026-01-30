@@ -1,0 +1,13 @@
+defaults:
+  - RFDETRMedium
+  - rfdetr_base
+  - _self_
+
+# Medium-specific architecture
+out_feature_indexes: [3, 6, 9, 12]
+num_windows: 2
+dec_layers: 4
+patch_size: 16
+resolution: 576
+positional_encoding_size: 36
+checkpoint_name: "rf-detr-medium.pth"

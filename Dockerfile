@@ -12,6 +12,14 @@ RUN curl -fsSL https://pixi.sh/install.sh | bash
 # Add pixi to PATH
 ENV PATH="/root/.pixi/bin:$PATH"
 
+# WandB API Key
+ARG WANDB_API_KEY
+ENV WANDB_API_KEY=$WANDB_API_KEY
+
+# Override CUDA version for pixi to allow installation of cuda-dependent packages
+# even if the build environment doesn't have a GPU attached.
+ENV CONDA_OVERRIDE_CUDA=12.1
+
 COPY pixi.toml pixi.lock* pyproject.toml ./
 
 # Create a dummy project structure to allow pixi (and flit) to install dependencies

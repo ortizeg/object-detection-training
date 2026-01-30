@@ -1,0 +1,22 @@
+# COCO Dataset Configuration
+# Uses model's input resolution for consistency
+_target_: object_detection_training.data.coco_data_module.COCODataModule
+train_path: ??? # Required - path to training data
+val_path: ??? # Required - path to validation data
+test_path: null # Optional - path to test data
+batch_size: 8 # Optimized for total batch size 16 (8 * 2)
+num_workers: 8 # Match rfdetr TrainConfig default
+input_height: ${models.input_height}
+input_width: ${models.input_width}
+multi_scale: true # Match rfdetr TrainConfig default
+expanded_scales: true # Match rfdetr TrainConfig default
+skip_random_resize: false
+patch_size: 16
+num_windows: 2 # Match RFDETRMediumConfig (small=4, medium=2, large=2)
+pin_memory: true
+persistent_workers: true
+square_resize_div_64: true # Match rfdetr TrainConfig default
+
+# Normalization parameters linked from model config (0-255 scale)
+image_mean: ${models.image_mean}
+image_std: ${models.image_std}
