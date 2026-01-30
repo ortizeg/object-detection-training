@@ -2,6 +2,7 @@
 RFDETR model wrappers for PyTorch Lightning.
 
 This module wraps the rfdetr models to work with the Lightning training framework.
+Uses local model architecture code instead of the rfdetr PyPI package.
 """
 
 from __future__ import annotations
@@ -14,18 +15,23 @@ from typing import Any
 import omegaconf
 import torch
 from loguru import logger
-from rfdetr import (  # type: ignore[attr-defined]
-    RFDETRLarge,
-    RFDETRMedium,
-    RFDETRNano,
-    RFDETRSmall,
-)
-from rfdetr.models import (  # type: ignore[attr-defined]
-    build_criterion_and_postprocessors,
-)
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 
 from object_detection_training.models.base import BaseDetectionModel
+from object_detection_training.models.rfdetr.config import (
+    RFDETRLargeConfig,
+    RFDETRMediumConfig,
+    RFDETRNanoConfig,
+    RFDETRSmallConfig,
+)
+from object_detection_training.models.rfdetr.lwdetr import (
+    build_criterion_and_postprocessors,
+)
+from object_detection_training.models.rfdetr.model_factory import (
+    Model,
+    download_pretrain_weights,
+    HOSTED_MODELS,
+)
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.hydra import register
 
@@ -73,12 +79,12 @@ class RFDETRLightningModel(BaseDetectionModel):
     Wraps the rfdetr package models to work with Lightning training framework.
     """
 
-    # Model variant configurations
+    # Model variant configurations: maps variant name to config class
     MODEL_VARIANTS: dict[str, dict[str, Any]] = {
-        "nano": {"class": RFDETRNano, "checkpoint_key": "nano"},
-        "small": {"class": RFDETRSmall, "checkpoint_key": "small"},
-        "medium": {"class": RFDETRMedium, "checkpoint_key": "medium"},
-        "large": {"class": RFDETRLarge, "checkpoint_key": "large"},
+        "nano": {"config_class": RFDETRNanoConfig, "checkpoint_key": "nano"},
+        "small": {"config_class": RFDETRSmallConfig, "checkpoint_key": "small"},
+        "medium": {"config_class": RFDETRMediumConfig, "checkpoint_key": "medium"},
+        "large": {"config_class": RFDETRLargeConfig, "checkpoint_key": "large"},
     }
 
     def __init__(
@@ -147,60 +153,53 @@ class RFDETRLightningModel(BaseDetectionModel):
                 f"Choose from {list(self.MODEL_VARIANTS.keys())}"
             )
 
-        # Initialize the RFDETR model
-        model_config = self.MODEL_VARIANTS[variant]
-        model_class = model_config["class"]
+        # Initialize using local config + model factory
+        variant_info = self.MODEL_VARIANTS[variant]
+        config_class = variant_info["config_class"]
 
         # Handle pretrained weights
         if pretrain_weights is None and download_pretrained:
             cache_dir = Path.home() / ".cache" / "rfdetr"
             checkpoint_path = cache_dir / f"rf-detr-{variant}.pth"
             if not checkpoint_path.exists():
-                url = CHECKPOINT_URLS[model_config["checkpoint_key"]]
+                url = CHECKPOINT_URLS[variant_info["checkpoint_key"]]
                 download_checkpoint(url, checkpoint_path)
             pretrain_weights = str(checkpoint_path)
 
-        logging_info = f"Initializing RFDETR {variant} model"
-        logger.info(logging_info)
-        self.rfdetr_wrapper = model_class(
+        logger.info(f"Initializing RFDETR {variant} model")
+
+        # Build config and create Model (mirrors rfdetr package: config → Model)
+        config = config_class(
             pretrain_weights=pretrain_weights,
             num_classes=num_classes,
             resolution=input_height,
         )
+        self._rfdetr_model = Model(**config.model_dump())
 
         # Ensure the model head matches the target number of classes.
-        # rfdetr's Model.__init__ grows the head to match checkpoints (e.g. 91 for COCO)
+        # Model.__init__ grows the head to match checkpoints (e.g. 91 for COCO)
         # but the native training script shrinks it back before training.
-        current_out_features = self.rfdetr_wrapper.model.model.class_embed.weight.shape[
-            0
-        ]
+        current_out_features = self._rfdetr_model.model.class_embed.weight.shape[0]
         if current_out_features != num_classes + 1:
             logger.info(
                 "Reinitializing detection head from {} to {} classes",
                 current_out_features,
                 num_classes + 1,
             )
-            self.rfdetr_wrapper.model.reinitialize_detection_head(num_classes + 1)
+            self._rfdetr_model.reinitialize_detection_head(num_classes + 1)
 
         # Register the actual nn.Module so Lightning/Optimizer can see parameters
-        # valid chain based on forward usage: self.model.model.model
-        # We assign it to self.model which is a standard name
-        self.model = self.rfdetr_wrapper.model.model
+        # Model.model is the LWDETR nn.Module
+        self.model = self._rfdetr_model.model
 
         # Store internal model reference for export if needed
-        # (though self.model is the nn.Module now)
         self._internal_model = self.model
 
         # Build criterion for training
         logger.info("Building criterion for training...")
-        if build_criterion_and_postprocessors is not None:
-            # args are in the wrapper
-            self.criterion, self.postprocessors = build_criterion_and_postprocessors(  # type: ignore[no-untyped-call]
-                self.rfdetr_wrapper.model.args
-            )
-        else:
-            self.criterion = None
-            self.postprocessors = None
+        self.criterion, self.postprocessors = build_criterion_and_postprocessors(
+            self._rfdetr_model.args
+        )
 
         self.save_hyperparameters()
 
@@ -360,7 +359,8 @@ class RFDETRLightningModel(BaseDetectionModel):
         simplify: bool = True,
         dynamic_axes: dict[str, Any] | None = None,
     ) -> str:
-        """Export using RFDETR's built-in export method."""
+        """Export model to ONNX format."""
+        from copy import deepcopy
 
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -394,15 +394,28 @@ class RFDETRLightningModel(BaseDetectionModel):
         # Replace temporarily
         torch.onnx.export = monkeypatched_export
 
-        # Use RFDETR's built-in export
-        self.rfdetr_wrapper.export(
-            output_dir=str(out_path.parent),
-            simplify=simplify,
-            opset_version=opset_version,
-        )
+        device = self._rfdetr_model.device
+        model = deepcopy(self.model.cpu())
+        model.to(device)
+        model.eval()
+        model.export()
+
+        resolution = self._rfdetr_model.resolution
+        dummy_input = torch.randn(1, 3, resolution, resolution, device=device)
+
+        with torch.no_grad():
+            torch.onnx.export(
+                model,
+                dummy_input,
+                str(out_path),
+                input_names=["input"],
+                output_names=["dets", "labels"],
+                opset_version=opset_version,
+            )
 
         # Restore original export
         torch.onnx.export = original_export
+        self.model.to(device)
 
         return str(out_path)
 
