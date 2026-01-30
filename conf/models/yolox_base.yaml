@@ -7,8 +7,6 @@ defaults:
 learning_rate: 1e-3
 weight_decay: 5e-4
 warmup_epochs: 5
-use_ema: true
-ema_decay: 0.9998
 download_pretrained: true
 pretrain_weights: null
 
