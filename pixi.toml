@@ -44,6 +44,7 @@ prod = []
 
 [pypi-dependencies]
 rfdetr = { version = "*", extras = ["metrics", "onnxexport"] }
+transformers = { version = "<4.49.0" }  # rfdetr uses removed find_pruneable_heads_and_indices
 torchmetrics = { version = "*" }
 object-detection-training = { path = ".", editable = true }
 dotenv = "*"
