@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- encoding: utf-8 -*-
 # Copyright (c) Megvii Inc. All rights reserved.
 #
 # Original source: https://github.com/Megvii-BaseDetection/YOLOX

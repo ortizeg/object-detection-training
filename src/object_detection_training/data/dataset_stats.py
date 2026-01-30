@@ -11,7 +11,7 @@ Designed to be called from callbacks or standalone analysis scripts.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,9 +31,9 @@ class DatasetStatistics:
             dataset: A DetectionDataset instance (already loaded).
         """
         self.dataset = dataset
-        self._summary_cache: Optional[Dict[str, Any]] = None
+        self._summary_cache: dict[str, Any] | None = None
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> dict[str, Any]:
         """Compute summary statistics.
 
         Returns:
@@ -91,8 +91,8 @@ class DatasetStatistics:
 
     def box_size_histogram(
         self,
-        save_path: Optional[Path] = None,
-        figsize: Tuple[int, int] = (12, 6),
+        save_path: Path | None = None,
+        figsize: tuple[int, int] = (12, 6),
         bins: int = 50,
     ) -> plt.Figure:
         """Generate histogram of box sizes with small/medium/large regions.
@@ -213,8 +213,8 @@ class DatasetStatistics:
 
     def class_distribution_chart(
         self,
-        save_path: Optional[Path] = None,
-        figsize: Tuple[int, int] = (12, 6),
+        save_path: Path | None = None,
+        figsize: tuple[int, int] = (12, 6),
         horizontal: bool = False,
     ) -> plt.Figure:
         """Generate bar chart of class distribution.
@@ -368,7 +368,7 @@ class DatasetStatistics:
 
         logger.info(f"Exported summary to {save_path}")
 
-    def generate_report(self, output_dir: Path, prefix: Optional[str] = None) -> None:
+    def generate_report(self, output_dir: Path, prefix: str | None = None) -> None:
         """Generate all statistics reports (JSON, histograms, charts).
 
         Args:

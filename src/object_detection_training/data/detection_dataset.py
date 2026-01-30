@@ -10,7 +10,7 @@ Provides abstract base class for detection datasets with:
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -58,12 +58,12 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         self,
         root_path: str,
         split: str = "train",
-        selected_categories: Optional[List[str]] = None,
+        selected_categories: list[str] | None = None,
         small_threshold: float = 32.0,
         medium_threshold: float = 96.0,
-        label_map: Optional[Dict[int, int]] = None,
-        class_names: Optional[List[str]] = None,
-        transforms: Optional[Any] = None,
+        label_map: dict[int, int] | None = None,
+        class_names: list[str] | None = None,
+        transforms: Any | None = None,
     ):
         """Initialize detection dataset.
 
@@ -87,9 +87,9 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         self.transforms = transforms
 
         # Lazy-loaded DataFrames
-        self._images_df: Optional[pd.DataFrame] = None
-        self._annotations_df: Optional[pd.DataFrame] = None
-        self._categories: Optional[Dict[int, str]] = None
+        self._images_df: pd.DataFrame | None = None
+        self._annotations_df: pd.DataFrame | None = None
+        self._categories: dict[int, str] | None = None
 
         # Mapping: original_dataset_id -> model_contiguous_id
         # Use provided mapping if available, otherwise compute during load
@@ -97,7 +97,7 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         self._class_names = class_names
 
         # Cache for image IDs for indexing
-        self._image_ids: Optional[List[int]] = None
+        self._image_ids: list[int] | None = None
 
     @property
     def images_df(self) -> pd.DataFrame:
@@ -114,14 +114,14 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         return self._annotations_df
 
     @property
-    def categories(self) -> Dict[int, str]:
+    def categories(self) -> dict[int, str]:
         """Category ID to name mapping (after filtering)."""
         if self._categories is None:
             self._load_and_process()
         return self._categories
 
     @property
-    def label_map(self) -> Dict[int, int]:
+    def label_map(self) -> dict[int, int]:
         """Mapping from original category IDs to contiguous 0-indexed IDs."""
         if self._label_map is None:
             self._load_and_process()
@@ -137,7 +137,7 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         return len(self.categories)
 
     @property
-    def class_names(self) -> List[str]:
+    def class_names(self) -> list[str]:
         """Ordered list of class names (by contiguous ID)."""
         if self._class_names is not None:
             return self._class_names
@@ -153,14 +153,14 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         return [name for _, name in sorted_cats]
 
     @property
-    def image_ids(self) -> List[int]:
+    def image_ids(self) -> list[int]:
         """Ordered list of image IDs for indexing."""
         if self._image_ids is None:
             self._image_ids = self.images_df["image_id"].tolist()
         return self._image_ids
 
     @abstractmethod
-    def load_annotations(self) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[int, str]]:
+    def load_annotations(self) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, str]]:
         """Load raw annotations from the dataset format.
 
         Returns:
@@ -280,7 +280,7 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         """Get all annotations for a specific image."""
         return self.annotations_df[self.annotations_df["image_id"] == image_id]
 
-    def get_image_info(self, image_id: int) -> Optional[pd.Series]:
+    def get_image_info(self, image_id: int) -> pd.Series | None:
         """Get image metadata for a specific image."""
         matches = self.images_df[self.images_df["image_id"] == image_id]
         if len(matches) == 0:
@@ -320,7 +320,7 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
             f"classes={self.num_classes})"
         )
 
-    def __getitem__(self, idx: int) -> Tuple[Any, Dict[str, Any]]:
+    def __getitem__(self, idx: int) -> tuple[Any, dict[str, Any]]:
         """Get image and target for a given index.
 
         Format matches DETR/RF-DETR expectations:
@@ -401,7 +401,7 @@ class DetectionDataset(torch.utils.data.Dataset, ABC):
         return img, target
 
     @property
-    def labels_mapping(self) -> Dict[int, str]:
+    def labels_mapping(self) -> dict[int, str]:
         """Get mapping from contiguous label IDs to class names.
 
         This is the inverse of label_map: contiguous_id -> class_name.

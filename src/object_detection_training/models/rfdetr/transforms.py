@@ -16,7 +16,7 @@ from numbers import Number
 try:
     from collections.abc import Sequence
 except Exception:
-    from collections import Sequence
+    from collections.abc import Sequence
 
 import numpy as np
 import PIL
@@ -187,7 +187,7 @@ def pad(image, target, padding):
     return padded_image, target
 
 
-class RandomCrop(object):
+class RandomCrop:
     def __init__(self, size):
         self.size = size
 
@@ -196,7 +196,7 @@ class RandomCrop(object):
         return crop(img, target, region)
 
 
-class RandomSizeCrop(object):
+class RandomSizeCrop:
     def __init__(self, min_size: int, max_size: int):
         self.min_size = min_size
         self.max_size = max_size
@@ -208,7 +208,7 @@ class RandomSizeCrop(object):
         return crop(img, target, region)
 
 
-class CenterCrop(object):
+class CenterCrop:
     def __init__(self, size):
         self.size = size
 
@@ -220,7 +220,7 @@ class CenterCrop(object):
         return crop(img, target, (crop_top, crop_left, crop_height, crop_width))
 
 
-class RandomHorizontalFlip(object):
+class RandomHorizontalFlip:
     def __init__(self, p=0.5):
         self.p = p
 
@@ -230,7 +230,7 @@ class RandomHorizontalFlip(object):
         return img, target
 
 
-class RandomResize(object):
+class RandomResize:
     def __init__(self, sizes, max_size=None):
         assert isinstance(sizes, (list, tuple))
         self.sizes = sizes
@@ -241,7 +241,7 @@ class RandomResize(object):
         return resize(img, target, size, self.max_size)
 
 
-class SquareResize(object):
+class SquareResize:
     def __init__(self, sizes):
         assert isinstance(sizes, (list, tuple))
         self.sizes = sizes
@@ -275,7 +275,7 @@ class SquareResize(object):
         return rescaled_img, target
 
 
-class RandomPad(object):
+class RandomPad:
     def __init__(self, max_pad):
         self.max_pad = max_pad
 
@@ -285,17 +285,17 @@ class RandomPad(object):
         return pad(img, target, (pad_x, pad_y))
 
 
-class PILtoNdArray(object):
+class PILtoNdArray:
     def __call__(self, img, target):
         return np.asarray(img), target
 
 
-class NdArraytoPIL(object):
+class NdArraytoPIL:
     def __call__(self, img, target):
         return F.to_pil_image(img.astype("uint8")), target
 
 
-class Pad(object):
+class Pad:
     def __init__(
         self,
         size=None,
@@ -352,9 +352,9 @@ class Pad(object):
         im_h, im_w = im.shape[:2]
         if self.size:
             h, w = self.size
-            assert (
-                im_h <= h and im_w <= w
-            ), "(h, w) of target size should be >= (im_h, im_w)"
+            assert im_h <= h and im_w <= w, (
+                "(h, w) of target size should be >= (im_h, im_w)"
+            )
         else:
             h = int(np.ceil(im_h / self.size_divisor) * self.size_divisor)
             w = int(np.ceil(im_w / self.size_divisor) * self.size_divisor)
@@ -386,7 +386,7 @@ class Pad(object):
         return im, target
 
 
-class RandomExpand(object):
+class RandomExpand:
     """Random expand the canvas.
     Args:
         ratio: maximum expansion ratio.
@@ -398,9 +398,9 @@ class RandomExpand(object):
         assert ratio > 1.01, "expand ratio must be larger than 1.01"
         self.ratio = ratio
         self.prob = prob
-        assert isinstance(
-            fill_value, (Number, Sequence)
-        ), "fill value must be either float or sequence"
+        assert isinstance(fill_value, (Number, Sequence)), (
+            "fill value must be either float or sequence"
+        )
         if isinstance(fill_value, Number):
             fill_value = (fill_value,) * 3
         if not isinstance(fill_value, tuple):
@@ -426,7 +426,7 @@ class RandomExpand(object):
         return padder(img, target)
 
 
-class RandomSelect(object):
+class RandomSelect:
     """
     Randomly selects between transforms1 and transforms2,
     with probability p for transforms1 and (1 - p) for transforms2
@@ -443,12 +443,12 @@ class RandomSelect(object):
         return self.transforms2(img, target)
 
 
-class ToTensor(object):
+class ToTensor:
     def __call__(self, img, target):
         return F.to_tensor(img), target
 
 
-class PILToTensor(object):
+class PILToTensor:
     """Convert PIL Image to tensor, keeping values in 0-255 range.
 
     Models using this should specify normalization mean/std relative to the 0-255 range.
@@ -460,7 +460,7 @@ class PILToTensor(object):
         return img_tensor, target
 
 
-class RandomErasing(object):
+class RandomErasing:
     def __init__(self, *args, **kwargs):
         self.eraser = T.RandomErasing(*args, **kwargs)
 
@@ -468,7 +468,7 @@ class RandomErasing(object):
         return self.eraser(img), target
 
 
-class RFColorJitter(object):
+class RFColorJitter:
     def __init__(self, *args, **kwargs):
         self.color_jitter = T.ColorJitter(*args, **kwargs)
 
@@ -476,7 +476,7 @@ class RFColorJitter(object):
         return self.color_jitter(img), target
 
 
-class Normalize(object):
+class Normalize:
     def __init__(self, mean, std):
         self.mean = mean
         self.std = std
@@ -495,7 +495,7 @@ class Normalize(object):
         return image, target
 
 
-class Compose(object):
+class Compose:
     def __init__(self, transforms):
         self.transforms = transforms
 
@@ -508,6 +508,6 @@ class Compose(object):
         format_string = self.__class__.__name__ + "("
         for t in self.transforms:
             format_string += "\n"
-            format_string += "    {0}".format(t)
+            format_string += f"    {t}"
         format_string += "\n)"
         return format_string

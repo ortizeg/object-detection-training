@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 from torch import Tensor
@@ -6,11 +6,11 @@ from torchvision.ops import box_iou
 
 
 def compute_detection_curves(
-    preds: List[Dict[str, Tensor]],
-    targets: List[Dict[str, Tensor]],
+    preds: list[dict[str, Tensor]],
+    targets: list[dict[str, Tensor]],
     num_classes: int,
     iou_threshold: float = 0.5,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Compute Precision-Recall and F1 curves for object detection.
 

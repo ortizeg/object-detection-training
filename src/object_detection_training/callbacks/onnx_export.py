@@ -5,7 +5,6 @@ Automatically exports models to ONNX format during training.
 """
 
 from pathlib import Path
-from typing import List, Optional
 
 import lightning as L
 import omegaconf
@@ -54,13 +53,13 @@ class ONNXExportCallback(L.Callback):
         self.input_height = input_height
         self.input_width = input_width
 
-        self._exported_checkpoints: List[str] = []
+        self._exported_checkpoints: list[str] = []
 
     def _export_model(
         self,
         pl_module: L.LightningModule,
         output_path: Path,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Export model to ONNX."""
         try:
             if hasattr(pl_module, "export_onnx"):

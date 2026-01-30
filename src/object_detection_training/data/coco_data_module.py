@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import lightning as L
 import torch
@@ -32,7 +32,7 @@ class COCODataModule(L.LightningDataModule):
         self,
         train_path: str,
         val_path: str,
-        test_path: Optional[str] = None,
+        test_path: str | None = None,
         batch_size: int = 8,
         num_workers: int = 4,
         input_height: int = 640,
@@ -45,10 +45,10 @@ class COCODataModule(L.LightningDataModule):
         pin_memory: bool = True,
         persistent_workers: bool = True,
         square_resize_div_64: bool = True,
-        image_mean: List[float] = [123.675, 116.28, 103.53],
-        image_std: List[float] = [58.395, 57.12, 57.375],
-        selected_categories: Optional[List[str]] = None,
-        size_thresholds: Optional[Dict[str, float]] = None,
+        image_mean: list[float] = [123.675, 116.28, 103.53],
+        image_std: list[float] = [58.395, 57.12, 57.375],
+        selected_categories: list[str] | None = None,
+        size_thresholds: dict[str, float] | None = None,
     ):
         """
         Initialize COCO data module.
@@ -103,9 +103,9 @@ class COCODataModule(L.LightningDataModule):
         self.image_std = image_std
 
         # Cache for num_classes and mapping
-        self._num_classes: Optional[int] = None
-        self._class_names: Optional[list] = None
-        self._label_map: Optional[Dict[int, int]] = None
+        self._num_classes: int | None = None
+        self._class_names: list | None = None
+        self._label_map: dict[int, int] | None = None
 
         # Category filtering and size thresholds
         self.selected_categories = selected_categories
@@ -142,7 +142,7 @@ class COCODataModule(L.LightningDataModule):
             self._label_map = {}
             return
 
-        with open(ann_file, "r") as f:
+        with open(ann_file) as f:
             data = json.load(f)
 
         all_categories = data.get("categories", [])
@@ -296,7 +296,7 @@ class COCODataModule(L.LightningDataModule):
         )
 
     @property
-    def train_detection_dataset(self) -> Optional[COCODetectionDataset]:
+    def train_detection_dataset(self) -> COCODetectionDataset | None:
         """Expose training COCODetectionDataset for stats/sampling."""
         if self._train_detection_dataset is None:
             self._train_detection_dataset = self._create_detection_dataset(

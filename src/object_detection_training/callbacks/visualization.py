@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import lightning as L
 import numpy as np
@@ -25,8 +25,8 @@ class VisualizationCallback(L.Callback):
         num_samples: int = 10,
         confidence_threshold: float = 0.3,
         output_dir: str = "outputs",
-        mean: List[float] = [123.675, 116.28, 103.53],
-        std: List[float] = [58.395, 57.12, 57.375],
+        mean: list[float] = [123.675, 116.28, 103.53],
+        std: list[float] = [58.395, 57.12, 57.375],
     ):
         """
         Initialize visualization callback.
@@ -43,8 +43,8 @@ class VisualizationCallback(L.Callback):
         self.mean = torch.tensor(mean).view(3, 1, 1)
         self.std = torch.tensor(std).view(3, 1, 1)
 
-        self.val_samples: List[Dict[str, Any]] = []
-        self.test_samples: List[Dict[str, Any]] = []
+        self.val_samples: list[dict[str, Any]] = []
+        self.test_samples: list[dict[str, Any]] = []
 
         # Annotators
         self.box_annotator = sv.BoxAnnotator()
@@ -63,7 +63,7 @@ class VisualizationCallback(L.Callback):
         array = tensor.permute(1, 2, 0).numpy()
         return np.clip(array, 0, 255).astype(np.uint8)
 
-    def _collect_samples(self, dataloader, num: int) -> List[Dict[str, Any]]:
+    def _collect_samples(self, dataloader, num: int) -> list[dict[str, Any]]:
         """Collect random samples from dataloader."""
         samples = []
         dataset = dataloader.dataset
@@ -179,7 +179,7 @@ class VisualizationCallback(L.Callback):
 
                 # Use class names for predictions
                 # We prioritize class names from datamodule
-                pred_labels_list: Optional[List[str]] = None
+                pred_labels_list: list[str] | None = None
                 class_names = getattr(trainer.datamodule, "class_names", None)
 
                 if class_names is None:
@@ -305,7 +305,7 @@ class VisualizationCallback(L.Callback):
 
     def _visualize_gt(
         self,
-        samples: List[Dict[str, Any]],
+        samples: list[dict[str, Any]],
         split: str,
         trainer: L.Trainer,
         pl_module: L.LightningModule,

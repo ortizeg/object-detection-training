@@ -7,7 +7,7 @@ for the object detection training framework.
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loguru import logger
 from pydantic import BaseModel, Field, model_validator
@@ -24,7 +24,7 @@ class BaseTask(BaseModel, ABC):
     """
 
     name: str = Field(description="Name of the task")
-    output_dir: Optional[Path] = Field(
+    output_dir: Path | None = Field(
         default=None, description="Output directory for task artifacts"
     )
 
@@ -64,20 +64,20 @@ class TrainTask(BaseTask):
     )
 
     # Callbacks
-    callbacks: Optional[list] = Field(
+    callbacks: list | None = Field(
         default=None, description="List of callbacks (instantiated via Hydra)"
     )
 
     # Loggers
-    loggers: Optional[list] = Field(
+    loggers: list | None = Field(
         default=None, description="List of loggers (instantiated via Hydra)"
     )
 
     # Additional training options
-    ckpt_path: Optional[Path] = Field(
+    ckpt_path: Path | None = Field(
         default=None, description="Path to checkpoint to resume from"
     )
-    seed: Optional[int] = Field(default=42, description="Random seed for training")
+    seed: int | None = Field(default=42, description="Random seed for training")
 
     @model_validator(mode="after")
     def validate_task(self) -> "TrainTask":

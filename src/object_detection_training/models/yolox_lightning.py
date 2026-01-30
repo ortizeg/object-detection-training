@@ -6,7 +6,6 @@ This module provides Lightning-compatible wrappers for YOLOX models.
 
 import math
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -89,7 +88,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         self,
         variant: str = "s",
         num_classes: int = 80,
-        pretrain_weights: Optional[str] = None,
+        pretrain_weights: str | None = None,
         learning_rate: float = 1e-3,
         weight_decay: float = 5e-4,
         warmup_epochs: int = 5,
@@ -97,8 +96,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         input_height: int = 640,
         input_width: int = 640,
         output_dir: str = "outputs",
-        image_mean: List[float] = [0.0, 0.0, 0.0],
-        image_std: List[float] = [1.0, 1.0, 1.0],
+        image_mean: list[float] = [0.0, 0.0, 0.0],
+        image_std: list[float] = [1.0, 1.0, 1.0],
     ):
         """
         Initialize YOLOX Lightning model.
@@ -300,8 +299,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         return loss
 
     def forward(
-        self, images: torch.Tensor, targets: Optional[List[Dict]] = None
-    ) -> Dict[str, torch.Tensor]:
+        self, images: torch.Tensor, targets: list[dict] | None = None
+    ) -> dict[str, torch.Tensor]:
         """Forward pass."""
         # Handle NestedTensor from rfdetr collation
         if hasattr(images, "tensors"):
@@ -340,10 +339,10 @@ class YOLOXLightningModel(BaseDetectionModel):
 
     def get_predictions(
         self,
-        outputs: Dict[str, torch.Tensor],
-        original_sizes: Optional[List[Tuple[int, int]]] = None,
+        outputs: dict[str, torch.Tensor],
+        original_sizes: list[tuple[int, int]] | None = None,
         confidence_threshold: float = 0.1,
-    ) -> List[Dict[str, torch.Tensor]]:
+    ) -> list[dict[str, torch.Tensor]]:
         """Convert model outputs to prediction format."""
         predictions = []
 

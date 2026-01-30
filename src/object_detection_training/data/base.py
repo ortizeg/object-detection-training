@@ -3,7 +3,7 @@ Base data module for object detection training.
 """
 
 from abc import abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 import lightning as L
 from torch.utils.data import DataLoader
@@ -39,9 +39,9 @@ class BaseDataModule(L.LightningDataModule):
         self.pin_memory = pin_memory
         self.persistent_workers = persistent_workers if num_workers > 0 else False
 
-        self.train_dataset: Optional[Any] = None
-        self.val_dataset: Optional[Any] = None
-        self.test_dataset: Optional[Any] = None
+        self.train_dataset: Any | None = None
+        self.val_dataset: Any | None = None
+        self.test_dataset: Any | None = None
 
     @abstractmethod
     def setup_train_dataset(self) -> Any:
@@ -53,7 +53,7 @@ class BaseDataModule(L.LightningDataModule):
         """Create and return the validation dataset."""
         pass
 
-    def setup_test_dataset(self) -> Optional[Any]:
+    def setup_test_dataset(self) -> Any | None:
         """Create and return the test dataset. Optional, returns None by default."""
         return None
 
@@ -62,7 +62,7 @@ class BaseDataModule(L.LightningDataModule):
         """Custom collate function for batching."""
         pass
 
-    def setup(self, stage: Optional[str] = None) -> None:
+    def setup(self, stage: str | None = None) -> None:
         """Setup datasets for the given stage."""
         if stage == "fit" or stage is None:
             self.train_dataset = self.setup_train_dataset()
@@ -96,7 +96,7 @@ class BaseDataModule(L.LightningDataModule):
             collate_fn=self.collate_fn,
         )
 
-    def test_dataloader(self) -> Optional[DataLoader]:
+    def test_dataloader(self) -> DataLoader | None:
         """Return test data loader if test dataset exists."""
         if self.test_dataset is None:
             return None

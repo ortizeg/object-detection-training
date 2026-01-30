@@ -6,7 +6,6 @@ This module wraps the rfdetr models to work with the Lightning training framewor
 
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import omegaconf
 import torch
@@ -75,7 +74,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         self,
         variant: str = "small",
         num_classes: int = 80,
-        pretrain_weights: Optional[str] = None,
+        pretrain_weights: str | None = None,
         learning_rate: float = 2.5e-4,
         lr_encoder: float = 1.5e-4,
         weight_decay: float = 1e-4,
@@ -84,11 +83,11 @@ class RFDETRLightningModel(BaseDetectionModel):
         input_width: int = 512,
         lr_vit_layer_decay: float = 0.8,
         lr_component_decay: float = 0.7,
-        out_feature_indexes: List[int] = [3, 6, 9, 12],
+        out_feature_indexes: list[int] = [3, 6, 9, 12],
         download_pretrained: bool = True,
         output_dir: str = "outputs",
-        image_mean: List[float] = [123.675, 116.28, 103.53],
-        image_std: List[float] = [58.395, 57.12, 57.375],
+        image_mean: list[float] = [123.675, 116.28, 103.53],
+        image_std: list[float] = [58.395, 57.12, 57.375],
     ):
         """
         Initialize RFDETR Lightning model.
@@ -210,8 +209,8 @@ class RFDETRLightningModel(BaseDetectionModel):
         return total_loss
 
     def forward(
-        self, images: torch.Tensor, targets: Optional[List[Dict]] = None
-    ) -> Dict[str, torch.Tensor]:
+        self, images: torch.Tensor, targets: list[dict] | None = None
+    ) -> dict[str, torch.Tensor]:
         """
         Forward pass.
 
@@ -234,8 +233,8 @@ class RFDETRLightningModel(BaseDetectionModel):
             return self._forward_inference(images)
 
     def _forward_train(
-        self, images: torch.Tensor, targets: List[Dict]
-    ) -> Dict[str, torch.Tensor]:
+        self, images: torch.Tensor, targets: list[dict]
+    ) -> dict[str, torch.Tensor]:
         """Forward pass for training."""
         # self.model is now the LWDETR nn.Module
         outputs = self.model(images)
@@ -262,13 +261,13 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         return log_data
 
-    def _forward_inference(self, images: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def _forward_inference(self, images: torch.Tensor) -> dict[str, torch.Tensor]:
         """Forward pass for inference."""
         with torch.no_grad():
             outputs = self.model(images)
         return outputs
 
-    def _forward_for_export(self, images: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def _forward_for_export(self, images: torch.Tensor) -> tuple[torch.Tensor, ...]:
         """Forward pass for ONNX export."""
         outputs = self.model(images)
         # Return in export format (boxes, scores, labels)
@@ -276,10 +275,10 @@ class RFDETRLightningModel(BaseDetectionModel):
 
     def get_predictions(
         self,
-        outputs: Dict[str, torch.Tensor],
-        original_sizes: Optional[List[Tuple[int, int]]] = None,
+        outputs: dict[str, torch.Tensor],
+        original_sizes: list[tuple[int, int]] | None = None,
         confidence_threshold: float = 0.0,
-    ) -> List[Dict[str, torch.Tensor]]:
+    ) -> list[dict[str, torch.Tensor]]:
         """Convert model outputs to prediction format for metrics.
 
         Uses sigmoid activation to match rfdetr package's PostProcess.
@@ -344,7 +343,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         input_width: int = 640,
         opset_version: int = 17,
         simplify: bool = True,
-        dynamic_axes: Optional[Dict] = None,
+        dynamic_axes: dict | None = None,
     ) -> str:
         """Export using RFDETR's built-in export method."""
 

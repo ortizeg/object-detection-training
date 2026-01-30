@@ -6,7 +6,7 @@ Uses json.load() + pd.json_normalize() for fast parsing.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import pandas as pd
 import torch
@@ -32,12 +32,12 @@ class COCODetectionDataset(DetectionDataset):
         self,
         root_path: str,
         split: str = "train",
-        selected_categories: Optional[List[str]] = None,
+        selected_categories: list[str] | None = None,
         small_threshold: float = 32.0,
         medium_threshold: float = 96.0,
-        label_map: Optional[Dict[int, int]] = None,
-        class_names: Optional[List[str]] = None,
-        transforms: Optional[Any] = None,
+        label_map: dict[int, int] | None = None,
+        class_names: list[str] | None = None,
+        transforms: Any | None = None,
     ):
         """Initialize COCO detection dataset.
 
@@ -91,7 +91,7 @@ class COCODetectionDataset(DetectionDataset):
             return images_dir
         return self.root_path
 
-    def load_annotations(self) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[int, str]]:
+    def load_annotations(self) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, str]]:
         """Load COCO JSON into pandas DataFrames.
 
         Returns:
@@ -182,7 +182,7 @@ class COCODetectionDataset(DetectionDataset):
 
         return images_df, annotations_df, categories
 
-    def get_image_path(self, image_id: int) -> Optional[Path]:
+    def get_image_path(self, image_id: int) -> Path | None:
         """Get the full path to an image file."""
         info = self.get_image_info(image_id)
         if info is None:
@@ -205,8 +205,8 @@ class COCODetectionDataset(DetectionDataset):
 
 
 def collate_fn_with_image_ids(
-    batch: List[Tuple[torch.Tensor, Dict[str, Any]]],
-) -> Tuple[Any, List[Dict[str, Any]], List[int]]:
+    batch: list[tuple[torch.Tensor, dict[str, Any]]],
+) -> tuple[Any, list[dict[str, Any]], list[int]]:
     """Collate function that also returns image IDs.
 
     Useful for evaluation where image IDs are needed.

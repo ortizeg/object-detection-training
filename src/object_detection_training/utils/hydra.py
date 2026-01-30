@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Type, Union
+from typing import Any
 
 import hydra
 from hydra.core.config_store import ConfigStore
@@ -7,12 +7,12 @@ from omegaconf import DictConfig
 
 
 def register(
-    cls: Optional[Type[Any]] = None,
+    cls: type[Any] | None = None,
     *,
-    group: Optional[str] = None,
-    name: Optional[str] = None,
+    group: str | None = None,
+    name: str | None = None,
     **kwargs: Any,
-) -> Union[Type[Any], Any]:
+) -> type[Any] | Any:
     """
     Decorator to register a class with Hydra's ConfigStore.
 
@@ -29,7 +29,7 @@ def register(
         **kwargs: Default values for the configuration node.
     """
 
-    def _process_class(target_cls: Type[Any]) -> Type[Any]:
+    def _process_class(target_cls: type[Any]) -> type[Any]:
         nonlocal group, name
 
         # Determine the target path (module + class name)
@@ -77,7 +77,7 @@ def instantiate_datamodule(cfg: DictConfig) -> Any:
 
 
 def instantiate_model(
-    cfg: DictConfig, checkpoint_path: Optional[str] = None, **kwargs: Any
+    cfg: DictConfig, checkpoint_path: str | None = None, **kwargs: Any
 ) -> Any:
     """
     Instantiate a Lightning Module from Hydra config.
@@ -109,7 +109,7 @@ def instantiate_model(
     return model
 
 
-def instantiate_callbacks(cfg: DictConfig) -> List[Any]:
+def instantiate_callbacks(cfg: DictConfig) -> list[Any]:
     """
     Instantiate a list of callbacks from Hydra config.
 
@@ -135,7 +135,7 @@ def instantiate_callbacks(cfg: DictConfig) -> List[Any]:
     return callbacks
 
 
-def instantiate_loggers(cfg: DictConfig) -> List[Any]:
+def instantiate_loggers(cfg: DictConfig) -> list[Any]:
     """
     Instantiate a list of loggers from Hydra config.
 
@@ -163,8 +163,8 @@ def instantiate_loggers(cfg: DictConfig) -> List[Any]:
 
 def instantiate_trainer(
     cfg: DictConfig,
-    callbacks: Optional[List[Any]] = None,
-    loggers: Optional[List[Any]] = None,
+    callbacks: list[Any] | None = None,
+    loggers: list[Any] | None = None,
     **kwargs: Any,
 ) -> Any:
     """

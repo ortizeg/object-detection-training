@@ -3,12 +3,12 @@ JSON utilities for object detection training.
 """
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import orjson
 
 
-def load_json(path: Path) -> Dict[str, Any]:
+def load_json(path: Path) -> dict[str, Any]:
     """Load a JSON file using orjson for fast parsing.
 
     Args:
@@ -21,7 +21,7 @@ def load_json(path: Path) -> Dict[str, Any]:
         return orjson.loads(f.read())
 
 
-def save_json(data: Dict[str, Any], path: Path, indent: bool = True) -> None:
+def save_json(data: dict[str, Any], path: Path, indent: bool = True) -> None:
     """Save data to a JSON file using orjson.
 
     Args:

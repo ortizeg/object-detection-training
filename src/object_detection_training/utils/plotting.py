@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +11,7 @@ def plot_pr_curve(
     precision: np.ndarray,
     class_name: str,
     save_path: Path,
-    ap: Optional[float] = None,
+    ap: float | None = None,
 ) -> None:
     """
     Plot and save Precision-Recall curve.
@@ -49,11 +49,11 @@ def plot_pr_curve(
 
 
 def save_detection_curves_plots(
-    curves_data: Dict[str, Any],
-    class_names: Optional[List[str]],
+    curves_data: dict[str, Any],
+    class_names: list[str] | None,
     output_dir: Path,
     prefix: str = "",
-    metrics: Optional[Dict[str, Any]] = None,
+    metrics: dict[str, Any] | None = None,
 ) -> None:
     """
     Save plots for all classes in curves_data.

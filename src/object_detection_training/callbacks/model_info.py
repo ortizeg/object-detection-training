@@ -6,7 +6,7 @@ Computes and logs model statistics at training start.
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import lightning as L
 from loguru import logger
@@ -24,7 +24,7 @@ class ModelInfoCallback(L.Callback):
 
     def __init__(
         self,
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
         output_filename: str = "model_info.json",
         input_height: int = 640,
         input_width: int = 640,
@@ -47,7 +47,7 @@ class ModelInfoCallback(L.Callback):
         self.input_height = input_height
         self.input_width = input_width
         self.measure_inference_speed = measure_inference_speed
-        self.model_info: Dict[str, Any] = {}
+        self.model_info: dict[str, Any] = {}
 
     def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         """Compute and save model info at training start."""
@@ -148,7 +148,7 @@ class ModelInfoCallback(L.Callback):
             elif hasattr(logger_inst, "log_hyperparams"):
                 logger_inst.log_hyperparams(self.model_info)
 
-    def _compute_basic_stats(self, pl_module: L.LightningModule) -> Dict[str, Any]:
+    def _compute_basic_stats(self, pl_module: L.LightningModule) -> dict[str, Any]:
         """Compute basic model statistics."""
         total_params = sum(p.numel() for p in pl_module.parameters())
         trainable_params = sum(

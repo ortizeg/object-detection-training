@@ -5,7 +5,7 @@ Base detection model abstraction using PyTorch Lightning.
 import time
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import lightning as L
 import supervision as sv
@@ -70,8 +70,8 @@ class BaseDetectionModel(L.LightningModule):
 
     @abstractmethod
     def forward(
-        self, images: torch.Tensor, targets: Optional[List[Dict]] = None
-    ) -> Dict[str, torch.Tensor]:
+        self, images: torch.Tensor, targets: list[dict] | None = None
+    ) -> dict[str, torch.Tensor]:
         """
         Forward pass of the model.
 
@@ -88,10 +88,10 @@ class BaseDetectionModel(L.LightningModule):
     @abstractmethod
     def get_predictions(
         self,
-        outputs: Dict[str, torch.Tensor],
-        original_sizes: Optional[List[Tuple[int, int]]] = None,
+        outputs: dict[str, torch.Tensor],
+        original_sizes: list[tuple[int, int]] | None = None,
         confidence_threshold: float = 0.0,
-    ) -> List[Dict[str, torch.Tensor]]:
+    ) -> list[dict[str, torch.Tensor]]:
         """
         Convert model outputs to prediction format.
 
@@ -129,7 +129,7 @@ class BaseDetectionModel(L.LightningModule):
         input_width: int = 640,
         opset_version: int = 17,
         simplify: bool = True,
-        dynamic_axes: Optional[Dict] = None,
+        dynamic_axes: dict | None = None,
     ) -> str:
         """
         Export model to ONNX format.
@@ -207,7 +207,7 @@ class BaseDetectionModel(L.LightningModule):
         self,
         input_height: int = 640,
         input_width: int = 640,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Compute model statistics (parameters, FLOPs, size, inference speed).
 
@@ -317,9 +317,9 @@ class BaseDetectionModel(L.LightningModule):
 
     def _to_sv_detections(
         self,
-        preds: List[Dict[str, torch.Tensor]],
-        targets: List[Dict[str, torch.Tensor]],
-    ) -> Tuple[List[sv.Detections], List[sv.Detections]]:
+        preds: list[dict[str, torch.Tensor]],
+        targets: list[dict[str, torch.Tensor]],
+    ) -> tuple[list[sv.Detections], list[sv.Detections]]:
         """
         Convert framework format to supervision Detections.
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- encoding: utf-8 -*-
 # Copyright (c) Megvii Inc. All rights reserved.
 #
 # Original source: https://github.com/Megvii-BaseDetection/YOLOX
@@ -517,7 +516,7 @@ class YOLOXHead(nn.Module):
         cost = (
             pair_wise_cls_loss
             + 3.0 * pair_wise_ious_loss
-            + float(1e6) * (~is_in_boxes_and_center)
+            + 1e6 * (~is_in_boxes_and_center)
         )
 
         # 3. Dynamic K Matching

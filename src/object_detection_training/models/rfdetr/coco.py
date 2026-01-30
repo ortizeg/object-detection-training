@@ -20,8 +20,6 @@ Mostly copy-paste from
 https://github.com/pytorch/vision/blob/13b35ff/references/detection/coco_utils.py
 """
 
-from typing import Optional
-
 import pycocotools.mask as coco_mask
 import torch
 import torch.utils.data
@@ -90,7 +88,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         ann_file,
         transforms,
         include_masks=False,
-        label_map: Optional[dict] = None,
+        label_map: dict | None = None,
     ):
         super(CocoDetection, self).__init__(img_folder, ann_file)
         self._transforms = transforms
@@ -107,8 +105,8 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         return img, target
 
 
-class ConvertCoco(object):
-    def __init__(self, include_masks=False, label_map: Optional[dict] = None):
+class ConvertCoco:
+    def __init__(self, include_masks=False, label_map: dict | None = None):
         self.include_masks = include_masks
         self.label_map = label_map
 

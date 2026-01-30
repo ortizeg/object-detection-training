@@ -20,8 +20,6 @@ from multi-scale training.
 Originally from rfdetr.util.misc, copied here for clarity and stability.
 """
 
-from typing import List, Optional
-
 import torch
 import torchvision
 from torch import Tensor
@@ -30,7 +28,7 @@ from torch import Tensor
 class NestedTensor:
     """Tensor with associated padding mask for variable-size batches."""
 
-    def __init__(self, tensors: Tensor, mask: Optional[Tensor]):
+    def __init__(self, tensors: Tensor, mask: Tensor | None):
         self.tensors = tensors
         self.mask = mask
 
@@ -50,7 +48,7 @@ class NestedTensor:
         return str(self.tensors)
 
 
-def _max_by_axis(the_list: List[List[int]]) -> List[int]:
+def _max_by_axis(the_list: list[list[int]]) -> list[int]:
     """Get maximum value at each position across sublists."""
     maxes = the_list[0]
     for sublist in the_list[1:]:
@@ -59,7 +57,7 @@ def _max_by_axis(the_list: List[List[int]]) -> List[int]:
     return maxes
 
 
-def nested_tensor_from_tensor_list(tensor_list: List[Tensor]) -> NestedTensor:
+def nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTensor:
     """Create a NestedTensor from a list of tensors with different sizes.
 
     Pads all tensors to the maximum size and creates a mask indicating
@@ -92,7 +90,7 @@ def nested_tensor_from_tensor_list(tensor_list: List[Tensor]) -> NestedTensor:
 
 
 @torch.jit.unused
-def _onnx_nested_tensor_from_tensor_list(tensor_list: List[Tensor]) -> NestedTensor:
+def _onnx_nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTensor:
     """ONNX-compatible version of nested_tensor_from_tensor_list."""
     max_size = []
     for i in range(tensor_list[0].dim()):
