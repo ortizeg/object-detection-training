@@ -17,12 +17,7 @@ jobs:
           cache: true
 
       - name: Run tests with coverage
-        run: |
-          pixi run pytest \
-            --cov=src \
-            --cov-report=term \
-            --cov-report=xml \
-            --cov-report=html
+        run: pixi run test-cov
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -30,9 +25,3 @@ jobs:
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
-
-      - name: Check for skipped tests
-        run: |
-          if pixi run pytest --collect-only -q 2>&1 | grep -q "skipped"; then
-            echo "::warning::Skipped tests found. Fix or remove them."
-          fi

@@ -16,17 +16,11 @@ jobs:
           pixi-version: latest
           cache: true
 
-      - name: Run ruff format check
-        run: pixi run ruff format --check .
+      - name: Check formatting
+        run: pixi run format-check
 
-      - name: Run ruff lint
-        run: pixi run ruff check .
+      - name: Lint
+        run: pixi run lint
 
-      - name: Run mypy
-        run: pixi run mypy src/
-
-      - name: Check import sorting
-        run: pixi run ruff check --select I .
-
-      - name: Security checks
-        run: pixi run ruff check --select S .
+      - name: Type check
+        run: pixi run typecheck
