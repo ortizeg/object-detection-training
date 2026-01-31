@@ -64,6 +64,7 @@ callbacks:
     patience: 25
   ema:
     decay: 0.9998
+    warmup_steps: 2000
 
 # Hydra configuration
 hydra:
