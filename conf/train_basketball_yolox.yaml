@@ -30,10 +30,10 @@ log_level: INFO
 models:
   num_classes: 10
   learning_rate: 0.001
-  weight_decay: 5e-4
+  weight_decay: 2e-4
   warmup_epochs: 5
   freeze_backbone_epochs: 5
-  l1_loss_epoch: 50
+  l1_loss_epoch: 30
   iou_loss_type: giou
   input_height: ${input_height}
   input_width: ${input_width}
@@ -59,10 +59,11 @@ trainer:
   val_check_interval: 1.0
 
 # Callback overrides for fine-tuning
-# Higher patience prevents early stopping during temporary plateaus
 callbacks:
   early_stopping:
     patience: 25
+  ema:
+    decay: 0.9998
 
 # Hydra configuration
 hydra:
