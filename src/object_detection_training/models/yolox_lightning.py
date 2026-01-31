@@ -16,7 +16,7 @@ from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
 from object_detection_training.models.yolox import YOLOPAFPN, YOLOX, YOLOXHead
-from object_detection_training.utils.boxes import cxcywh_to_xyxy
+from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
 from object_detection_training.utils.hydra import register
 
 # YOLOX checkpoint URLs from official releases
@@ -377,7 +377,12 @@ class YOLOXLightningModel(BaseDetectionModel):
     def forward(
         self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
     ) -> dict[str, Any]:
-        """Forward pass."""
+        """Forward pass.
+
+        Targets are expected in pixel xyxy format (from YOLOX transforms which
+        skip box normalization). They are converted to pixel cxcywh for the
+        YOLOX head internally.
+        """
         # Handle NestedTensor from rfdetr collation
         if hasattr(images, "tensors"):
             images = images.tensors
@@ -392,31 +397,22 @@ class YOLOXLightningModel(BaseDetectionModel):
             return result
 
         if targets is not None:
-            # Un-normalize targets for YOLOX loss calculation
-            # targets is a list of dicts with 'boxes' and 'labels'
-            # boxes are in [0, 1] cxcywh format
-            # Use actual image shape for accurate un-normalization
-            # (esp. for multi-scale)
-            img_h, img_w = images.shape[2:]
-            unnormalized_targets = []
+            # Convert pixel xyxy → pixel cxcywh for YOLOX head.
+            # No normalization/un-normalization — boxes stay in pixel coords.
+            cxcywh_targets = []
             for t in targets:
                 new_t = t.copy()
                 if "boxes" in new_t and new_t["boxes"].numel() > 0:
-                    boxes = new_t["boxes"].clone()
-                    boxes[:, [0, 2]] *= img_w
-                    boxes[:, [1, 3]] *= img_h
-                    new_t["boxes"] = boxes
-                unnormalized_targets.append(new_t)
+                    new_t["boxes"] = xyxy_to_cxcywh(new_t["boxes"])
+                cxcywh_targets.append(new_t)
 
-            outputs: dict[str, Any] = self.model(images, unnormalized_targets)
-            # Add images shape to outputs for post-processing resolution retrieval
+            outputs: dict[str, Any] = self.model(images, cxcywh_targets)
             if "image_shape" not in outputs:
                 outputs["image_shape"] = images.shape[2:]
             return outputs
         else:
             with torch.no_grad():
                 raw_outputs = self.model(images)
-            # Add images shape to outputs for post-processing resolution retrieval
             return {"predictions": raw_outputs, "image_shape": images.shape[2:]}
 
     def get_predictions(
@@ -425,7 +421,10 @@ class YOLOXLightningModel(BaseDetectionModel):
         original_sizes: list[tuple[int, int]] | None = None,
         confidence_threshold: float = 0.1,
     ) -> list[dict[str, torch.Tensor]]:
-        """Convert model outputs to prediction format."""
+        """Convert model outputs to prediction format.
+
+        Returns boxes in pixel xyxy coordinates (same space as input targets).
+        """
         predictions: list[dict[str, torch.Tensor]] = []
 
         pred = outputs.get("predictions")
@@ -433,7 +432,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             return predictions
 
         # YOLOX outputs: [batch, num_anchors, 5 + num_classes]
-        # Format: [x, y, w, h, obj_conf, cls_conf...]
+        # Format: [cx, cy, w, h, obj_conf, cls_conf...] in pixel coords
         batch_size = pred.shape[0]
 
         for b in range(batch_size):
@@ -461,11 +460,10 @@ class YOLOXLightningModel(BaseDetectionModel):
                 )
                 continue
 
-            # Get boxes (cxcywh -> xyxy)
-            # Important: unbind to avoid in-place corruption
+            # pixel cxcywh → pixel xyxy
             boxes = cxcywh_to_xyxy(box_preds[:, :4])
 
-            # NMS (Required for YOLOX post-processing)
+            # NMS
             from torchvision.ops import batched_nms
 
             keep_indices = batched_nms(boxes, scores, labels, iou_threshold=0.45)
@@ -473,20 +471,8 @@ class YOLOXLightningModel(BaseDetectionModel):
             scores = scores[keep_indices]
             labels = labels[keep_indices]
 
-            # Normalize boxes to [0, 1] or scale to original_sizes
-            # Use actual runtime resolution (image_shape) for normalization
-            img_h, img_w = outputs.get(
-                "image_shape", (self.input_height, self.input_width)
-            )
-            if original_sizes is not None and len(original_sizes) > b:
-                orig_h, orig_w = original_sizes[b]
-                boxes[:, [0, 2]] = (boxes[:, [0, 2]] / img_w) * orig_w
-                boxes[:, [1, 3]] = (boxes[:, [1, 3]] / img_h) * orig_h
-            else:
-                # Normalize boxes to [0, 1] relative to current resolution
-                boxes[:, [0, 2]] /= img_w
-                boxes[:, [1, 3]] /= img_h
-
+            # Return pixel xyxy — no normalization.
+            # Caller normalizes to [0,1] if needed for metrics.
             predictions.append(
                 {
                     "boxes": boxes,
@@ -496,6 +482,70 @@ class YOLOXLightningModel(BaseDetectionModel):
             )
 
         return predictions
+
+    def validation_step(self, batch: Any, batch_idx: int) -> None:
+        """Validation step for YOLOX.
+
+        Targets are in pixel xyxy (from YOLOX transforms, no box
+        normalization). Predictions are also in pixel xyxy from
+        get_predictions. Both are normalized to [0,1] for the
+        supervision MeanAveragePrecision metric.
+        """
+        images, targets = batch
+        outputs = self(images, targets)
+
+        # --- Log losses (same as base) ---
+        loss_components = {
+            k: v for k, v in outputs.items() if "loss" in k.lower() and v.numel() == 1
+        }
+        if "total_loss" in outputs:
+            total_loss = outputs["total_loss"]
+            loss_components.pop("total_loss", None)
+        elif "loss" in outputs:
+            total_loss = outputs["loss"]
+            loss_components.pop("loss", None)
+        else:
+            total_loss = (
+                sum(loss_components.values()) if loss_components else torch.tensor(0.0)
+            )
+        self.log("val/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True)
+        for name, value in loss_components.items():
+            log_name = name if name.startswith("val/") else f"val/{name}"
+            self.log(log_name, value, on_step=False, on_epoch=True)
+
+        # --- Predictions (pixel xyxy) ---
+        preds = self.get_predictions(outputs, confidence_threshold=0.0)
+
+        # --- Normalize both to [0,1] xyxy for metrics ---
+        img_h, img_w = outputs.get("image_shape", (self.input_height, self.input_width))
+        norm_preds = []
+        for p in preds:
+            boxes = p["boxes"].clone()
+            if boxes.numel() > 0:
+                boxes[:, [0, 2]] /= img_w
+                boxes[:, [1, 3]] /= img_h
+            norm_preds.append(
+                {"boxes": boxes, "scores": p["scores"], "labels": p["labels"]}
+            )
+
+        norm_targets = []
+        for t in targets:
+            boxes = t["boxes"].clone()
+            if boxes.numel() > 0:
+                boxes[:, [0, 2]] /= img_w
+                boxes[:, [1, 3]] /= img_h
+            norm_targets.append({"boxes": boxes, "labels": t["labels"]})
+
+        sv_preds, sv_targets = self._to_sv_detections(norm_preds, norm_targets)
+        self.val_map.update(sv_preds, sv_targets)
+
+        # Store for curve computation (CPU, normalized [0,1] xyxy)
+        self.val_preds_storage.extend(
+            [{k: v.cpu() for k, v in p.items()} for p in norm_preds]
+        )
+        self.val_targets_storage.extend(
+            [{k: v.cpu() for k, v in t.items()} for t in norm_targets]
+        )
 
     def configure_optimizers(self) -> Any:
         """

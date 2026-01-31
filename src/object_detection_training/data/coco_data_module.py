@@ -12,6 +12,7 @@ from object_detection_training.data.coco_detection_dataset import COCODetectionD
 from object_detection_training.models.rfdetr.coco import (
     make_coco_transforms,
     make_coco_transforms_square_div_64,
+    make_yolox_transforms,
 )
 from object_detection_training.models.rfdetr.collate import collate_fn
 from object_detection_training.utils.hydra import register
@@ -45,6 +46,7 @@ class COCODataModule(L.LightningDataModule):
         pin_memory: bool = True,
         persistent_workers: bool = True,
         square_resize_div_64: bool = True,
+        yolox_transforms: bool = False,
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
         selected_categories: list[str] | None = None,
@@ -99,6 +101,7 @@ class COCODataModule(L.LightningDataModule):
         self.patch_size = patch_size
         self.num_windows = num_windows
         self.square_resize_div_64 = square_resize_div_64
+        self.yolox_transforms = yolox_transforms
         self.image_mean = (
             image_mean if image_mean is not None else [123.675, 116.28, 103.53]
         )
@@ -188,6 +191,12 @@ class COCODataModule(L.LightningDataModule):
 
     def _get_transforms(self, image_set: str) -> Any:
         """Get transforms based on configuration and normalization parameters."""
+        if self.yolox_transforms:
+            return make_yolox_transforms(
+                image_set,
+                self.input_height,
+                self.input_width,
+            )
         if self.square_resize_div_64:
             return make_coco_transforms_square_div_64(
                 image_set,

@@ -20,6 +20,10 @@ pin_memory: true
 persistent_workers: true
 square_resize_div_64: true
 
-# Normalization parameters linked from model config (keeps 0-255 scale)
+# YOLOX-specific transforms: no box normalization (pixel xyxy throughout),
+# no image normalization (raw 0-255), adds ColorJitter + RandomErasing
+yolox_transforms: true
+
+# Normalization parameters linked from model config (kept for reference)
 image_mean: ${models.image_mean}
 image_std: ${models.image_std}
