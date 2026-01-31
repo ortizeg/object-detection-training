@@ -564,6 +564,7 @@ class YOLOXHead(nn.Module):
             .repeat(num_gt, 1)
         )
 
+        # Check 1: anchor centers inside GT boxes (cxcywh format)
         gt_bboxes_per_image_l = (
             (gt_bboxes_per_image[:, 0] - 0.5 * gt_bboxes_per_image[:, 2])
             .unsqueeze(1)
@@ -585,35 +586,47 @@ class YOLOXHead(nn.Module):
             .repeat(1, total_num_anchors)
         )
 
-        # Center sampling (matches official YOLOX)
-        center_radius = 1.5
+        b_l = x_centers_per_image - gt_bboxes_per_image_l
+        b_r = gt_bboxes_per_image_r - x_centers_per_image
+        b_t = y_centers_per_image - gt_bboxes_per_image_t
+        b_b = gt_bboxes_per_image_b - y_centers_per_image
+        bbox_deltas = torch.stack([b_l, b_t, b_r, b_b], 2)
 
-        gt_bboxes_per_image_l = (gt_bboxes_per_image[:, 0]).unsqueeze(1).repeat(
+        is_in_boxes = bbox_deltas.min(dim=-1).values > 0.0
+        is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
+
+        # Check 2: anchor centers within fixed radius of GT centers
+        center_radius = 2.5
+
+        gt_centers_l = (gt_bboxes_per_image[:, 0]).unsqueeze(1).repeat(
             1, total_num_anchors
         ) - center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_bboxes_per_image_r = (gt_bboxes_per_image[:, 0]).unsqueeze(1).repeat(
+        gt_centers_r = (gt_bboxes_per_image[:, 0]).unsqueeze(1).repeat(
             1, total_num_anchors
         ) + center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_bboxes_per_image_t = (gt_bboxes_per_image[:, 1]).unsqueeze(1).repeat(
+        gt_centers_t = (gt_bboxes_per_image[:, 1]).unsqueeze(1).repeat(
             1, total_num_anchors
         ) - center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_bboxes_per_image_b = (gt_bboxes_per_image[:, 1]).unsqueeze(1).repeat(
+        gt_centers_b = (gt_bboxes_per_image[:, 1]).unsqueeze(1).repeat(
             1, total_num_anchors
         ) + center_radius * expanded_strides_per_image.unsqueeze(0)
 
-        c_l = x_centers_per_image - gt_bboxes_per_image_l
-        c_r = gt_bboxes_per_image_r - x_centers_per_image
-        c_t = y_centers_per_image - gt_bboxes_per_image_t
-        c_b = gt_bboxes_per_image_b - y_centers_per_image
-        center_deltas = torch.stack([c_l, c_b, c_r, c_t], 2)
+        c_l = x_centers_per_image - gt_centers_l
+        c_r = gt_centers_r - x_centers_per_image
+        c_t = y_centers_per_image - gt_centers_t
+        c_b = gt_centers_b - y_centers_per_image
+        center_deltas = torch.stack([c_l, c_t, c_r, c_b], 2)
+
         is_in_centers = center_deltas.min(dim=-1).values > 0.0
         is_in_centers_all = is_in_centers.sum(dim=0) > 0
 
-        # In boxes AND in centers (simplified to match official YOLOX)
-        # Use center-based filtering only for anchor selection
-        is_in_boxes_anchor = is_in_centers_all
+        # Union: anchor is candidate if in ANY box OR in ANY center region
+        is_in_boxes_anchor = is_in_boxes_all | is_in_centers_all
 
-        is_in_boxes_and_center = is_in_centers[:, is_in_boxes_anchor]
+        # Intersection per-GT: cost penalty requires BOTH in box AND in center
+        is_in_boxes_and_center = (
+            is_in_boxes[:, is_in_boxes_anchor] & is_in_centers[:, is_in_boxes_anchor]
+        )
         return is_in_boxes_anchor, is_in_boxes_and_center
 
     def dynamic_k_matching(self, cost, pair_wise_ious, gt_classes, num_gt, fg_mask):

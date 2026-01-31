@@ -16,7 +16,7 @@ from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
 from object_detection_training.models.yolox import YOLOPAFPN, YOLOX, YOLOXHead
-from object_detection_training.utils.boxes import cxcywh_to_xyxy
+from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
 from object_detection_training.utils.hydra import register
 
 # YOLOX checkpoint URLs from official releases
@@ -59,24 +59,44 @@ YOLOX_CONFIGS = {
 
 
 def download_checkpoint(url: str, destination: Path) -> Path:
-    """Download a checkpoint file if it doesn't exist."""
-    import urllib.request
+    """Download a checkpoint file if it doesn't exist.
 
+    Uses torch.hub.download_url_to_file which handles redirects,
+    shows progress, and is proven to work across environments
+    (local, Docker, GCP).
+
+    Args:
+        url: URL to download from.
+        destination: Local path to save the file.
+
+    Raises:
+        RuntimeError: If download fails for any reason.
+    """
     destination = Path(destination)
     if destination.exists():
-        logger.info(f"Checkpoint already exists: {destination}")
+        logger.info(f"Checkpoint already cached: {destination}")
         return destination
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     logger.info(f"Downloading checkpoint from {url}")
 
     try:
-        urllib.request.urlretrieve(url, destination)  # noqa: S310
-        logger.info(f"Checkpoint downloaded to {destination}")
+        torch.hub.download_url_to_file(url, str(destination), progress=True)
     except Exception as e:
-        logger.error(f"Failed to download checkpoint: {e}")
-        raise
+        # Clean up partial download
+        if destination.exists():
+            destination.unlink()
+        raise RuntimeError(
+            f"Failed to download pretrained weights from {url}: {e}"
+        ) from e
 
+    if not destination.exists():
+        raise RuntimeError(
+            f"Download appeared to succeed but file not found at {destination}"
+        )
+
+    size_mb = destination.stat().st_size / (1024 * 1024)
+    logger.info(f"Checkpoint downloaded to {destination} ({size_mb:.1f} MB)")
     return destination
 
 
@@ -101,6 +121,9 @@ class YOLOXLightningModel(BaseDetectionModel):
         output_dir: str = "outputs",
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
+        freeze_backbone_epochs: int = 0,
+        l1_loss_epoch: int = 0,
+        iou_loss_type: str = "iou",
     ):
         """
         Initialize YOLOX Lightning model.
@@ -116,6 +139,13 @@ class YOLOXLightningModel(BaseDetectionModel):
             input_height: Input image height.
             input_width: Input image width.
             output_dir: Base directory for outputting results.
+            freeze_backbone_epochs: Freeze backbone for this many initial epochs
+                during fine-tuning. 0 disables freezing.
+            l1_loss_epoch: Enable L1 regression loss starting at this epoch.
+                Adds extra box regression supervision for fine-grained
+                localization. 0 disables.
+            iou_loss_type: IoU loss variant for box regression ('iou' or 'giou').
+                GIoU provides better gradients for non-overlapping boxes.
         """
         super().__init__(
             num_classes=num_classes,
@@ -135,6 +165,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         self.download_pretrained = download_pretrained
         self.input_height = input_height
         self.input_width = input_width
+        self.freeze_backbone_epochs = freeze_backbone_epochs
+        self.l1_loss_epoch = l1_loss_epoch
 
         if variant not in YOLOX_CONFIGS:
             raise ValueError(
@@ -165,6 +197,15 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         self.model = YOLOX(backbone=backbone, head=head)  # type: ignore[no-untyped-call]
 
+        # Override IoU loss type if requested
+        if iou_loss_type != "iou":
+            from object_detection_training.models.yolox.yolo_head import IOUloss
+
+            self.model.head.iou_loss = IOUloss(
+                reduction="none", loss_type=iou_loss_type
+            )
+            logger.info(f"Using {iou_loss_type} loss for box regression")
+
         # Initialize BatchNorm with official YOLOX settings
         for m in self.model.modules():
             if isinstance(m, nn.BatchNorm2d):
@@ -184,7 +225,49 @@ class YOLOXLightningModel(BaseDetectionModel):
         # This is crucial when num_classes differs from pretrained (cls_preds skipped)
         self._reinitialize_cls_biases()
 
+        # Freeze backbone for initial fine-tuning epochs if requested
+        if self.freeze_backbone_epochs > 0:
+            self._freeze_backbone()
+
         self.save_hyperparameters()
+
+    def _freeze_backbone(self) -> None:
+        """Freeze backbone parameters (PAFPN backbone) for fine-tuning.
+
+        When fine-tuning from pretrained weights, freezing the backbone initially
+        allows the head to adapt to new classes before backbone features are modified.
+        """
+        for param in self.model.backbone.backbone.parameters():
+            param.requires_grad = False
+        n_frozen = sum(
+            1 for p in self.model.backbone.backbone.parameters() if not p.requires_grad
+        )
+        logger.info(
+            f"Froze {n_frozen} backbone parameters "
+            f"for {self.freeze_backbone_epochs} epochs"
+        )
+
+    def _unfreeze_backbone(self) -> None:
+        """Unfreeze backbone parameters."""
+        for param in self.model.backbone.backbone.parameters():
+            param.requires_grad = True
+        logger.info("Unfroze backbone parameters")
+
+    def on_train_epoch_start(self) -> None:
+        """Handle epoch-based training schedule changes."""
+        if (
+            self.freeze_backbone_epochs > 0
+            and self.current_epoch == self.freeze_backbone_epochs
+        ):
+            self._unfreeze_backbone()
+
+        if (
+            self.l1_loss_epoch > 0
+            and self.current_epoch == self.l1_loss_epoch
+            and not self.model.head.use_l1
+        ):
+            self.model.head.use_l1 = True
+            logger.info(f"Enabled L1 regression loss at epoch {self.current_epoch}")
 
     def _reinitialize_cls_biases(self) -> None:
         """Reinitialize classification prediction biases after weight loading.
@@ -202,66 +285,83 @@ class YOLOXLightningModel(BaseDetectionModel):
         logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
 
     def _download_and_load_weights(self) -> None:
-        """Download and load pretrained weights."""
+        """Download and load pretrained weights.
+
+        Raises:
+            RuntimeError: If the variant has no checkpoint URL, or if
+                download/loading fails. Training must not proceed
+                without pretrained weights when they were requested.
+        """
         if self.variant not in YOLOX_CHECKPOINT_URLS:
-            logger.warning(f"No pretrained weights available for {self.variant}")
-            return
+            raise RuntimeError(
+                f"download_pretrained=True but no checkpoint URL for "
+                f"variant '{self.variant}'. Available: "
+                f"{list(YOLOX_CHECKPOINT_URLS.keys())}"
+            )
 
         cache_dir = Path.home() / ".cache" / "yolox"
         checkpoint_path = cache_dir / f"yolox_{self.variant}.pth"
 
-        if not checkpoint_path.exists():
-            url = YOLOX_CHECKPOINT_URLS[self.variant]
-            download_checkpoint(url, checkpoint_path)
-
+        url = YOLOX_CHECKPOINT_URLS[self.variant]
+        download_checkpoint(url, checkpoint_path)
         self._load_weights(str(checkpoint_path))
 
     def _load_weights(self, checkpoint_path: str) -> None:
-        """Load weights from checkpoint."""
+        """Load weights from checkpoint.
+
+        Raises:
+            RuntimeError: If the checkpoint cannot be loaded or contains
+                no matching parameters.
+        """
         logger.info(f"Loading weights from {checkpoint_path}")
-        try:
-            checkpoint = torch.load(checkpoint_path, map_location="cpu")
-            state_dict = checkpoint.get("model", checkpoint)
 
-            # Create new state dict with mapping
-            model_state_dict = self.model.state_dict()
-            filtered_state_dict = {}
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        state_dict = checkpoint.get("model", checkpoint)
 
-            # Match parameters
-            matched = []
-            unmatched = []
-            class_mismatch = []
+        # Create new state dict with mapping
+        model_state_dict = self.model.state_dict()
+        filtered_state_dict = {}
 
-            for k, v in state_dict.items():
-                if k in model_state_dict:
-                    # Check for class dimension mismatch in head
-                    if "cls_preds" in k and v.shape[0] != self.num_classes:
-                        class_mismatch.append(k)
-                        continue
+        # Match parameters
+        matched = []
+        unmatched = []
+        class_mismatch = []
 
-                    if v.shape == model_state_dict[k].shape:
-                        filtered_state_dict[k] = v
-                        matched.append(k)
-                    else:
-                        unmatched.append(
-                            f"{k} (shape mismatch: {v.shape} vs "
-                            f"{model_state_dict[k].shape})"
-                        )
+        for k, v in state_dict.items():
+            if k in model_state_dict:
+                # Check for class dimension mismatch in head
+                if "cls_preds" in k and v.shape[0] != self.num_classes:
+                    class_mismatch.append(k)
+                    continue
+
+                if v.shape == model_state_dict[k].shape:
+                    filtered_state_dict[k] = v
+                    matched.append(k)
                 else:
-                    unmatched.append(k)
+                    unmatched.append(
+                        f"{k} (shape mismatch: {v.shape} vs "
+                        f"{model_state_dict[k].shape})"
+                    )
+            else:
+                unmatched.append(k)
 
-            # Log summary
-            logger.info(f"Checkpoint match summary for {self.variant}:")
-            logger.info(f"  Matched: {len(matched)} / {len(model_state_dict)}")
-            if class_mismatch:
-                logger.info(f"  Class mismatch (skipped): {len(class_mismatch)}")
-            if unmatched:
-                logger.debug(f"  Unmatched: {unmatched[:10]}...")
+        # Log summary
+        logger.info(f"Checkpoint match summary for {self.variant}:")
+        logger.info(f"  Matched: {len(matched)} / {len(model_state_dict)}")
+        if class_mismatch:
+            logger.info(f"  Class mismatch (skipped): {len(class_mismatch)}")
+        if unmatched:
+            logger.debug(f"  Unmatched: {unmatched[:10]}...")
 
-            self.model.load_state_dict(filtered_state_dict, strict=False)
-            logger.info("Weights loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load weights: {e}")
+        if not filtered_state_dict:
+            raise RuntimeError(
+                f"Checkpoint at {checkpoint_path} has 0 matching parameters. "
+                f"Checkpoint keys: {len(state_dict)}, "
+                f"Model keys: {len(model_state_dict)}"
+            )
+
+        self.model.load_state_dict(filtered_state_dict, strict=False)
+        logger.info("Weights loaded successfully")
 
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         """Training step."""
@@ -302,41 +402,42 @@ class YOLOXLightningModel(BaseDetectionModel):
     def forward(
         self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
     ) -> dict[str, Any]:
-        """Forward pass."""
+        """Forward pass.
+
+        Targets are expected in pixel xyxy format (from YOLOX transforms which
+        skip box normalization). They are converted to pixel cxcywh for the
+        YOLOX head internally.
+        """
         # Handle NestedTensor from rfdetr collation
         if hasattr(images, "tensors"):
             images = images.tensors
+
+        # YOLOX pretrained weights were trained with BGR input (OpenCV convention).
+        # Our data pipeline uses PIL which produces RGB. Swap R↔B channels so that
+        # pretrained features are used correctly from epoch 1.
+        images = images[:, [2, 1, 0], :, :]
 
         if self._export_mode:
             result: dict[str, torch.Tensor] = self.model(images)
             return result
 
         if targets is not None:
-            # Un-normalize targets for YOLOX loss calculation
-            # targets is a list of dicts with 'boxes' and 'labels'
-            # boxes are in [0, 1] cxcywh format
-            # Use actual image shape for accurate un-normalization
-            # (esp. for multi-scale)
-            img_h, img_w = images.shape[2:]
-            unnormalized_targets = []
+            # Convert pixel xyxy → pixel cxcywh for YOLOX head.
+            # No normalization/un-normalization — boxes stay in pixel coords.
+            cxcywh_targets = []
             for t in targets:
                 new_t = t.copy()
                 if "boxes" in new_t and new_t["boxes"].numel() > 0:
-                    boxes = new_t["boxes"].clone()
-                    boxes[:, [0, 2]] *= img_w
-                    boxes[:, [1, 3]] *= img_h
-                    new_t["boxes"] = boxes
-                unnormalized_targets.append(new_t)
+                    new_t["boxes"] = xyxy_to_cxcywh(new_t["boxes"])
+                cxcywh_targets.append(new_t)
 
-            outputs: dict[str, Any] = self.model(images, unnormalized_targets)
-            # Add images shape to outputs for post-processing resolution retrieval
+            outputs: dict[str, Any] = self.model(images, cxcywh_targets)
             if "image_shape" not in outputs:
                 outputs["image_shape"] = images.shape[2:]
             return outputs
         else:
             with torch.no_grad():
                 raw_outputs = self.model(images)
-            # Add images shape to outputs for post-processing resolution retrieval
             return {"predictions": raw_outputs, "image_shape": images.shape[2:]}
 
     def get_predictions(
@@ -345,7 +446,10 @@ class YOLOXLightningModel(BaseDetectionModel):
         original_sizes: list[tuple[int, int]] | None = None,
         confidence_threshold: float = 0.1,
     ) -> list[dict[str, torch.Tensor]]:
-        """Convert model outputs to prediction format."""
+        """Convert model outputs to prediction format.
+
+        Returns boxes in pixel xyxy coordinates (same space as input targets).
+        """
         predictions: list[dict[str, torch.Tensor]] = []
 
         pred = outputs.get("predictions")
@@ -353,7 +457,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             return predictions
 
         # YOLOX outputs: [batch, num_anchors, 5 + num_classes]
-        # Format: [x, y, w, h, obj_conf, cls_conf...]
+        # Format: [cx, cy, w, h, obj_conf, cls_conf...] in pixel coords
         batch_size = pred.shape[0]
 
         for b in range(batch_size):
@@ -381,11 +485,10 @@ class YOLOXLightningModel(BaseDetectionModel):
                 )
                 continue
 
-            # Get boxes (cxcywh -> xyxy)
-            # Important: unbind to avoid in-place corruption
+            # pixel cxcywh → pixel xyxy
             boxes = cxcywh_to_xyxy(box_preds[:, :4])
 
-            # NMS (Required for YOLOX post-processing)
+            # NMS
             from torchvision.ops import batched_nms
 
             keep_indices = batched_nms(boxes, scores, labels, iou_threshold=0.45)
@@ -393,20 +496,8 @@ class YOLOXLightningModel(BaseDetectionModel):
             scores = scores[keep_indices]
             labels = labels[keep_indices]
 
-            # Normalize boxes to [0, 1] or scale to original_sizes
-            # Use actual runtime resolution (image_shape) for normalization
-            img_h, img_w = outputs.get(
-                "image_shape", (self.input_height, self.input_width)
-            )
-            if original_sizes is not None and len(original_sizes) > b:
-                orig_h, orig_w = original_sizes[b]
-                boxes[:, [0, 2]] = (boxes[:, [0, 2]] / img_w) * orig_w
-                boxes[:, [1, 3]] = (boxes[:, [1, 3]] / img_h) * orig_h
-            else:
-                # Normalize boxes to [0, 1] relative to current resolution
-                boxes[:, [0, 2]] /= img_w
-                boxes[:, [1, 3]] /= img_h
-
+            # Return pixel xyxy — no normalization.
+            # Caller normalizes to [0,1] if needed for metrics.
             predictions.append(
                 {
                     "boxes": boxes,
@@ -417,58 +508,120 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         return predictions
 
+    def validation_step(self, batch: Any, batch_idx: int) -> None:
+        """Validation step for YOLOX.
+
+        Targets are in pixel xyxy (from YOLOX transforms, no box
+        normalization). Predictions are also in pixel xyxy from
+        get_predictions. Both are normalized to [0,1] for the
+        supervision MeanAveragePrecision metric.
+        """
+        images, targets = batch
+        outputs = self(images, targets)
+
+        # --- Log losses (same as base) ---
+        loss_components = {
+            k: v for k, v in outputs.items() if "loss" in k.lower() and v.numel() == 1
+        }
+        if "total_loss" in outputs:
+            total_loss = outputs["total_loss"]
+            loss_components.pop("total_loss", None)
+        elif "loss" in outputs:
+            total_loss = outputs["loss"]
+            loss_components.pop("loss", None)
+        else:
+            total_loss = (
+                sum(loss_components.values()) if loss_components else torch.tensor(0.0)
+            )
+        self.log("val/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True)
+        for name, value in loss_components.items():
+            log_name = name if name.startswith("val/") else f"val/{name}"
+            self.log(log_name, value, on_step=False, on_epoch=True)
+
+        # --- Predictions (pixel xyxy) ---
+        preds = self.get_predictions(outputs, confidence_threshold=0.0)
+
+        # --- Normalize both to [0,1] xyxy for metrics ---
+        img_h, img_w = outputs.get("image_shape", (self.input_height, self.input_width))
+        norm_preds = []
+        for p in preds:
+            boxes = p["boxes"].clone()
+            if boxes.numel() > 0:
+                boxes[:, [0, 2]] /= img_w
+                boxes[:, [1, 3]] /= img_h
+            norm_preds.append(
+                {"boxes": boxes, "scores": p["scores"], "labels": p["labels"]}
+            )
+
+        norm_targets = []
+        for t in targets:
+            boxes = t["boxes"].clone()
+            if boxes.numel() > 0:
+                boxes[:, [0, 2]] /= img_w
+                boxes[:, [1, 3]] /= img_h
+            norm_targets.append({"boxes": boxes, "labels": t["labels"]})
+
+        sv_preds, sv_targets = self._to_sv_detections(norm_preds, norm_targets)
+        self.val_map.update(sv_preds, sv_targets)
+
+        # Store for curve computation (CPU, normalized [0,1] xyxy)
+        self.val_preds_storage.extend(
+            [{k: v.cpu() for k, v in p.items()} for p in norm_preds]
+        )
+        self.val_targets_storage.extend(
+            [{k: v.cpu() for k, v in t.items()} for t in norm_targets]
+        )
+
     def configure_optimizers(self) -> Any:
         """
         Configure optimizer and learning rate scheduler.
 
+        Matches official YOLOX parameter group structure:
+        - pg0: BatchNorm weights (no weight decay)
+        - pg1: Other weights (with weight decay)
+        - pg2: Biases (no weight decay)
+
         Returns:
             Optimizer and scheduler configuration.
         """
-        # Separate parameters into groups
-        # (apply weight decay to weights, not biases/norm)
-        decay = []
-        no_decay = []
-        for name, param in self.named_parameters():
-            if not param.requires_grad:
-                continue
+        pg0: list[nn.Parameter] = []  # BN weights - no decay
+        pg1: list[nn.Parameter] = []  # Other weights - with decay
+        pg2: list[nn.Parameter] = []  # Biases - no decay
 
-            if "bias" in name or "bn" in name or "norm" in name:
-                no_decay.append(param)
-            else:
-                decay.append(param)
+        for k, v in self.model.named_modules():
+            if hasattr(v, "bias") and isinstance(v.bias, nn.Parameter):
+                pg2.append(v.bias)
+            if isinstance(v, nn.BatchNorm2d) or "bn" in k:
+                pg0.append(v.weight)
+            elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
+                pg1.append(v.weight)
 
-        # Configurable optimizer parameters
         momentum = 0.9
         nesterov = True
 
         optimizer = torch.optim.SGD(
-            [
-                {"params": decay, "weight_decay": self.weight_decay},
-                {"params": no_decay, "weight_decay": 0.0},
-            ],
+            pg0,
             lr=self.learning_rate,
             momentum=momentum,
             nesterov=nesterov,
         )
+        optimizer.add_param_group({"params": pg1, "weight_decay": self.weight_decay})
+        optimizer.add_param_group({"params": pg2})
 
         # Scheduler with warmup + cosine annealing
         total_steps: int
         if self.trainer and hasattr(self.trainer, "estimated_stepping_batches"):
             total_steps = int(self.trainer.estimated_stepping_batches)
         else:
-            # Fallback for testing or when trainer is not yet fully initialized
             total_steps = 10000
 
-        # Avoid 0 total steps
         total_steps = max(1, total_steps)
 
-        # Warmup scheduler
         warmup_epochs = self.warmup_epochs
         max_epochs: int = (self.trainer.max_epochs or 100) if self.trainer else 100
 
         # Calculate warmup steps
         warmup_steps = int(total_steps * (warmup_epochs / max(1, max_epochs)))
-        # Ensure warmup doesn't take more than half of training
         warmup_steps = min(warmup_steps, total_steps // 2)
         warmup_steps = max(1, warmup_steps)
 
@@ -476,7 +629,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             optimizer, start_factor=0.001, end_factor=1.0, total_iters=warmup_steps
         )
 
-        # Main scheduler (Cosine Annealing) - starts after warmup
+        # Main scheduler (Cosine Annealing)
         main_steps = max(1, total_steps - warmup_steps)
         scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=main_steps, eta_min=self.learning_rate * 0.05

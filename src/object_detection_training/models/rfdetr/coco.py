@@ -35,6 +35,8 @@ __all__ = [
     "CocoDetection",
     "make_coco_transforms",
     "make_coco_transforms_square_div_64",
+    "make_yolox_transforms",
+    "make_yolox_post_mosaic_transforms",
     "collate_fn",
     "ConvertCoco",
 ]
@@ -293,6 +295,84 @@ def make_coco_transforms_square_div_64(
             [
                 T.SquareResize([input_height]),
                 normalize,
+            ]
+        )
+
+    raise ValueError(f"unknown {image_set}")
+
+
+def make_yolox_post_mosaic_transforms(
+    input_height: int,
+    input_width: int,
+) -> T.Compose:
+    """Post-mosaic transforms for YOLOX.
+
+    Applied after mosaic/mixup assembly. Skips SquareResize since the
+    mosaic canvas is already at the target size.
+    """
+    to_tensor = T.PILToTensor()
+    return T.Compose(
+        [
+            T.RandomHorizontalFlip(),
+            T.RFColorJitter(
+                brightness=0.4,
+                contrast=0.4,
+                saturation=0.4,
+                hue=0.1,
+            ),
+            to_tensor,
+            T.RandomErasing(
+                p=0.3,
+                scale=(0.02, 0.2),
+                ratio=(0.3, 3.3),
+            ),
+        ]
+    )
+
+
+def make_yolox_transforms(
+    image_set: str,
+    input_height: int,
+    input_width: int,
+    **kwargs,
+):
+    """YOLOX-specific transforms.
+
+    Key differences from DETR/RF-DETR transforms:
+    - No box normalization: boxes stay in pixel xyxy throughout.
+      YOLOX expects pixel-coordinate targets, and normalizing then
+      un-normalizing causes errors when images are padded to different
+      sizes in multi-scale training.
+    - No image normalization: YOLOX uses raw 0-255 pixel values.
+    - Stronger color augmentation for regularization.
+    """
+    to_tensor = T.PILToTensor()
+
+    if image_set == "train":
+        return T.Compose(
+            [
+                T.RandomHorizontalFlip(),
+                T.SquareResize([input_height]),
+                T.RFColorJitter(
+                    brightness=0.4,
+                    contrast=0.4,
+                    saturation=0.4,
+                    hue=0.1,
+                ),
+                to_tensor,
+                T.RandomErasing(
+                    p=0.3,
+                    scale=(0.02, 0.2),
+                    ratio=(0.3, 3.3),
+                ),
+            ]
+        )
+
+    if image_set in ("val", "test", "val_speed"):
+        return T.Compose(
+            [
+                T.SquareResize([input_height]),
+                to_tensor,
             ]
         )
 
