@@ -11,6 +11,7 @@ download_pretrained: true
 pretrain_weights: null
 freeze_backbone_epochs: 0
 l1_loss_epoch: 0
+iou_loss_type: iou
 
 # Normalization parameters for YOLOX (keeps raw 0-255 values)
 image_mean: [0.0, 0.0, 0.0]

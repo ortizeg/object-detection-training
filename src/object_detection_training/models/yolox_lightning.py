@@ -123,6 +123,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         image_std: list[float] | None = None,
         freeze_backbone_epochs: int = 0,
         l1_loss_epoch: int = 0,
+        iou_loss_type: str = "iou",
     ):
         """
         Initialize YOLOX Lightning model.
@@ -143,6 +144,8 @@ class YOLOXLightningModel(BaseDetectionModel):
             l1_loss_epoch: Enable L1 regression loss starting at this epoch.
                 Adds extra box regression supervision for fine-grained
                 localization. 0 disables.
+            iou_loss_type: IoU loss variant for box regression ('iou' or 'giou').
+                GIoU provides better gradients for non-overlapping boxes.
         """
         super().__init__(
             num_classes=num_classes,
@@ -193,6 +196,15 @@ class YOLOXLightningModel(BaseDetectionModel):
         )
 
         self.model = YOLOX(backbone=backbone, head=head)  # type: ignore[no-untyped-call]
+
+        # Override IoU loss type if requested
+        if iou_loss_type != "iou":
+            from object_detection_training.models.yolox.yolo_head import IOUloss
+
+            self.model.head.iou_loss = IOUloss(
+                reduction="none", loss_type=iou_loss_type
+            )
+            logger.info(f"Using {iou_loss_type} loss for box regression")
 
         # Initialize BatchNorm with official YOLOX settings
         for m in self.model.modules():

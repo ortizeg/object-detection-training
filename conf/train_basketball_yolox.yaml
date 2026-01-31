@@ -34,30 +34,35 @@ models:
   warmup_epochs: 5
   freeze_backbone_epochs: 5
   l1_loss_epoch: 50
+  iou_loss_type: giou
   input_height: ${input_height}
   input_width: ${input_width}
 
 # Data — L4 fits batch_size=32 at 640x640 for yolox_s
 # YOLOX transforms: no box normalization (pixel xyxy throughout),
 # no image normalization (raw 0-255), ColorJitter + RandomErasing augmentation
-# Mosaic: combines 4 images into one for scale/context diversity
-# MixUp: alpha-blends with a random image for regularization
+# Mosaic/MixUp disabled — too aggressive for fine-tuning on small dataset
 data:
   batch_size: 32
   num_workers: 8
   yolox_transforms: true
-  mosaic: true
-  mixup_prob: 0.3
+  mosaic: false
   multi_scale: false
 
 # Trainer — cloud GPU settings
-# Longer training with mosaic + L1 loss schedule
+# Extended training with L1 loss schedule for fine-tuning
 trainer:
   max_epochs: 150
   precision: 16-mixed
   gradient_clip_val: 5.0
   accumulate_grad_batches: 2
   val_check_interval: 1.0
+
+# Callback overrides for fine-tuning
+# Higher patience prevents early stopping during temporary plateaus
+callbacks:
+  early_stopping:
+    patience: 25
 
 # Hydra configuration
 hydra:
