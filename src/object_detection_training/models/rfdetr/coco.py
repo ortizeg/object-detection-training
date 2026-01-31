@@ -36,6 +36,7 @@ __all__ = [
     "make_coco_transforms",
     "make_coco_transforms_square_div_64",
     "make_yolox_transforms",
+    "make_yolox_post_mosaic_transforms",
     "collate_fn",
     "ConvertCoco",
 ]
@@ -298,6 +299,35 @@ def make_coco_transforms_square_div_64(
         )
 
     raise ValueError(f"unknown {image_set}")
+
+
+def make_yolox_post_mosaic_transforms(
+    input_height: int,
+    input_width: int,
+) -> T.Compose:
+    """Post-mosaic transforms for YOLOX.
+
+    Applied after mosaic/mixup assembly. Skips SquareResize since the
+    mosaic canvas is already at the target size.
+    """
+    to_tensor = T.PILToTensor()
+    return T.Compose(
+        [
+            T.RandomHorizontalFlip(),
+            T.RFColorJitter(
+                brightness=0.4,
+                contrast=0.4,
+                saturation=0.4,
+                hue=0.1,
+            ),
+            to_tensor,
+            T.RandomErasing(
+                p=0.3,
+                scale=(0.02, 0.2),
+                ratio=(0.3, 3.3),
+            ),
+        ]
+    )
 
 
 def make_yolox_transforms(

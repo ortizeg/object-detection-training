@@ -122,6 +122,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
         freeze_backbone_epochs: int = 0,
+        l1_loss_epoch: int = 0,
     ):
         """
         Initialize YOLOX Lightning model.
@@ -139,6 +140,9 @@ class YOLOXLightningModel(BaseDetectionModel):
             output_dir: Base directory for outputting results.
             freeze_backbone_epochs: Freeze backbone for this many initial epochs
                 during fine-tuning. 0 disables freezing.
+            l1_loss_epoch: Enable L1 regression loss starting at this epoch.
+                Adds extra box regression supervision for fine-grained
+                localization. 0 disables.
         """
         super().__init__(
             num_classes=num_classes,
@@ -159,6 +163,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         self.input_height = input_height
         self.input_width = input_width
         self.freeze_backbone_epochs = freeze_backbone_epochs
+        self.l1_loss_epoch = l1_loss_epoch
 
         if variant not in YOLOX_CONFIGS:
             raise ValueError(
@@ -237,12 +242,20 @@ class YOLOXLightningModel(BaseDetectionModel):
         logger.info("Unfroze backbone parameters")
 
     def on_train_epoch_start(self) -> None:
-        """Unfreeze backbone after freeze_backbone_epochs."""
+        """Handle epoch-based training schedule changes."""
         if (
             self.freeze_backbone_epochs > 0
             and self.current_epoch == self.freeze_backbone_epochs
         ):
             self._unfreeze_backbone()
+
+        if (
+            self.l1_loss_epoch > 0
+            and self.current_epoch == self.l1_loss_epoch
+            and not self.model.head.use_l1
+        ):
+            self.model.head.use_l1 = True
+            logger.info(f"Enabled L1 regression loss at epoch {self.current_epoch}")
 
     def _reinitialize_cls_biases(self) -> None:
         """Reinitialize classification prediction biases after weight loading.

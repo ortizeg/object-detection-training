@@ -12,6 +12,7 @@ from object_detection_training.data.coco_detection_dataset import COCODetectionD
 from object_detection_training.models.rfdetr.coco import (
     make_coco_transforms,
     make_coco_transforms_square_div_64,
+    make_yolox_post_mosaic_transforms,
     make_yolox_transforms,
 )
 from object_detection_training.models.rfdetr.collate import collate_fn
@@ -47,6 +48,8 @@ class COCODataModule(L.LightningDataModule):
         persistent_workers: bool = True,
         square_resize_div_64: bool = True,
         yolox_transforms: bool = False,
+        mosaic: bool = False,
+        mixup_prob: float = 0.3,
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
         selected_categories: list[str] | None = None,
@@ -102,6 +105,8 @@ class COCODataModule(L.LightningDataModule):
         self.num_windows = num_windows
         self.square_resize_div_64 = square_resize_div_64
         self.yolox_transforms = yolox_transforms
+        self.mosaic = mosaic
+        self.mixup_prob = mixup_prob
         self.image_mean = (
             image_mean if image_mean is not None else [123.675, 116.28, 103.53]
         )
@@ -268,9 +273,28 @@ class COCODataModule(L.LightningDataModule):
             self._class_names = list(self._train_detection_dataset.class_names)
             self._label_map = self._train_detection_dataset.label_map
 
-        self._train_detection_dataset.transforms = self._get_transforms("train")
+        train_dataset: torch.utils.data.Dataset[Any]
+        if self.yolox_transforms and self.mosaic:
+            # Mosaic operates on raw PIL images — base dataset has no transforms
+            self._train_detection_dataset.transforms = None
+            from object_detection_training.data.mosaic import MosaicMixupDataset
+
+            post_transforms = make_yolox_post_mosaic_transforms(
+                self.input_height, self.input_width
+            )
+            train_dataset = MosaicMixupDataset(
+                self._train_detection_dataset,
+                input_height=self.input_height,
+                input_width=self.input_width,
+                mixup_prob=self.mixup_prob,
+                post_transforms=post_transforms,
+            )
+        else:
+            self._train_detection_dataset.transforms = self._get_transforms("train")
+            train_dataset = self._train_detection_dataset
+
         return torch.utils.data.DataLoader(
-            self._train_detection_dataset,
+            train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
