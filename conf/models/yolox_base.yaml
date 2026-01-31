@@ -9,6 +9,7 @@ weight_decay: 5e-4
 warmup_epochs: 5
 download_pretrained: true
 pretrain_weights: null
+freeze_backbone_epochs: 0
 
 # Normalization parameters for YOLOX (keeps raw 0-255 values)
 image_mean: [0.0, 0.0, 0.0]

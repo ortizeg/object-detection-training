@@ -26,11 +26,13 @@ input_width: 640
 log_level: INFO
 
 # Override model for basketball (10 classes)
+# Fine-tuning from COCO pretrained weights — use lower LR than training-from-scratch
 models:
   num_classes: 10
-  learning_rate: 0.01
+  learning_rate: 0.001
   weight_decay: 5e-4
   warmup_epochs: 5
+  freeze_backbone_epochs: 5
   input_height: ${input_height}
   input_width: ${input_width}
 
@@ -40,8 +42,9 @@ data:
   num_workers: 8
 
 # Trainer — cloud GPU settings
+# Fine-tuning converges faster than training from scratch
 trainer:
-  max_epochs: 300
+  max_epochs: 100
   precision: 16-mixed
   gradient_clip_val: 5.0
   accumulate_grad_batches: 2

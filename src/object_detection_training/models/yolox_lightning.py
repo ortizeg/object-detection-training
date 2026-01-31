@@ -121,6 +121,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         output_dir: str = "outputs",
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
+        freeze_backbone_epochs: int = 0,
     ):
         """
         Initialize YOLOX Lightning model.
@@ -136,6 +137,8 @@ class YOLOXLightningModel(BaseDetectionModel):
             input_height: Input image height.
             input_width: Input image width.
             output_dir: Base directory for outputting results.
+            freeze_backbone_epochs: Freeze backbone for this many initial epochs
+                during fine-tuning. 0 disables freezing.
         """
         super().__init__(
             num_classes=num_classes,
@@ -155,6 +158,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         self.download_pretrained = download_pretrained
         self.input_height = input_height
         self.input_width = input_width
+        self.freeze_backbone_epochs = freeze_backbone_epochs
 
         if variant not in YOLOX_CONFIGS:
             raise ValueError(
@@ -204,7 +208,41 @@ class YOLOXLightningModel(BaseDetectionModel):
         # This is crucial when num_classes differs from pretrained (cls_preds skipped)
         self._reinitialize_cls_biases()
 
+        # Freeze backbone for initial fine-tuning epochs if requested
+        if self.freeze_backbone_epochs > 0:
+            self._freeze_backbone()
+
         self.save_hyperparameters()
+
+    def _freeze_backbone(self) -> None:
+        """Freeze backbone parameters (PAFPN backbone) for fine-tuning.
+
+        When fine-tuning from pretrained weights, freezing the backbone initially
+        allows the head to adapt to new classes before backbone features are modified.
+        """
+        for param in self.model.backbone.backbone.parameters():
+            param.requires_grad = False
+        n_frozen = sum(
+            1 for p in self.model.backbone.backbone.parameters() if not p.requires_grad
+        )
+        logger.info(
+            f"Froze {n_frozen} backbone parameters "
+            f"for {self.freeze_backbone_epochs} epochs"
+        )
+
+    def _unfreeze_backbone(self) -> None:
+        """Unfreeze backbone parameters."""
+        for param in self.model.backbone.backbone.parameters():
+            param.requires_grad = True
+        logger.info("Unfroze backbone parameters")
+
+    def on_train_epoch_start(self) -> None:
+        """Unfreeze backbone after freeze_backbone_epochs."""
+        if (
+            self.freeze_backbone_epochs > 0
+            and self.current_epoch == self.freeze_backbone_epochs
+        ):
+            self._unfreeze_backbone()
 
     def _reinitialize_cls_biases(self) -> None:
         """Reinitialize classification prediction biases after weight loading.
@@ -343,6 +381,11 @@ class YOLOXLightningModel(BaseDetectionModel):
         # Handle NestedTensor from rfdetr collation
         if hasattr(images, "tensors"):
             images = images.tensors
+
+        # YOLOX pretrained weights were trained with BGR input (OpenCV convention).
+        # Our data pipeline uses PIL which produces RGB. Swap R↔B channels so that
+        # pretrained features are used correctly from epoch 1.
+        images = images[:, [2, 1, 0], :, :]
 
         if self._export_mode:
             result: dict[str, torch.Tensor] = self.model(images)
