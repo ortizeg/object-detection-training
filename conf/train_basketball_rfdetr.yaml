@@ -8,13 +8,13 @@
 #       val_path=/path/to/val
 
 defaults:
-  - _self_
   - task: train
   - models: rfdetr_small
   - data: data_basketball
   - trainer: default
   - callbacks: default
   - logging: null
+  - _self_
 
 # Global Parameters
 input_height: 512
