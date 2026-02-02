@@ -30,10 +30,10 @@ log_level: INFO
 models:
   num_classes: 10
   learning_rate: 0.001
-  weight_decay: 2e-4
+  weight_decay: 5e-4
   warmup_epochs: 5
   freeze_backbone_epochs: 5
-  l1_loss_epoch: 30
+  l1_loss_epoch: 50
   iou_loss_type: giou
   input_height: ${input_height}
   input_width: ${input_width}
@@ -59,12 +59,15 @@ trainer:
   val_check_interval: 1.0
 
 # Callback overrides for fine-tuning
+# Monitor mAP@50 (not mAP@50:95) since that's the target metric
 callbacks:
+  model_checkpoint:
+    monitor: val/mAP_50
   early_stopping:
-    patience: 25
+    monitor: val/mAP_50
+    patience: 40
   ema:
-    decay: 0.9998
-    warmup_steps: 2000
+    decay: 0.993
 
 # Hydra configuration
 hydra:

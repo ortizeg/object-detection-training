@@ -445,6 +445,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         outputs: dict[str, torch.Tensor],
         original_sizes: list[tuple[int, int]] | None = None,
         confidence_threshold: float = 0.1,
+        nms_iou_threshold: float = 0.45,
     ) -> list[dict[str, torch.Tensor]]:
         """Convert model outputs to prediction format.
 
@@ -491,7 +492,9 @@ class YOLOXLightningModel(BaseDetectionModel):
             # NMS
             from torchvision.ops import batched_nms
 
-            keep_indices = batched_nms(boxes, scores, labels, iou_threshold=0.45)
+            keep_indices = batched_nms(
+                boxes, scores, labels, iou_threshold=nms_iou_threshold
+            )
             boxes = boxes[keep_indices]
             scores = scores[keep_indices]
             labels = labels[keep_indices]
@@ -539,7 +542,12 @@ class YOLOXLightningModel(BaseDetectionModel):
             self.log(log_name, value, on_step=False, on_epoch=True)
 
         # --- Predictions (pixel xyxy) ---
-        preds = self.get_predictions(outputs, confidence_threshold=0.0)
+        # Use higher NMS threshold for mAP: preserve more candidates for the
+        # metric to evaluate.  The default 0.45 suppresses valid detections of
+        # nearby objects (e.g. clustered players), hurting recall.
+        preds = self.get_predictions(
+            outputs, confidence_threshold=0.0, nms_iou_threshold=0.65
+        )
 
         # --- Normalize both to [0,1] xyxy for metrics ---
         img_h, img_w = outputs.get("image_shape", (self.input_height, self.input_width))
