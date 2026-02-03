@@ -2,3 +2,9 @@ defaults:
   - YOLOXTiny
   - yolox_base
   - _self_
+
+# YOLOX-Tiny
+depth: 0.33
+width: 0.375
+depthwise: false
+checkpoint_name: yolox_tiny.pth
