@@ -107,9 +107,8 @@ class TestHydraConfigCompleteness:
             )
 
         for key, expected_val in expected.items():
-            assert (
-                key in cfg.models
-            ), f"Missing param '{key}' in {yaml_name}.yaml config"
+            msg = f"Missing param '{key}' in {yaml_name}.yaml config"
+            assert key in cfg.models, msg
             actual = cfg.models[key]
             # Convert OmegaConf lists to plain lists for comparison
             if hasattr(actual, "__iter__") and not isinstance(actual, str):
