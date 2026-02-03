@@ -8,7 +8,7 @@ import hydra
 sys.path.append(join(dirname(__file__), "../src"))
 
 # Register model configs by importing the wrappers
-import object_detection_training.models.rfdetr_wrappers as _  # noqa: F401, E402
+import object_detection_training.models.rfdetr_wrappers as _  # noqa: F401
 
 
 def test_hydra_configuration():

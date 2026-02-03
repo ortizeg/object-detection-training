@@ -5,4 +5,4 @@ from object_detection_training.models.rfdetr_wrappers import (
     RFDETRSmall,
 )
 
-__all__ = ["RFDETRMedium", "RFDETRSmall", "RFDETRNano", "RFDETRLarge"]
+__all__ = ["RFDETRLarge", "RFDETRMedium", "RFDETRNano", "RFDETRSmall"]

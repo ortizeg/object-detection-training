@@ -15,12 +15,12 @@ import object_detection_training.models.rfdetr_wrappers as _  # noqa: F401
 if not hasattr(onnx.helper, "float32_to_bfloat16"):
     logger.warning("Monkey-patching onnx.helper.float32_to_bfloat16 for compatibility")
 
-    def float32_to_bfloat16(x):
+    def float32_to_bfloat16(x):  # type: ignore[no-untyped-def]
         # bfloat16 is the top 16 bits of float32
         y = np.ascontiguousarray(x).view(np.uint32)
         return (y >> 16).astype(np.uint16)
 
-    onnx.helper.float32_to_bfloat16 = float32_to_bfloat16
+    onnx.helper.float32_to_bfloat16 = float32_to_bfloat16  # type: ignore[attr-defined]
 
 
 @hydra.main(version_base=None, config_path="../../conf", config_name="train")

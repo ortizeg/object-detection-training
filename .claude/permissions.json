@@ -1,0 +1,55 @@
+{
+  "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep"],
+  "allowedPrompts": [
+    {
+      "tool": "Bash",
+      "prompt": "run tests"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "install dependencies"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "build project"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "start development server"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "lint code"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "format code"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "check types"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "compile code"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "run development commands"
+    }
+  ],
+  "deniedPrompts": [
+    {
+      "tool": "Bash",
+      "prompt": "delete files"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "force push"
+    },
+    {
+      "tool": "Bash",
+      "prompt": "remove directories"
+    }
+  ]
+}

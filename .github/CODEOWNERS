@@ -1,0 +1,16 @@
+# Default owner for everything
+* @ortizeg
+
+# Source code
+/src/ @ortizeg
+
+# Configuration
+/conf/ @ortizeg
+pixi.toml @ortizeg
+pyproject.toml @ortizeg
+
+# CI/CD
+/.github/ @ortizeg
+
+# Tests
+/tests/ @ortizeg

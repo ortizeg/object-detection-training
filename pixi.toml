@@ -12,9 +12,12 @@ cuda = "12.1"
 [tasks]
 train = { cmd = "python src/object_detection_training/train.py", env = { KMP_DUPLICATE_LIB_OK = "TRUE" } }
 test = "pytest"
+test-cov = "pytest --cov=src --cov-report=term --cov-report=xml -v"
 precommit = "pre-commit run --all-files"
-format = "black ."
-lint = "flake8 ."
+format = "ruff format ."
+format-check = "ruff format --check ."
+lint = "ruff check ."
+typecheck = "mypy src/"
 
 
 [dependencies]
@@ -26,9 +29,10 @@ onnxscript = ">=0.5.6,<0.6"
 
 [feature.dev.dependencies]
 pytest = "*"
+pytest-cov = "*"
 tensorboard = ">=2.20.0,<3"
-black = "*"
-flake8 = "*"
+ruff = "*"
+mypy = "*"
 pre-commit = "*"
 
 [environments]

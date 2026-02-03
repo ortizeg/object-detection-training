@@ -1,12 +1,14 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, make_dataclass
-from typing import Any, Optional, Type, Union
+from typing import Any
 
 from hydra.core.config_store import ConfigStore
 
 
 def register(
-    cls: Optional[Type[Any]] = None, *, group: Optional[str] = None
-) -> Union[Type[Any], Any]:
+    cls: type[Any] | None = None, *, group: str | None = None
+) -> type[Any] | Any:
     """
     Decorator to register a class with Hydra's ConfigStore.
 
@@ -23,7 +25,7 @@ def register(
         group: The ConfigStore group. If None, inference is attempted.
     """
 
-    def _process_class(target_cls: Type[Any]) -> Type[Any]:
+    def _process_class(target_cls: type[Any]) -> type[Any]:
         nonlocal group
 
         # Determine the target path (module + class name)
@@ -40,18 +42,18 @@ def register(
 
         # Create the configuration dataclass dynamically
         config_cls_name = f"{target_cls.__name__}Config"
-        ConfigClass = make_dataclass(
+        config_class = make_dataclass(
             config_cls_name,
             [("_target_", str, target_path)],
             bases=(),
             namespace={"__module__": target_cls.__module__},
         )
         # Apply @dataclass decorator
-        ConfigClass = dataclass(ConfigClass)
+        config_class = dataclass(config_class)
 
         # Register in ConfigStore
         cs = ConfigStore.instance()
-        cs.store(group=group, name=config_name, node=ConfigClass)
+        cs.store(group=group, name=config_name, node=config_class)
 
         return target_cls
 
