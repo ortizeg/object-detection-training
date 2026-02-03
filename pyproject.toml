@@ -45,5 +45,9 @@ warn_return_any = true
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = ["cv2.*", "albumentations.*", "torchvision.*", "rfdetr.*", "hydra.*", "omegaconf.*", "torch.*", "lightning.*", "tensorboard.*"]
+module = ["cv2.*", "albumentations.*", "torchvision.*", "rfdetr.*", "hydra.*", "omegaconf.*", "torch.*", "lightning.*", "tensorboard.*", "onnx.*", "numpy.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["object_detection_training.models", "object_detection_training.models.rfdetr_wrappers", "object_detection_training.models.yolox.*"]
+disable_error_code = ["attr-defined", "no-redef"]
