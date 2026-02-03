@@ -21,20 +21,17 @@ from object_detection_training.models.yolox_lightning import (
 )
 
 __all__ = [
-    # Base
     "BaseDetectionModel",
-    # RFDETR Lightning models
+    "RFDETRLargeModel",
     "RFDETRLightningModel",
+    "RFDETRMediumModel",
     "RFDETRNanoModel",
     "RFDETRSmallModel",
-    "RFDETRMediumModel",
-    "RFDETRLargeModel",
-    # YOLOX Lightning models
-    "YOLOXLightningModel",
-    "YOLOXNanoModel",
-    "YOLOXTinyModel",
-    "YOLOXSModel",
-    "YOLOXMModel",
     "YOLOXLModel",
+    "YOLOXLightningModel",
+    "YOLOXMModel",
+    "YOLOXNanoModel",
+    "YOLOXSModel",
+    "YOLOXTinyModel",
     "YOLOXXModel",
 ]

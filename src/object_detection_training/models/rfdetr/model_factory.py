@@ -41,14 +41,17 @@ HOSTED_MODELS = {
 def _download_file(url, filename):
     """Download a file from a URL with a progress bar."""
     response = requests.get(url, stream=True)
-    total_size = int(response.headers['content-length'])
-    with open(filename, "wb") as f, tqdm(
-        desc=filename,
-        total=total_size,
-        unit='iB',
-        unit_scale=True,
-        unit_divisor=1024,
-    ) as pbar:
+    total_size = int(response.headers["content-length"])
+    with (
+        open(filename, "wb") as f,
+        tqdm(
+            desc=filename,
+            total=total_size,
+            unit="iB",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as pbar,
+    ):
         for data in response.iter_content(chunk_size=1024):
             size = f.write(data)
             pbar.update(size)
@@ -57,9 +60,7 @@ def _download_file(url, filename):
 def download_pretrain_weights(pretrain_weights: str, redownload=False):
     if pretrain_weights in HOSTED_MODELS:
         if redownload or not os.path.exists(pretrain_weights):
-            logger.info(
-                f"Downloading pretrained weights for {pretrain_weights}"
-            )
+            logger.info(f"Downloading pretrained weights for {pretrain_weights}")
             _download_file(
                 HOSTED_MODELS[pretrain_weights],
                 pretrain_weights,
@@ -76,20 +77,24 @@ class Model:
         if args.pretrain_weights is not None:
             print("Loading pretrain weights")
             try:
-                checkpoint = torch.load(args.pretrain_weights, map_location='cpu', weights_only=False)
+                checkpoint = torch.load(
+                    args.pretrain_weights, map_location="cpu", weights_only=False
+                )
             except Exception as e:
                 print(f"Failed to load pretrain weights: {e}")
                 # re-download weights if they are corrupted
                 print("Failed to load pretrain weights, re-downloading")
                 download_pretrain_weights(args.pretrain_weights, redownload=True)
-                checkpoint = torch.load(args.pretrain_weights, map_location='cpu', weights_only=False)
+                checkpoint = torch.load(
+                    args.pretrain_weights, map_location="cpu", weights_only=False
+                )
 
             # Extract class_names from checkpoint if available
-            if 'args' in checkpoint and hasattr(checkpoint['args'], 'class_names'):
-                self.args.class_names = checkpoint['args'].class_names
-                self.class_names = checkpoint['args'].class_names
+            if "args" in checkpoint and hasattr(checkpoint["args"], "class_names"):
+                self.args.class_names = checkpoint["args"].class_names
+                self.class_names = checkpoint["args"].class_names
 
-            checkpoint_num_classes = checkpoint['model']['class_embed.bias'].shape[0]
+            checkpoint_num_classes = checkpoint["model"]["class_embed.bias"].shape[0]
             if checkpoint_num_classes != args.num_classes + 1:
                 self.reinitialize_detection_head(checkpoint_num_classes)
             # add support to exclude_keys
@@ -97,44 +102,61 @@ class Model:
             if args.pretrain_exclude_keys is not None:
                 assert isinstance(args.pretrain_exclude_keys, list)
                 for exclude_key in args.pretrain_exclude_keys:
-                    checkpoint['model'].pop(exclude_key)
+                    checkpoint["model"].pop(exclude_key)
             if args.pretrain_keys_modify_to_load is not None:
-                from rfdetr.util.obj365_to_coco_model import get_coco_pretrain_from_obj365
+                from rfdetr.util.obj365_to_coco_model import (
+                    get_coco_pretrain_from_obj365,
+                )
+
                 assert isinstance(args.pretrain_keys_modify_to_load, list)
                 for modify_key_to_load in args.pretrain_keys_modify_to_load:
                     try:
-                        checkpoint['model'][modify_key_to_load] = get_coco_pretrain_from_obj365(
-                            self.model.state_dict()[modify_key_to_load],
-                            checkpoint['model'][modify_key_to_load]
+                        checkpoint["model"][modify_key_to_load] = (
+                            get_coco_pretrain_from_obj365(
+                                self.model.state_dict()[modify_key_to_load],
+                                checkpoint["model"][modify_key_to_load],
+                            )
                         )
                     except:
-                        print(f"Failed to load {modify_key_to_load}, deleting from checkpoint")
-                        checkpoint['model'].pop(modify_key_to_load)
+                        print(
+                            f"Failed to load {modify_key_to_load}, deleting from checkpoint"
+                        )
+                        checkpoint["model"].pop(modify_key_to_load)
 
             # we may want to resume training with a smaller number of groups for group detr
             num_desired_queries = args.num_queries * args.group_detr
             query_param_names = ["refpoint_embed.weight", "query_feat.weight"]
-            for name, state in checkpoint['model'].items():
+            for name, state in checkpoint["model"].items():
                 if any(name.endswith(x) for x in query_param_names):
-                    checkpoint['model'][name] = state[:num_desired_queries]
+                    checkpoint["model"][name] = state[:num_desired_queries]
 
-            self.model.load_state_dict(checkpoint['model'], strict=False)
+            self.model.load_state_dict(checkpoint["model"], strict=False)
 
         if args.backbone_lora:
             if get_peft_model is None:
-                raise ImportError("peft is required for backbone_lora. Install it with: pip install peft")
+                raise ImportError(
+                    "peft is required for backbone_lora. Install it with: pip install peft"
+                )
             print("Applying LORA to backbone")
             lora_config = LoraConfig(
                 r=16,
                 lora_alpha=16,
                 use_dora=True,
                 target_modules=[
-                    "q_proj", "v_proj", "k_proj",  # covers OWL-ViT
-                    "qkv", # covers open_clip ie Siglip2
-                    "query", "key", "value", "cls_token", "register_tokens", # covers Dinov2 with windowed attn
-                ]
+                    "q_proj",
+                    "v_proj",
+                    "k_proj",  # covers OWL-ViT
+                    "qkv",  # covers open_clip ie Siglip2
+                    "query",
+                    "key",
+                    "value",
+                    "cls_token",
+                    "register_tokens",  # covers Dinov2 with windowed attn
+                ],
             )
-            self.model.backbone[0].encoder = get_peft_model(self.model.backbone[0].encoder, lora_config)
+            self.model.backbone[0].encoder = get_peft_model(
+                self.model.backbone[0].encoder, lora_config
+            )
         self.model = self.model.to(self.device)
         self.postprocess = PostProcess(num_select=args.num_select)
         self.stop_early = False
@@ -162,33 +184,29 @@ def populate_args(
     lr_vit_layer_decay=0.8,
     lr_component_decay=1.0,
     do_benchmark=False,
-
     # Drop parameters
     dropout=0,
     drop_path=0,
-    drop_mode='standard',
-    drop_schedule='constant',
+    drop_mode="standard",
+    drop_schedule="constant",
     cutoff_epoch=0,
-
     # Model parameters
     pretrained_encoder=None,
     pretrain_weights=None,
     pretrain_exclude_keys=None,
     pretrain_keys_modify_to_load=None,
     pretrained_distiller=None,
-
     # Backbone parameters
-    encoder='vit_tiny',
+    encoder="vit_tiny",
     vit_encoder_num_layers=12,
     window_block_indexes=None,
-    position_embedding='sine',
+    position_embedding="sine",
     out_feature_indexes=[-1],
     freeze_encoder=False,
     layer_norm=False,
     rms_norm=False,
     backbone_lora=False,
     force_no_pretrain=False,
-
     # Transformer parameters
     dec_layers=3,
     dim_feedforward=2048,
@@ -198,19 +216,17 @@ def populate_args(
     num_queries=300,
     group_detr=13,
     two_stage=False,
-    projector_scale='P4',
+    projector_scale="P4",
     lite_refpoint_refine=False,
     num_select=100,
     dec_n_points=4,
-    decoder_norm='LN',
+    decoder_norm="LN",
     bbox_reparam=False,
     freeze_batch_norm=False,
-
     # Matcher parameters
     set_cost_class=2,
     set_cost_bbox=5,
     set_cost_giou=2,
-
     # Loss coefficients
     cls_loss_coef=2,
     bbox_loss_coef=5,
@@ -221,35 +237,30 @@ def populate_args(
     use_varifocal_loss=False,
     use_position_supervised_loss=False,
     ia_bce_loss=False,
-
     # Dataset parameters
-    dataset_file='coco',
+    dataset_file="coco",
     coco_path=None,
     dataset_dir=None,
     square_resize_div_64=False,
-
     # Output parameters
-    output_dir='output',
+    output_dir="output",
     dont_save_weights=False,
     checkpoint_interval=10,
     seed=42,
-    resume='',
+    resume="",
     start_epoch=0,
     eval=False,
     use_ema=False,
     ema_decay=0.9997,
     ema_tau=0,
     num_workers=2,
-
     # Distributed training parameters
-    device='cuda',
+    device="cuda",
     world_size=1,
-    dist_url='env://',
+    dist_url="env://",
     sync_bn=True,
-
     # FP16
     fp16_eval=False,
-
     # Custom args
     encoder_only=False,
     backbone_only=False,
@@ -259,7 +270,7 @@ def populate_args(
     expanded_scales=False,
     do_random_resize_via_padding=False,
     warmup_epochs=1,
-    lr_scheduler='step',
+    lr_scheduler="step",
     lr_min_factor=0.0,
     # Early stopping parameters
     early_stopping=True,
@@ -269,7 +280,7 @@ def populate_args(
     gradient_checkpointing=False,
     # Additional
     subcommand=None,
-    **extra_kwargs  # To handle any unexpected arguments
+    **extra_kwargs,  # To handle any unexpected arguments
 ):
     args = argparse.Namespace(
         num_classes=num_classes,
@@ -367,6 +378,6 @@ def populate_args(
         early_stopping_min_delta=early_stopping_min_delta,
         early_stopping_use_ema=early_stopping_use_ema,
         gradient_checkpointing=gradient_checkpointing,
-        **extra_kwargs
+        **extra_kwargs,
     )
     return args

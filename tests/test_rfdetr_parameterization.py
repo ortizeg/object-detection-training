@@ -15,7 +15,7 @@ import torch
 
 # Register model configs by importing the wrappers
 sys.path.append(join(dirname(__file__), "../src"))
-import object_detection_training.models as _  # noqa: F401, E402
+import object_detection_training.models as _  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Variant parameter definitions (source of truth: Pydantic config classes)

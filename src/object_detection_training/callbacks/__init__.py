@@ -9,7 +9,7 @@ from object_detection_training.callbacks.plotting import TrainingHistoryPlotter
 
 __all__ = [
     "EMACallback",
-    "ONNXExportCallback",
     "ModelInfoCallback",
+    "ONNXExportCallback",
     "TrainingHistoryPlotter",
 ]

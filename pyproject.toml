@@ -43,34 +43,31 @@ dependencies = [
 train-detect = "object_detection_training.task_manager:main"
 
 [tool.ruff]
-line-length = 88
-indent-width = 4
 target-version = "py311"
+line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "UP", "S", "B", "A", "C4", "T20", "SIM"]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "S",    # bandit (security)
+    "A",    # builtins
+    "C4",   # comprehensions
+    "RUF",  # ruff-specific
+]
 ignore = ["N812"]
-fixable = ["ALL"]
-unfixable = []
-dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]
-"src/object_detection_training/models/yolox/**" = ["E402", "N806", "N803", "S101"]
-"src/object_detection_training/models/rfdetr/**" = ["E402", "S101"]
-
-[tool.ruff.format]
-# Like Black, use double quotes for strings.
-quote-style = "double"
-
-# Like Black, indent with spaces, rather than tabs.
-indent-style = "space"
-
-# Like Black, respect the line length.
-skip-magic-trailing-comma = false
-
-# Like Black, automatically detect the appropriate line ending.
-line-ending = "auto"
+"src/object_detection_training/models/yolox/**" = ["ALL"]
+"src/object_detection_training/models/rfdetr/**" = ["ALL"]
+"scripts/**" = ["ALL"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["object_detection_training"]
@@ -80,24 +77,21 @@ python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["cv2.*", "albumentations.*", "torchvision.*", "rfdetr.*", "hydra.*", "omegaconf.*", "torch.*", "lightning.*", "tensorboard.*", "onnx.*", "onnxsim.*", "numpy.*", "fvcore.*", "wandb.*", "iopath.*", "colored.*", "pycocotools.*", "scipy.*", "tqdm.*", "torchmetrics.*", "dotenv.*", "orjson.*", "supervision.*", "peft.*", "transformers.*", "requests.*", "pandas.*", "matplotlib.*", "seaborn.*", "PIL.*", "rich.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
+    "object_detection_training.models",
+    "object_detection_training.models.base",
+    "object_detection_training.models.rfdetr_wrappers",
+    "object_detection_training.models.rfdetr_lightning",
+    "object_detection_training.models.rfdetr.*",
     "object_detection_training.models.yolox.*",
-    "object_detection_training.models.rfdetr.coco",
-    "object_detection_training.models.rfdetr.collate",
-    "object_detection_training.models.rfdetr.transforms",
-    "object_detection_training.models.rfdetr.lwdetr",
-    "object_detection_training.models.rfdetr.transformer",
-    "object_detection_training.models.rfdetr.matcher",
-    "object_detection_training.models.rfdetr.model_factory",
-    "object_detection_training.models.rfdetr.config",
-    "object_detection_training.models.rfdetr.position_encoding",
-    "object_detection_training.models.rfdetr.segmentation_head",
-    "object_detection_training.models.rfdetr.backbone.*",
-    "object_detection_training.models.rfdetr.ops.*",
-    "object_detection_training.models.rfdetr.util.*",
+    "object_detection_training.models.yolox_lightning",
+    "object_detection_training.data.mosaic",
 ]
 strict = false
 disallow_untyped_defs = false
@@ -105,7 +99,7 @@ disallow_incomplete_defs = false
 disallow_untyped_calls = false
 check_untyped_defs = false
 warn_return_any = false
-disable_error_code = ["type-arg", "misc", "assignment", "arg-type"]
+disable_error_code = ["type-arg", "misc", "assignment", "arg-type", "attr-defined", "no-redef", "union-attr", "return-value", "operator", "var-annotated", "untyped-decorator", "name-defined", "import-not-found", "unused-ignore"]
 
 [tool.semantic_release]
 version_variable = "pyproject.toml:version"

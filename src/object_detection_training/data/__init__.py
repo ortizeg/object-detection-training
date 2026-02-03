@@ -20,9 +20,9 @@ from object_detection_training.data.detection_dataset import (
 __all__ = [
     "BaseDataModule",
     "COCODataModule",
-    "DetectionDataset",
     "COCODetectionDataset",
     "DatasetStatistics",
+    "DetectionDataset",
     "SizeThresholds",
     "collate_fn",
     "collate_fn_with_image_ids",
