@@ -8,13 +8,15 @@ plain ``torch.Tensor`` inputs.
 The transforms are designed to be fully parameterizable via Hydra YAML configs.
 """
 
-from object_detection_training.transforms.custom import (
-    MultiScaleRandomResize,
-    MultiScaleResize,
+from object_detection_training.transforms.conversion import (
     NormalizeBoxCoords,
-    RandomSizeCrop,
     ToFloat32Tensor,
 )
+from object_detection_training.transforms.multi_scale_resize import (
+    MultiScaleRandomResize,
+    MultiScaleResize,
+)
+from object_detection_training.transforms.random_size_crop import RandomSizeCrop
 
 __all__ = [
     "MultiScaleRandomResize",
