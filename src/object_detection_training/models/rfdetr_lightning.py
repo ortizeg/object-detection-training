@@ -26,6 +26,11 @@ from object_detection_training.models.rfdetr.model_factory import (
     HOSTED_MODELS,
     Model,
 )
+from object_detection_training.types import (
+    DetectionBatch,
+    DetectionTarget,
+    OptimizerConfig,
+)
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.hydra import register
 
@@ -69,9 +74,9 @@ class RFDETRLightningModel(BaseDetectionModel):
         warmup_epochs: int = 0,
         input_height: int = 512,
         input_width: int = 512,
-        output_dir: str = "outputs",
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
+        output_dir: str = "outputs",
         # --- RFDETR training params (from rfdetr_base.yaml) ---
         lr_encoder: float = 1.5e-4,
         lr_vit_layer_decay: float = 0.8,
@@ -129,13 +134,10 @@ class RFDETRLightningModel(BaseDetectionModel):
             warmup_epochs=warmup_epochs,
             input_height=input_height,
             input_width=input_width,
+            image_mean=image_mean,
+            image_std=image_std,
             output_dir=output_dir,
         )
-
-        self.image_mean = (
-            image_mean if image_mean is not None else [123.675, 116.28, 103.53]
-        )
-        self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
 
         # Training params
         self.lr_encoder = lr_encoder
@@ -249,7 +251,7 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         self.save_hyperparameters()
 
-    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: DetectionBatch, batch_idx: int) -> torch.Tensor:
         """Custom training step to handle RFDETR weighted losses."""
         images, targets = batch
 
@@ -269,7 +271,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         return total_loss
 
     def forward(
-        self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
+        self, images: torch.Tensor, targets: list[DetectionTarget] | None = None
     ) -> dict[str, torch.Tensor]:
         """
         Forward pass.
@@ -293,7 +295,7 @@ class RFDETRLightningModel(BaseDetectionModel):
             return self._forward_inference(images)
 
     def _forward_train(
-        self, images: torch.Tensor, targets: list[dict[str, Any]]
+        self, images: torch.Tensor, targets: list[DetectionTarget]
     ) -> dict[str, torch.Tensor]:
         """Forward pass for training."""
         # self.model is now the LWDETR nn.Module
@@ -465,7 +467,7 @@ class RFDETRLightningModel(BaseDetectionModel):
 
         return str(out_path)
 
-    def configure_optimizers(self) -> Any:
+    def configure_optimizers(self) -> OptimizerConfig:
         """Configure optimizers and schedulers matching rfdetr package."""
         lr_vit_layer_decay = self.lr_vit_layer_decay
         lr_component_decay = self.lr_component_decay

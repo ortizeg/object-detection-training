@@ -17,6 +17,7 @@ from PIL import Image
 
 from object_detection_training.data.detection_dataset import DetectionDataset
 from object_detection_training.models.rfdetr.collate import collate_fn as collate_fn
+from object_detection_training.types import DetectionTarget
 from object_detection_training.utils.json_utils import load_json
 
 __all__ = ["COCODetectionDataset", "collate_fn", "collate_fn_with_image_ids"]
@@ -209,8 +210,8 @@ class COCODetectionDataset(DetectionDataset):
 
 
 def collate_fn_with_image_ids(
-    batch: list[tuple[torch.Tensor, dict[str, Any]]],
-) -> tuple[Any, list[dict[str, Any]], list[int]]:
+    batch: list[tuple[torch.Tensor, DetectionTarget]],
+) -> tuple[torch.Tensor, list[DetectionTarget], list[int]]:
     """Collate function that also returns image IDs.
 
     Useful for evaluation where image IDs are needed.

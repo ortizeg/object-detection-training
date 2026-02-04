@@ -11,19 +11,8 @@ from object_detection_training.models.rfdetr.coco import (
     CocoDetection,
     ConvertCoco,
     collate_fn,
-    compute_multi_scale_scales,
-    make_coco_transforms,
 )
-from object_detection_training.models.rfdetr.transforms import (
-    Compose,
-    Normalize,
-    RandomHorizontalFlip,
-    RandomResize,
-    RandomSelect,
-    RandomSizeCrop,
-    SquareResize,
-    ToTensor,
-)
+from object_detection_training.transforms import compute_multi_scale_scales
 
 # Model architecture
 from object_detection_training.models.rfdetr.config import (
@@ -49,16 +38,6 @@ __all__ = [
     "ConvertCoco",
     "collate_fn",
     "compute_multi_scale_scales",
-    "make_coco_transforms",
-    # Transforms
-    "Compose",
-    "Normalize",
-    "RandomHorizontalFlip",
-    "RandomResize",
-    "RandomSelect",
-    "RandomSizeCrop",
-    "SquareResize",
-    "ToTensor",
     # Model architecture
     "ModelConfig",
     "RFDETRBaseConfig",

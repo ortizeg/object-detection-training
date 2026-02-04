@@ -20,6 +20,9 @@ import pandas as pd
 import torch
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from torchvision import tv_tensors
+
+from object_detection_training.types import DetectionTarget
 
 
 class SizeThresholds(BaseModel):
@@ -46,7 +49,9 @@ class SizeThresholds(BaseModel):
         return v
 
 
-class DetectionDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]], ABC):
+class DetectionDataset(
+    torch.utils.data.Dataset[tuple[torch.Tensor | Image.Image, DetectionTarget]], ABC
+):
     """Base class for detection datasets with pandas DataFrame storage.
 
     Inherits from torch.utils.data.Dataset to provide standard indexing.
@@ -333,7 +338,9 @@ class DetectionDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]], ABC
             f"classes={self.num_classes})"
         )
 
-    def __getitem__(self, idx: int) -> tuple[Any, dict[str, Any]]:
+    def __getitem__(
+        self, idx: int
+    ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
         """Get image and target for a given index.
 
         Format matches DETR/RF-DETR expectations:
@@ -357,9 +364,9 @@ class DetectionDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]], ABC
 
         # Build target dict in COCO/DETR format
         # boxes in [x, y, w, h] format -> convert to [x1, y1, x2, y2]
-        boxes_list: list[list[Any]] = []
+        boxes_list: list[list[float]] = []
         labels_list: list[int] = []
-        areas_list: list[Any] = []
+        areas_list: list[float] = []
         iscrowd_list: list[int] = []
 
         label_map = self.label_map
@@ -399,7 +406,7 @@ class DetectionDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]], ABC
             iscrowd = torch.as_tensor(iscrowd_list, dtype=torch.int64)
 
         target = {
-            "boxes": boxes,
+            "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(h, w)),
             "labels": labels,
             "image_id": torch.tensor([image_id]),
             "area": areas,

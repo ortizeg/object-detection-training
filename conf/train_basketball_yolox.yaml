@@ -14,7 +14,7 @@
 defaults:
   - task: train
   - models: yolox_s
-  - data: data_basketball
+  - data: data_basketball_yolox
   - trainer: trainer_yolox
   - callbacks: default
   - logging: null
@@ -39,15 +39,10 @@ models:
   input_width: ${input_width}
 
 # Data — L4 fits batch_size=32 at 640x640 for yolox_s
-# YOLOX transforms: no box normalization (pixel xyxy throughout),
-# no image normalization (raw 0-255), ColorJitter + RandomErasing augmentation
 # Mosaic/MixUp disabled — too aggressive for fine-tuning on small dataset
 data:
   batch_size: 32
   num_workers: 8
-  yolox_transforms: true
-  mosaic: false
-  multi_scale: false
 
 # Trainer — cloud GPU settings
 # Extended training with L1 loss schedule for fine-tuning

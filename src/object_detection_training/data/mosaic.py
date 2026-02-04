@@ -13,11 +13,15 @@ from typing import Any
 import numpy as np
 import torch
 from PIL import Image
+from torchvision import tv_tensors
 
 from object_detection_training.data.detection_dataset import DetectionDataset
+from object_detection_training.types import DetectionTarget
 
 
-class MosaicMixupDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]]):
+class MosaicMixupDataset(
+    torch.utils.data.Dataset[tuple[torch.Tensor | Image.Image, DetectionTarget]]
+):
     """Dataset wrapper that applies Mosaic and optional MixUp augmentation.
 
     Mosaic combines 4 random images into a single training image by placing
@@ -62,12 +66,16 @@ class MosaicMixupDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]]):
     def __len__(self) -> int:
         return len(self.dataset)
 
-    def __getitem__(self, idx: int) -> tuple[Any, dict[str, Any]]:
+    def __getitem__(
+        self, idx: int
+    ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
         if not self.enabled or random.random() > self.mosaic_prob:  # noqa: S311
             return self._get_single(idx)
         return self._get_mosaic(idx)
 
-    def _get_single(self, idx: int) -> tuple[Any, dict[str, Any]]:
+    def _get_single(
+        self, idx: int
+    ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
         """Get a single image, resized to input size."""
         img, target = self.dataset[idx]
         orig_w, orig_h = img.size
@@ -79,7 +87,17 @@ class MosaicMixupDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]]):
             boxes = target["boxes"].clone()
             boxes[:, [0, 2]] *= self.input_width / orig_w
             boxes[:, [1, 3]] *= self.input_height / orig_h
-            target["boxes"] = boxes
+            target["boxes"] = tv_tensors.BoundingBoxes(
+                boxes,
+                format="XYXY",
+                canvas_size=(self.input_height, self.input_width),
+            )
+        else:
+            target["boxes"] = tv_tensors.BoundingBoxes(
+                target["boxes"],
+                format="XYXY",
+                canvas_size=(self.input_height, self.input_width),
+            )
 
         target["size"] = torch.tensor([self.input_height, self.input_width])
 
@@ -88,7 +106,9 @@ class MosaicMixupDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]]):
 
         return img_resized, target
 
-    def _get_mosaic(self, idx: int) -> tuple[Any, dict[str, Any]]:
+    def _get_mosaic(
+        self, idx: int
+    ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
         """Create a 4-image mosaic with optional MixUp."""
         n = len(self.dataset)
         indices = [idx] + [random.randint(0, n - 1) for _ in range(3)]  # noqa: S311
@@ -119,7 +139,7 @@ class MosaicMixupDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]]):
             (cx, cy, self.input_width - cx, self.input_height - cy),
         ]
 
-        first_target: dict[str, Any] | None = None
+        first_target: DetectionTarget | None = None
         for i, (q_idx, (x_off, y_off, qw, qh)) in enumerate(
             zip(indices, quadrants, strict=True)
         ):
@@ -173,8 +193,12 @@ class MosaicMixupDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]]):
         # Build result
         result_img = Image.fromarray(canvas)
 
-        result_target: dict[str, Any] = {
-            "boxes": boxes,
+        result_target: DetectionTarget = {
+            "boxes": tv_tensors.BoundingBoxes(
+                boxes,
+                format="XYXY",
+                canvas_size=(self.input_height, self.input_width),
+            ),
             "labels": labels,
             "image_id": (
                 first_target["image_id"]

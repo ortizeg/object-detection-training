@@ -16,6 +16,12 @@ from loguru import logger
 from supervision.metrics import MeanAveragePrecision
 
 from object_detection_training.metrics.curves import compute_detection_curves
+from object_detection_training.types import (
+    DetectionBatch,
+    DetectionTarget,
+    ModelStats,
+    OptimizerConfig,
+)
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.plotting import save_detection_curves_plots
 
@@ -36,6 +42,8 @@ class BaseDetectionModel(L.LightningModule):
         warmup_epochs: int = 5,
         input_height: int = 576,
         input_width: int = 576,
+        image_mean: list[float] | None = None,
+        image_std: list[float] | None = None,
         output_dir: str = "outputs",
     ):
         """
@@ -55,6 +63,8 @@ class BaseDetectionModel(L.LightningModule):
         self.warmup_epochs = warmup_epochs
         self.input_height = input_height
         self.input_width = input_width
+        self.image_mean = image_mean
+        self.image_std = image_std
         self.output_dir = Path(output_dir)
 
         self._export_mode = False
@@ -66,13 +76,13 @@ class BaseDetectionModel(L.LightningModule):
         self.save_hyperparameters()
 
     @abstractmethod
-    def configure_optimizers(self) -> Any:
+    def configure_optimizers(self) -> OptimizerConfig:
         """Configure optimizers and schedulers."""
         raise NotImplementedError
 
     @abstractmethod
     def forward(
-        self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
+        self, images: torch.Tensor, targets: list[DetectionTarget] | None = None
     ) -> dict[str, torch.Tensor]:
         """
         Forward pass of the model.
@@ -204,7 +214,7 @@ class BaseDetectionModel(L.LightningModule):
         self,
         input_height: int = 640,
         input_width: int = 640,
-    ) -> dict[str, Any]:
+    ) -> ModelStats:
         """
         Compute model statistics (parameters, FLOPs, size, inference speed).
 
@@ -348,7 +358,7 @@ class BaseDetectionModel(L.LightningModule):
 
         return sv_preds, sv_targets
 
-    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: DetectionBatch, batch_idx: int) -> torch.Tensor:
         """Training step."""
         images, targets = batch
         outputs = self(images, targets)
@@ -384,7 +394,7 @@ class BaseDetectionModel(L.LightningModule):
         self.val_preds_storage: list[dict[str, torch.Tensor]] = []
         self.val_targets_storage: list[dict[str, torch.Tensor]] = []
 
-    def validation_step(self, batch: Any, batch_idx: int) -> None:
+    def validation_step(self, batch: DetectionBatch, batch_idx: int) -> None:
         """Validation step."""
         images, targets = batch
         outputs = self(images, targets)
@@ -505,7 +515,7 @@ class BaseDetectionModel(L.LightningModule):
         self.test_preds_storage: list[dict[str, torch.Tensor]] = []
         self.test_targets_storage: list[dict[str, torch.Tensor]] = []
 
-    def test_step(self, batch: Any, batch_idx: int) -> None:
+    def test_step(self, batch: DetectionBatch, batch_idx: int) -> None:
         """Test step."""
         images, targets = batch
         outputs = self(images)

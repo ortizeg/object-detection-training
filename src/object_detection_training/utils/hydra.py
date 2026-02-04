@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import hydra
+import lightning as L
 from hydra.core.config_store import ConfigStore
 from loguru import logger
 from omegaconf import DictConfig
@@ -62,7 +63,7 @@ def register(
     return _process_class(cls)
 
 
-def instantiate_datamodule(cfg: DictConfig) -> Any:
+def instantiate_datamodule(cfg: DictConfig) -> L.LightningDataModule:
     """
     Instantiate a Lightning DataModule from Hydra config.
 
@@ -80,7 +81,7 @@ def instantiate_datamodule(cfg: DictConfig) -> Any:
 
 def instantiate_model(
     cfg: DictConfig, checkpoint_path: str | None = None, **kwargs: Any
-) -> Any:
+) -> L.LightningModule:
     """
     Instantiate a Lightning Module from Hydra config.
 
@@ -111,7 +112,7 @@ def instantiate_model(
     return model
 
 
-def instantiate_callbacks(cfg: DictConfig) -> list[Any]:
+def instantiate_callbacks(cfg: DictConfig) -> list[L.Callback]:
     """
     Instantiate a list of callbacks from Hydra config.
 
@@ -137,7 +138,7 @@ def instantiate_callbacks(cfg: DictConfig) -> list[Any]:
     return callbacks
 
 
-def instantiate_loggers(cfg: DictConfig) -> list[Any]:
+def instantiate_loggers(cfg: DictConfig) -> list[L.pytorch.loggers.Logger]:
     """
     Instantiate a list of loggers from Hydra config.
 
@@ -165,10 +166,10 @@ def instantiate_loggers(cfg: DictConfig) -> list[Any]:
 
 def instantiate_trainer(
     cfg: DictConfig,
-    callbacks: list[Any] | None = None,
-    loggers: list[Any] | None = None,
+    callbacks: list[L.Callback] | None = None,
+    loggers: list[L.pytorch.loggers.Logger] | None = None,
     **kwargs: Any,
-) -> Any:
+) -> L.Trainer:
     """
     Instantiate a PyTorch Lightning Trainer from Hydra config.
 
@@ -181,8 +182,6 @@ def instantiate_trainer(
     Returns:
         Instantiated Trainer.
     """
-    import lightning as L
-
     logger.debug("Instantiating Trainer")
 
     trainer_kwargs = dict(cfg) if cfg else {}

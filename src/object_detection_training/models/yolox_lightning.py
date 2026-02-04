@@ -16,6 +16,12 @@ from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
 from object_detection_training.models.yolox import YOLOPAFPN, YOLOX, YOLOXHead
+from object_detection_training.types import (
+    DetectionBatch,
+    DetectionTarget,
+    ModelOutputs,
+    OptimizerConfig,
+)
 from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
 from object_detection_training.utils.hydra import register
 
@@ -118,9 +124,9 @@ class YOLOXLightningModel(BaseDetectionModel):
         download_pretrained: bool = True,
         input_height: int = 640,
         input_width: int = 640,
-        output_dir: str = "outputs",
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
+        output_dir: str = "outputs",
         freeze_backbone_epochs: int = 0,
         l1_loss_epoch: int = 0,
         iou_loss_type: str = "iou",
@@ -163,11 +169,10 @@ class YOLOXLightningModel(BaseDetectionModel):
             warmup_epochs=warmup_epochs,
             input_height=input_height,
             input_width=input_width,
+            image_mean=image_mean,
+            image_std=image_std,
             output_dir=output_dir,
         )
-
-        self.image_mean = image_mean if image_mean is not None else [0.0, 0.0, 0.0]
-        self.image_std = image_std if image_std is not None else [1.0, 1.0, 1.0]
 
         self.pretrain_weights = pretrain_weights
         self.download_pretrained = download_pretrained
@@ -367,7 +372,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         self.model.load_state_dict(filtered_state_dict, strict=False)
         logger.info("Weights loaded successfully")
 
-    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: DetectionBatch, batch_idx: int) -> torch.Tensor:
         """Training step."""
         images, targets = batch
         # self(images, targets) returns dict from YOLOX.forward
@@ -404,8 +409,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         return torch.as_tensor(loss)
 
     def forward(
-        self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
-    ) -> dict[str, Any]:
+        self, images: torch.Tensor, targets: list[DetectionTarget] | None = None
+    ) -> ModelOutputs:
         """Forward pass.
 
         Targets are expected in pixel xyxy format (from YOLOX transforms which
@@ -435,7 +440,7 @@ class YOLOXLightningModel(BaseDetectionModel):
                     new_t["boxes"] = xyxy_to_cxcywh(new_t["boxes"])
                 cxcywh_targets.append(new_t)
 
-            outputs: dict[str, Any] = self.model(images, cxcywh_targets)
+            outputs: ModelOutputs = self.model(images, cxcywh_targets)
             if "image_shape" not in outputs:
                 outputs["image_shape"] = images.shape[2:]
             return outputs
@@ -515,7 +520,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         return predictions
 
-    def validation_step(self, batch: Any, batch_idx: int) -> None:
+    def validation_step(self, batch: DetectionBatch, batch_idx: int) -> None:
         """Validation step for YOLOX.
 
         Targets are in pixel xyxy (from YOLOX transforms, no box
@@ -579,7 +584,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             [{k: v.cpu() for k, v in t.items()} for t in norm_targets]
         )
 
-    def configure_optimizers(self) -> Any:
+    def configure_optimizers(self) -> OptimizerConfig:
         """
         Configure optimizer and learning rate scheduler.
 
