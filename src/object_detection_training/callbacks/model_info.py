@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import lightning as L
 from loguru import logger
@@ -15,7 +16,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from object_detection_training.types import ModelInfoState, ModelStats
+from object_detection_training.types import ModelStats
 
 
 class ModelInfoCallback(L.Callback):
@@ -50,7 +51,7 @@ class ModelInfoCallback(L.Callback):
         self.input_height = input_height
         self.input_width = input_width
         self.measure_inference_speed = measure_inference_speed
-        self.model_info: dict[str, int | float | str | list[int] | None] = {}
+        self.model_info: ModelStats = {}
 
     def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         """Compute and save model info at training start."""
@@ -103,20 +104,18 @@ class ModelInfoCallback(L.Callback):
 
         for k, v in self.model_info.items():
             # Format value for better readability
-            if k in ["total_params", "trainable_params"] and isinstance(
-                v, (int, float)
-            ):
+            if k in ["total_params", "trainable_params"] and isinstance(v, int | float):
                 value_str = f"{v / 1e6:.2f} M"
-            elif k == "flops" and isinstance(v, (int, float)):
+            elif k == "flops" and isinstance(v, int | float):
                 if v >= 1e9:
                     value_str = f"{v / 1e9:.2f} G"
                 else:
                     value_str = f"{v / 1e6:.2f} M"
-            elif k == "model_size_mb" and isinstance(v, (int, float)):
+            elif k == "model_size_mb" and isinstance(v, int | float):
                 value_str = f"{v:.2f} MB"
-            elif k == "inference_time_ms" and isinstance(v, (int, float)):
+            elif k == "inference_time_ms" and isinstance(v, int | float):
                 value_str = f"{v:.2f} ms"
-            elif k == "fps" and isinstance(v, (int, float)):
+            elif k == "fps" and isinstance(v, int | float):
                 value_str = f"{v:.2f} FPS"
             elif isinstance(v, float):
                 value_str = f"{v:,.2f}"
@@ -149,7 +148,7 @@ class ModelInfoCallback(L.Callback):
 
             # Others: Log as hyperparams
             elif hasattr(logger_inst, "log_hyperparams"):
-                logger_inst.log_hyperparams(self.model_info)
+                logger_inst.log_hyperparams(dict(self.model_info))
 
     def _compute_basic_stats(self, pl_module: L.LightningModule) -> ModelStats:
         """Compute basic model statistics."""
@@ -170,13 +169,13 @@ class ModelInfoCallback(L.Callback):
             "input_shape": [1, 3, self.input_height, self.input_width],
         }
 
-    def state_dict(self) -> ModelInfoState:
+    def state_dict(self) -> dict[str, Any]:
         """Return callback state."""
         return {"model_info": self.model_info}
 
-    def load_state_dict(self, state_dict: ModelInfoState) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load callback state."""
-        self.model_info = state_dict.get("model_info", {})
+        self.model_info = cast(ModelStats, state_dict.get("model_info", {}))
 
     def _export_labels_mapping(self, trainer: L.Trainer, save_dir: Path) -> None:
         """Export labels mapping JSON from the datamodule.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import hydra
 import lightning as L
@@ -76,7 +76,7 @@ def instantiate_datamodule(cfg: DictConfig) -> L.LightningDataModule:
     logger.debug(f"Instantiating DataModule: {cfg.get('_target_', 'unknown')}")
     datamodule = hydra.utils.instantiate(cfg)
     logger.info(f"DataModule instantiated: {type(datamodule).__name__}")
-    return datamodule
+    return cast(L.LightningDataModule, datamodule)
 
 
 def instantiate_model(
@@ -109,7 +109,7 @@ def instantiate_model(
         model = hydra.utils.instantiate(cfg, **kwargs)
 
     logger.info(f"Model instantiated: {type(model).__name__}")
-    return model
+    return cast(L.LightningModule, model)
 
 
 def instantiate_callbacks(cfg: DictConfig) -> list[L.Callback]:

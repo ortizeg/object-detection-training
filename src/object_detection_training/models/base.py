@@ -104,16 +104,27 @@ class BaseDetectionModel(L.LightningModule):
         original_sizes: list[tuple[int, int]] | None = None,
         confidence_threshold: float = 0.0,
     ) -> list[dict[str, torch.Tensor]]:
-        """
-        Convert model outputs to prediction format.
+        """Convert model outputs to prediction format.
+
+        All implementations MUST return boxes in **normalized [0,1] XYXY**
+        coordinates when ``original_sizes`` is not provided. This ensures
+        downstream consumers (visualization, metrics) work model-agnostically.
+
+        When ``original_sizes`` is provided, boxes are scaled to absolute
+        pixel coordinates for the given image dimensions.
 
         Args:
             outputs: Raw model outputs.
             original_sizes: Original image sizes for rescaling boxes.
+                When provided, boxes are returned in absolute pixel XYXY.
+                When None, boxes are returned in normalized [0,1] XYXY.
             confidence_threshold: Threshold for filtering predictions.
 
         Returns:
-            List of prediction dictionaries with 'boxes', 'scores', 'labels'.
+            List of prediction dicts, each with:
+            - ``boxes``: ``[N, 4]`` tensor in XYXY format
+            - ``scores``: ``[N]`` confidence scores
+            - ``labels``: ``[N]`` class indices
         """
         pass
 

@@ -255,7 +255,7 @@ class COCODataModule(L.LightningDataModule):
             self._train_detection_dataset.transforms = None
             from object_detection_training.data.mosaic import MosaicMixupDataset
 
-            train_dataset = MosaicMixupDataset(
+            train_dataset = MosaicMixupDataset(  # type: ignore[assignment]
                 self._train_detection_dataset,
                 input_height=self.input_height,
                 input_width=self.input_width,
@@ -264,7 +264,7 @@ class COCODataModule(L.LightningDataModule):
             )
         else:
             self._train_detection_dataset.transforms = self.train_transforms
-            train_dataset = self._train_detection_dataset
+            train_dataset = self._train_detection_dataset  # type: ignore[assignment]
 
         return torch.utils.data.DataLoader(
             train_dataset,
@@ -283,7 +283,7 @@ class COCODataModule(L.LightningDataModule):
         val_dataset = self._create_detection_dataset(self.val_path, "val")
         val_dataset.transforms = self.val_transforms
         return torch.utils.data.DataLoader(
-            val_dataset,
+            val_dataset,  # type: ignore[arg-type]
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
@@ -302,7 +302,7 @@ class COCODataModule(L.LightningDataModule):
         test_dataset = self._create_detection_dataset(self.test_path, "test")
         test_dataset.transforms = self.test_transforms
         return torch.utils.data.DataLoader(
-            test_dataset,
+            test_dataset,  # type: ignore[arg-type]
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,

@@ -22,6 +22,9 @@ class VisualizationCallback(L.Callback):
     Callback to visualize predictions on fixed validation samples.
 
     Logs images to disk and WandB table row-by-row at each epoch.
+
+    Normalization mean/std and box format are introspected from the
+    datamodule's transforms — no manual configuration needed.
     """
 
     def __init__(
@@ -29,24 +32,19 @@ class VisualizationCallback(L.Callback):
         num_samples: int = 10,
         confidence_threshold: float = 0.3,
         output_dir: str = "outputs",
-        mean: list[float] | None = None,
-        std: list[float] | None = None,
     ):
         """
         Initialize visualization callback.
 
         Args:
             num_samples: Number of images to visualize.
+            confidence_threshold: Minimum confidence for displayed predictions.
             output_dir: Directory to save visualized images.
-            mean: ImageNet normalization mean (0-1 scale). None for unnormalized images.
-            std: ImageNet normalization std (0-1 scale). None for unnormalized images.
         """
         super().__init__()
         self.num_samples = num_samples
         self.output_dir = Path(output_dir)
-        # None means no normalization was applied (e.g. YOLOX raw 0-255)
-        self.mean = torch.tensor(mean).view(3, 1, 1) if mean is not None else None
-        self.std = torch.tensor(std).view(3, 1, 1) if std is not None else None
+        self.confidence_threshold = confidence_threshold
 
         self.val_samples: list[VisualizationSample] = []
         self.test_samples: list[VisualizationSample] = []
@@ -55,7 +53,45 @@ class VisualizationCallback(L.Callback):
         self.box_annotator = sv.BoxAnnotator()
         self.label_annotator = sv.LabelAnnotator()
 
-        self.confidence_threshold = confidence_threshold
+        # Lazily resolved from transforms
+        self.mean: torch.Tensor | None = None
+        self.std: torch.Tensor | None = None
+        self._normalization_resolved = False
+
+    # ------------------------------------------------------------------
+    # Transform introspection
+    # ------------------------------------------------------------------
+
+    def _resolve_normalization(self, datamodule: L.LightningDataModule) -> None:
+        """Introspect transforms once to extract image mean/std."""
+        if self._normalization_resolved:
+            return
+        transforms = getattr(datamodule, "val_transforms", None) or getattr(
+            datamodule, "train_transforms", None
+        )
+        if transforms is not None:
+            for t in transforms.transforms:
+                if t.__class__.__name__ == "Normalize":
+                    self.mean = torch.tensor(t.mean).view(3, 1, 1)
+                    self.std = torch.tensor(t.std).view(3, 1, 1)
+                    break
+        self._normalization_resolved = True
+
+    @staticmethod
+    def _has_box_normalization(datamodule: L.LightningDataModule) -> bool:
+        """Check whether transforms include NormalizeBoxCoords."""
+        transforms = getattr(datamodule, "val_transforms", None) or getattr(
+            datamodule, "train_transforms", None
+        )
+        if transforms is None:
+            return False
+        return any(
+            t.__class__.__name__ == "NormalizeBoxCoords" for t in transforms.transforms
+        )
+
+    # ------------------------------------------------------------------
+    # Image conversion
+    # ------------------------------------------------------------------
 
     def _to_display_image(self, tensor: torch.Tensor) -> npt.NDArray[np.uint8]:
         """Convert model input tensor to displayable uint8 numpy array [H, W, 3].
@@ -67,7 +103,7 @@ class VisualizationCallback(L.Callback):
         tensor = tensor.cpu().float()
 
         if self.mean is not None and self.std is not None:
-            # Undo ImageNet normalization → [0, 1] range, then scale to 0-255
+            # Undo ImageNet normalization -> [0, 1] range, then scale to 0-255
             tensor = tensor * self.std + self.mean
             tensor = tensor * 255.0
 
@@ -83,23 +119,59 @@ class VisualizationCallback(L.Callback):
         samples: list[VisualizationSample] = []
         dataset = dataloader.dataset
 
-        # Random indices
-        total = len(dataset)
+        total = len(dataset)  # type: ignore[arg-type]
         indices = random.sample(range(total), min(num, total))
-
-        # We need to use the collate_fn to properly batch them if we process them?
-        # Or just access dataset directly and treat as batch size 1.
-        # Models usually expect batch dimension.
 
         for idx in indices:
             img, target = dataset[idx]
-            # dataset[idx] returns (img, target) tuple usually
-            # img is Tensor [3, H, W]
-            # target is Dict
-
             samples.append({"image": img, "target": target, "image_id": idx})
 
         return samples
+
+    # ------------------------------------------------------------------
+    # Lifecycle hooks
+    # ------------------------------------------------------------------
+
+    def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        """Collect and visualize ground truth samples at the start of training."""
+        logger.info("Visualizing ground truth samples...")
+
+        datamodule = trainer.datamodule  # type: ignore[attr-defined]
+        if not datamodule:
+            logger.warning("No datamodule found, skipping ground truth visualization.")
+            return
+
+        self._resolve_normalization(datamodule)
+
+        splits = []
+
+        # Train
+        try:
+            if datamodule.train_dataloader():
+                splits.append(("train", datamodule.train_dataloader()))
+        except Exception as e:
+            logger.warning(f"Could not get train dataloader for visualization: {e}")
+
+        # Val
+        try:
+            if datamodule.val_dataloader():
+                splits.append(("val", datamodule.val_dataloader()))
+        except Exception as e:
+            logger.warning(f"Could not get val dataloader for visualization: {e}")
+
+        # Test
+        try:
+            if hasattr(datamodule, "test_dataloader") and datamodule.test_dataloader():
+                splits.append(("test", datamodule.test_dataloader()))
+        except Exception as e:
+            logger.debug(f"Could not get test dataloader for visualization: {e}")
+
+        for split_name, dataloader in splits:
+            logger.info(f"Collecting {split_name} samples for GT visualization...")
+            samples = self._collect_samples(dataloader, self.num_samples)
+            self._visualize_gt(samples, split_name, trainer, pl_module)
+
+        logger.info("Ground truth visualization complete.")
 
     def on_validation_epoch_start(
         self, trainer: L.Trainer, pl_module: L.LightningModule
@@ -107,6 +179,7 @@ class VisualizationCallback(L.Callback):
         """Collect validation samples on first epoch."""
         datamodule = trainer.datamodule  # type: ignore[attr-defined]
         if datamodule:
+            self._resolve_normalization(datamodule)
             class_names = getattr(datamodule, "class_names", "ATTR_MISSING")
             logger.info(
                 f"Validation Epoch Start: Datamodule found. Classes: {class_names}"
@@ -118,7 +191,6 @@ class VisualizationCallback(L.Callback):
             logger.info(
                 f"Collecting {self.num_samples} validation samples for visualization..."
             )
-            # We assume datamodule is available
             if datamodule and datamodule.val_dataloader():
                 self.val_samples = self._collect_samples(
                     datamodule.val_dataloader(), self.num_samples
@@ -141,20 +213,15 @@ class VisualizationCallback(L.Callback):
         with torch.no_grad():
             for sample in self.val_samples:
                 img_tensor = sample["image"].to(device)  # [3, H, W]
-                # Add batch dim
                 batch_imgs = img_tensor.unsqueeze(0)
 
-                # Model forward
                 outputs = pl_module(batch_imgs)
                 preds = pl_module.get_predictions(outputs, confidence_threshold=0.01)[0]  # type: ignore[operator]
 
-                # Denormalize image for drawing
                 image_np = self._to_display_image(img_tensor.cpu())
                 img_h, img_w = image_np.shape[:2]
 
-                # Use Supervision
-                # Boxes from get_predictions are xyxy but normalized [0, 1] if
-                # original_sizes not passed
+                # All models return normalized [0,1] XYXY from get_predictions()
                 pred_boxes = preds["boxes"].cpu().numpy()
                 scale = np.array([img_w, img_h, img_w, img_h])
                 pred_boxes_abs = pred_boxes * scale
@@ -182,7 +249,7 @@ class VisualizationCallback(L.Callback):
                         f"Image {sample.get('image_id')}: No raw detections found."
                     )
 
-                # Filter by confidence? Default 0.3 for viz
+                # Filter by confidence
                 if detections.confidence is not None:
                     filtered = detections[
                         detections.confidence > self.confidence_threshold
@@ -196,8 +263,6 @@ class VisualizationCallback(L.Callback):
                     scene=pred_image, detections=detections
                 )
 
-                # Use class names for predictions
-                # We prioritize class names from datamodule
                 pred_labels_list: list[str] | None = None
                 datamodule = trainer.datamodule  # type: ignore[attr-defined]
                 class_names = getattr(datamodule, "class_names", None)
@@ -218,11 +283,6 @@ class VisualizationCallback(L.Callback):
                         )
                         pred_labels_list.append(name)
 
-                # Fallback labels if names not available
-                if pred_labels_list is None:
-                    # supervision default is to show class_id if labels=None
-                    pass
-
                 if pred_labels_list:
                     pred_image = self.label_annotator.annotate(
                         scene=pred_image, detections=detections, labels=pred_labels_list
@@ -232,7 +292,6 @@ class VisualizationCallback(L.Callback):
                         scene=pred_image, detections=detections
                     )
 
-                # Save Prediction to disk for reference
                 img_id = sample["image_id"]
                 file_path = save_dir / f"val_img_{img_id}.jpg"
                 Image.fromarray(pred_image).save(file_path)
@@ -242,6 +301,8 @@ class VisualizationCallback(L.Callback):
     ) -> None:
         """Collect test samples."""
         datamodule = trainer.datamodule  # type: ignore[attr-defined]
+        if datamodule:
+            self._resolve_normalization(datamodule)
         if not self.test_samples and datamodule and datamodule.test_dataloader():
             self.test_samples = self._collect_samples(
                 datamodule.test_dataloader(), self.num_samples
@@ -270,7 +331,7 @@ class VisualizationCallback(L.Callback):
                 image_np = self._to_display_image(img_tensor.cpu())
                 img_h, img_w = image_np.shape[:2]
 
-                # Scale boxes to absolute pixel coordinates
+                # All models return normalized [0,1] XYXY from get_predictions()
                 pred_boxes = preds["boxes"].cpu().numpy()
                 scale = np.array([img_w, img_h, img_w, img_h])
                 pred_boxes_abs = pred_boxes * scale
@@ -281,7 +342,6 @@ class VisualizationCallback(L.Callback):
                     class_id=preds["labels"].cpu().numpy().astype(int),
                 )
 
-                # Filter by confidence for test viz as well (using 0.3 as default)
                 if detections.confidence is not None:
                     filtered = detections[
                         detections.confidence > self.confidence_threshold
@@ -294,7 +354,6 @@ class VisualizationCallback(L.Callback):
                     scene=annotated_image, detections=detections
                 )
 
-                # Fetch class names
                 pred_labels_list = None
                 datamodule = trainer.datamodule  # type: ignore[attr-defined]
                 class_names = getattr(datamodule, "class_names", None)
@@ -333,6 +392,10 @@ class VisualizationCallback(L.Callback):
                     wandb.Image(annotated_image, caption=f"Test Image {img_id}")
                 )
 
+    # ------------------------------------------------------------------
+    # Ground truth visualization
+    # ------------------------------------------------------------------
+
     def _visualize_gt(
         self,
         samples: list[VisualizationSample],
@@ -347,9 +410,10 @@ class VisualizationCallback(L.Callback):
         save_dir = self.output_dir / "ground_truth" / split
         save_dir.mkdir(parents=True, exist_ok=True)
 
+        datamodule = trainer.datamodule  # type: ignore[attr-defined]
+        normalized = self._has_box_normalization(datamodule) if datamodule else False
+
         log_images = []
-        # Device for denormalization if needed (though we do it on cpu)
-        # Just use cpu for GT viz
 
         for sample in samples:
             img_tensor = sample["image"]
@@ -359,10 +423,6 @@ class VisualizationCallback(L.Callback):
                 img_id = img_id.item()
 
             image_np = self._to_display_image(img_tensor)
-
-            # Ground Truth Detections
-            # Target boxes are normalized cxcywh [0, 1] from RFDETR transforms
-            # We need to convert to absolute xyxy for supervision
 
             boxes_tensor = (
                 target["boxes"].cpu()
@@ -376,22 +436,21 @@ class VisualizationCallback(L.Callback):
             )
 
             img_h, img_w = image_np.shape[:2]
-            scale_tensor = torch.tensor([img_w, img_h, img_w, img_h])
 
-            # Un-normalize
-            boxes_abs = boxes_tensor * scale_tensor
-
-            # cxcywh -> xyxy
-            boxes_xyxy = cxcywh_to_xyxy(boxes_abs).numpy()
+            if normalized:
+                # RFDETR: boxes are normalized [0,1] CXCYWH — un-normalize then convert
+                scale_tensor = torch.tensor([img_w, img_h, img_w, img_h])
+                boxes_xyxy = cxcywh_to_xyxy(boxes_tensor * scale_tensor).numpy()
+            else:
+                # YOLOX: boxes are pixel CXCYWH — just convert format
+                boxes_xyxy = cxcywh_to_xyxy(boxes_tensor).numpy()
 
             detections = sv.Detections(
                 xyxy=boxes_xyxy,
                 class_id=labels,
             )
 
-            # Use class names if available
             labels_list = None
-            datamodule = trainer.datamodule  # type: ignore[attr-defined]
             if hasattr(datamodule, "class_names") and datamodule.class_names:
                 try:
                     labels_list = [
@@ -414,7 +473,6 @@ class VisualizationCallback(L.Callback):
                     scene=annotated_image, detections=detections
                 )
 
-            # Save to disk
             Image.fromarray(annotated_image).save(
                 save_dir / f"{split}_img_{img_id}.jpg"
             )
@@ -430,50 +488,3 @@ class VisualizationCallback(L.Callback):
                 table = wandb.Table(columns=columns)
                 table.add_data(*log_images)
                 logger_inst.experiment.log({f"ground_truth/{split}": table})
-
-    def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
-        """Collect and visualize ground truth samples at the start of training."""
-        logger.info("Visualizing ground truth samples...")
-
-        datamodule = trainer.datamodule  # type: ignore[attr-defined]
-        if not datamodule:
-            logger.warning("No datamodule found, skipping ground truth visualization.")
-            return
-
-        # We need to manually call setup if it hasn't been called yet,
-        # but usually Trainer calls it.
-        # However, at on_fit_start, setup might be done?
-        # Lightning timeline: setup -> on_fit_start -> ...
-        # So dataloaders should be available or creatable.
-
-        splits = []
-
-        # Train
-        try:
-            if datamodule.train_dataloader():
-                splits.append(("train", datamodule.train_dataloader()))
-        except Exception as e:
-            logger.warning(f"Could not get train dataloader for visualization: {e}")
-
-        # Val
-        try:
-            if datamodule.val_dataloader():
-                splits.append(("val", datamodule.val_dataloader()))
-        except Exception as e:
-            logger.warning(f"Could not get val dataloader for visualization: {e}")
-
-        # Test
-        try:
-            # Some datamodules might not have test_dataloader implemented or set up
-            if hasattr(datamodule, "test_dataloader") and datamodule.test_dataloader():
-                splits.append(("test", datamodule.test_dataloader()))
-        except Exception as e:
-            # This is fine, test might not be available
-            logger.debug(f"Could not get test dataloader for visualization: {e}")
-
-        for split_name, dataloader in splits:
-            logger.info(f"Collecting {split_name} samples for GT visualization...")
-            samples = self._collect_samples(dataloader, self.num_samples)
-            self._visualize_gt(samples, split_name, trainer, pl_module)
-
-        logger.info("Ground truth visualization complete.")

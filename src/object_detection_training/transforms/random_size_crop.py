@@ -45,7 +45,7 @@ class RandomSizeCrop(v2.Transform):
         }
 
     def transform(self, inpt: torch.Tensor, params: dict[str, int]) -> torch.Tensor:
-        return self._call_kernel(
+        return self._call_kernel(  # type: ignore[no-any-return]
             F.crop,
             inpt,
             top=params["top"],
