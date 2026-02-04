@@ -15,6 +15,7 @@ from object_detection_training.transforms.conversion import (
 from object_detection_training.transforms.multi_scale_resize import (
     MultiScaleRandomResize,
     MultiScaleResize,
+    compute_multi_scale_scales,
 )
 from object_detection_training.transforms.random_size_crop import RandomSizeCrop
 
@@ -24,4 +25,5 @@ __all__ = [
     "NormalizeBoxCoords",
     "RandomSizeCrop",
     "ToFloat32Tensor",
+    "compute_multi_scale_scales",
 ]

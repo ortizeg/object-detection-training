@@ -32,28 +32,8 @@ from object_detection_training.models.rfdetr.collate import collate_fn
 __all__ = [
     "CocoDetection",
     "collate_fn",
-    "compute_multi_scale_scales",
     "ConvertCoco",
 ]
-
-
-def compute_multi_scale_scales(
-    resolution, expanded_scales=False, patch_size=16, num_windows=4
-):
-    # round to the nearest multiple of 4*patch_size to enable both patching
-    # and windowing
-    base_num_patches_per_window = resolution // (patch_size * num_windows)
-    offsets = (
-        [-3, -2, -1, 0, 1, 2, 3, 4]
-        if not expanded_scales
-        else [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
-    )
-    scales = [base_num_patches_per_window + offset for offset in offsets]
-    proposed_scales = [scale * patch_size * num_windows for scale in scales]
-    proposed_scales = [
-        scale for scale in proposed_scales if scale >= patch_size * num_windows * 2
-    ]  # ensure minimum image size
-    return proposed_scales
 
 
 def convert_coco_poly_to_mask(segmentations, height, width):

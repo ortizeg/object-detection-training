@@ -11,8 +11,8 @@ from object_detection_training.models.rfdetr.coco import (
     CocoDetection,
     ConvertCoco,
     collate_fn,
-    compute_multi_scale_scales,
 )
+from object_detection_training.transforms import compute_multi_scale_scales
 
 # Model architecture
 from object_detection_training.models.rfdetr.config import (

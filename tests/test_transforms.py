@@ -7,13 +7,13 @@ from PIL import Image
 from torchvision import tv_tensors
 from torchvision.transforms import v2
 
-from object_detection_training.models.rfdetr.coco import compute_multi_scale_scales
 from object_detection_training.transforms import (
     MultiScaleRandomResize,
     MultiScaleResize,
     NormalizeBoxCoords,
     RandomSizeCrop,
     ToFloat32Tensor,
+    compute_multi_scale_scales,
 )
 
 

@@ -12,7 +12,37 @@ from typing import Any
 from torchvision.transforms import v2
 from torchvision.transforms.v2 import functional as F
 
-from object_detection_training.models.rfdetr.coco import compute_multi_scale_scales
+
+def compute_multi_scale_scales(
+    resolution: int,
+    expanded_scales: bool = False,
+    patch_size: int = 16,
+    num_windows: int = 4,
+) -> list[int]:
+    """Compute valid multi-scale resolutions for transformer patch tokens.
+
+    Returns a list of image sizes that are divisible by ``patch_size * num_windows``
+    so that both patching and windowing work correctly.
+
+    Args:
+        resolution: Base image resolution.
+        expanded_scales: Use a wider range of scale offsets.
+        patch_size: Transformer patch size.
+        num_windows: Number of windows for windowed attention.
+
+    Returns:
+        Sorted list of valid square resolutions.
+    """
+    base_num_patches_per_window = resolution // (patch_size * num_windows)
+    offsets = (
+        [-3, -2, -1, 0, 1, 2, 3, 4]
+        if not expanded_scales
+        else [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
+    )
+    scales = [base_num_patches_per_window + offset for offset in offsets]
+    proposed_scales = [scale * patch_size * num_windows for scale in scales]
+    # Ensure minimum image size
+    return [scale for scale in proposed_scales if scale >= patch_size * num_windows * 2]
 
 
 class MultiScaleResize(v2.Transform):
