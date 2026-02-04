@@ -119,8 +119,6 @@ class YOLOXLightningModel(BaseDetectionModel):
         input_height: int = 640,
         input_width: int = 640,
         output_dir: str = "outputs",
-        image_mean: list[float] | None = None,
-        image_std: list[float] | None = None,
         freeze_backbone_epochs: int = 0,
         l1_loss_epoch: int = 0,
         iou_loss_type: str = "iou",
@@ -165,9 +163,6 @@ class YOLOXLightningModel(BaseDetectionModel):
             input_width=input_width,
             output_dir=output_dir,
         )
-
-        self.image_mean = image_mean if image_mean is not None else [0.0, 0.0, 0.0]
-        self.image_std = image_std if image_std is not None else [1.0, 1.0, 1.0]
 
         self.pretrain_weights = pretrain_weights
         self.download_pretrained = download_pretrained

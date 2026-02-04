@@ -70,8 +70,6 @@ class RFDETRLightningModel(BaseDetectionModel):
         input_height: int = 512,
         input_width: int = 512,
         output_dir: str = "outputs",
-        image_mean: list[float] | None = None,
-        image_std: list[float] | None = None,
         # --- RFDETR training params (from rfdetr_base.yaml) ---
         lr_encoder: float = 1.5e-4,
         lr_vit_layer_decay: float = 0.8,
@@ -131,11 +129,6 @@ class RFDETRLightningModel(BaseDetectionModel):
             input_width=input_width,
             output_dir=output_dir,
         )
-
-        self.image_mean = (
-            image_mean if image_mean is not None else [123.675, 116.28, 103.53]
-        )
-        self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
 
         # Training params
         self.lr_encoder = lr_encoder
