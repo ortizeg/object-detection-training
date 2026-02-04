@@ -92,6 +92,7 @@ module = [
     "object_detection_training.models.yolox.*",
     "object_detection_training.models.yolox_lightning",
     "object_detection_training.data.mosaic",
+    "object_detection_training.transforms.*",
 ]
 strict = false
 disallow_untyped_defs = false
