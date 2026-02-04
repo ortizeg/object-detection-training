@@ -1,0 +1,56 @@
+# YOLOX Transform Pipeline
+# No box normalization (pixel xyxy throughout), no image normalization (raw 0-255),
+# stronger color augmentation for regularization.
+train:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: torchvision.transforms.v2.RandomHorizontalFlip
+      p: 0.5
+    - _target_: torchvision.transforms.v2.Resize
+      size:
+        - ${data.input_height}
+        - ${data.input_width}
+    - _target_: torchvision.transforms.v2.ColorJitter
+      brightness: 0.4
+      contrast: 0.4
+      saturation: 0.4
+      hue: 0.1
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: false
+    - _target_: torchvision.transforms.v2.RandomErasing
+      p: 0.3
+      scale: [0.02, 0.2]
+      ratio: [0.3, 3.3]
+
+val:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: torchvision.transforms.v2.Resize
+      size:
+        - ${data.input_height}
+        - ${data.input_width}
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: false
+
+# Post-mosaic transforms: skip Resize since mosaic canvas is already at target size
+post_mosaic:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: torchvision.transforms.v2.RandomHorizontalFlip
+      p: 0.5
+    - _target_: torchvision.transforms.v2.ColorJitter
+      brightness: 0.4
+      contrast: 0.4
+      saturation: 0.4
+      hue: 0.1
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: false
+    - _target_: torchvision.transforms.v2.RandomErasing
+      p: 0.3
+      scale: [0.02, 0.2]
+      ratio: [0.3, 3.3]
+
+# Mosaic/MixUp config (DataModule-level, not part of v2 pipeline)
+mosaic:
+  enabled: false
+  mixup_prob: 0.3

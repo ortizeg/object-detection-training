@@ -7,27 +7,26 @@ from typing import Any
 import lightning as L
 import torch
 from loguru import logger
+from torchvision.transforms import v2
 
 from object_detection_training.data.coco_detection_dataset import COCODetectionDataset
-from object_detection_training.models.rfdetr.coco import (
-    make_coco_transforms,
-    make_coco_transforms_square_div_64,
-    make_yolox_post_mosaic_transforms,
-    make_yolox_transforms,
-)
 from object_detection_training.models.rfdetr.collate import collate_fn
 from object_detection_training.utils.hydra import register
 
 
 @register
 class COCODataModule(L.LightningDataModule):
-    """
-    Lightning DataModule for COCO dataset.
+    """Lightning DataModule for COCO dataset.
 
     Expected directory structure:
     - train_path/images/ and train_path/_annotations.coco.json
     - val_path/images/ and val_path/_annotations.coco.json
     - test_path/images/ and test_path/_annotations.coco.json (optional)
+
+    Transforms are provided as pre-built ``v2.Compose`` pipelines via the
+    ``transforms`` dict (keys: ``"train"``, ``"val"``, and optionally
+    ``"post_mosaic"``).  These are instantiated by Hydra from the YAML
+    configs in ``conf/transforms/``.
     """
 
     def __init__(
@@ -39,24 +38,24 @@ class COCODataModule(L.LightningDataModule):
         num_workers: int = 4,
         input_height: int = 640,
         input_width: int = 640,
+        pin_memory: bool = True,
+        persistent_workers: bool = True,
+        image_mean: list[float] | None = None,
+        image_std: list[float] | None = None,
+        selected_categories: list[str] | None = None,
+        size_thresholds: dict[str, float] | None = None,
+        # -- v2 transform pipelines (from Hydra conf/transforms/*.yaml) --
+        transforms: dict[str, v2.Compose] | None = None,
+        # -- Mosaic / MixUp config (DataModule-level) --
+        mosaic: dict[str, bool | float] | None = None,
+        # -- Multi-scale params kept for Hydra ${data.*} interpolation --
         multi_scale: bool = False,
         expanded_scales: bool = False,
         skip_random_resize: bool = True,
         patch_size: int = 16,
         num_windows: int = 4,
-        pin_memory: bool = True,
-        persistent_workers: bool = True,
-        square_resize_div_64: bool = True,
-        yolox_transforms: bool = False,
-        mosaic: bool = False,
-        mixup_prob: float = 0.3,
-        image_mean: list[float] | None = None,
-        image_std: list[float] | None = None,
-        selected_categories: list[str] | None = None,
-        size_thresholds: dict[str, float] | None = None,
     ):
-        """
-        Initialize COCO data module.
+        """Initialize COCO data module.
 
         Args:
             train_path: Path to training data directory.
@@ -66,16 +65,19 @@ class COCODataModule(L.LightningDataModule):
             num_workers: Number of workers for data loading.
             input_height: Base input height (must be divisible by 64 for RFDETR).
             input_width: Base input width (must be divisible by 64 for RFDETR).
-            multi_scale: Enable multi-scale augmentation.
-            expanded_scales: Use expanded scale range.
-            skip_random_resize: Skip random resize augmentation.
-            patch_size: Patch size for multi-scale computation.
-            num_windows: Number of windows for multi-scale computation.
             pin_memory: Whether to pin memory for faster GPU transfer.
             persistent_workers: Whether to keep workers alive between epochs.
-            square_resize_div_64: Use square resize divisible by 64 for RFDETR.
             image_mean: Mean for image normalization (0-255 scale).
             image_std: Std for image normalization (0-255 scale).
+            selected_categories: Optional category names to keep.
+            size_thresholds: Box size classification thresholds.
+            transforms: Dict of v2.Compose pipelines keyed by split name.
+            mosaic: Mosaic/MixUp config dict with ``enabled`` and ``mixup_prob``.
+            multi_scale: Enable multi-scale augmentation (used by transform YAML refs).
+            expanded_scales: Use expanded scale range (used by transform YAML refs).
+            skip_random_resize: Skip random resize (used by transform YAML refs).
+            patch_size: Patch size for multi-scale (used by transform YAML refs).
+            num_windows: Windows for multi-scale (transform YAML refs).
         """
         super().__init__()
         self.train_path = Path(train_path)
@@ -98,19 +100,25 @@ class COCODataModule(L.LightningDataModule):
 
         self.input_height = input_height
         self.input_width = input_width
+        self.image_mean = (
+            image_mean if image_mean is not None else [123.675, 116.28, 103.53]
+        )
+        self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
+
+        # v2 transform pipelines
+        self._transforms = transforms
+
+        # Mosaic config
+        mosaic = mosaic or {}
+        self._mosaic_enabled: bool = bool(mosaic.get("enabled", False))
+        self._mixup_prob: float = float(mosaic.get("mixup_prob", 0.3))
+
+        # Multi-scale params (stored for Hydra ${data.*} interpolation only)
         self.multi_scale = multi_scale
         self.expanded_scales = expanded_scales
         self.skip_random_resize = skip_random_resize
         self.patch_size = patch_size
         self.num_windows = num_windows
-        self.square_resize_div_64 = square_resize_div_64
-        self.yolox_transforms = yolox_transforms
-        self.mosaic = mosaic
-        self.mixup_prob = mixup_prob
-        self.image_mean = (
-            image_mean if image_mean is not None else [123.675, 116.28, 103.53]
-        )
-        self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
 
         # Cache for num_classes and mapping
         self._num_classes: int | None = None
@@ -194,40 +202,15 @@ class COCODataModule(L.LightningDataModule):
                 f"{self._class_names}"
             )
 
-    def _get_transforms(self, image_set: str) -> Any:
-        """Get transforms based on configuration and normalization parameters."""
-        if self.yolox_transforms:
-            return make_yolox_transforms(
-                image_set,
-                self.input_height,
-                self.input_width,
-            )
-        if self.square_resize_div_64:
-            return make_coco_transforms_square_div_64(
-                image_set,
-                self.input_height,
-                self.input_width,
-                multi_scale=self.multi_scale,
-                expanded_scales=self.expanded_scales,
-                skip_random_resize=self.skip_random_resize,
-                patch_size=self.patch_size,
-                num_windows=self.num_windows,
-                mean=self.image_mean,
-                std=self.image_std,
-            )
-        else:
-            return make_coco_transforms(
-                image_set,
-                self.input_height,
-                self.input_width,
-                multi_scale=self.multi_scale,
-                expanded_scales=self.expanded_scales,
-                skip_random_resize=self.skip_random_resize,
-                patch_size=self.patch_size,
-                num_windows=self.num_windows,
-                mean=self.image_mean,
-                std=self.image_std,
-            )
+    def _get_transforms(self, image_set: str) -> v2.Compose | None:
+        """Get the v2 transform pipeline for the given split.
+
+        Falls back to ``"val"`` for unknown split names (e.g. ``"test"``).
+        """
+        if self._transforms is None:
+            return None
+        key = image_set if image_set in self._transforms else "val"
+        return self._transforms.get(key)
 
     def _get_img_folder(self, path: Path) -> Path:
         """Helper to find image folder (either path itself or path/images)."""
@@ -274,19 +257,17 @@ class COCODataModule(L.LightningDataModule):
             self._label_map = self._train_detection_dataset.label_map
 
         train_dataset: torch.utils.data.Dataset[Any]
-        if self.yolox_transforms and self.mosaic:
+        if self._mosaic_enabled:
             # Mosaic operates on raw PIL images — base dataset has no transforms
             self._train_detection_dataset.transforms = None
             from object_detection_training.data.mosaic import MosaicMixupDataset
 
-            post_transforms = make_yolox_post_mosaic_transforms(
-                self.input_height, self.input_width
-            )
+            post_transforms = self._get_transforms("post_mosaic")
             train_dataset = MosaicMixupDataset(
                 self._train_detection_dataset,
                 input_height=self.input_height,
                 input_width=self.input_width,
-                mixup_prob=self.mixup_prob,
+                mixup_prob=self._mixup_prob,
                 post_transforms=post_transforms,
             )
         else:

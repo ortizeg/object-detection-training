@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 import torch
 from PIL import Image
+from torchvision import tv_tensors
 
 from object_detection_training.data.detection_dataset import DetectionDataset
 
@@ -79,7 +80,17 @@ class MosaicMixupDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]]):
             boxes = target["boxes"].clone()
             boxes[:, [0, 2]] *= self.input_width / orig_w
             boxes[:, [1, 3]] *= self.input_height / orig_h
-            target["boxes"] = boxes
+            target["boxes"] = tv_tensors.BoundingBoxes(
+                boxes,
+                format="XYXY",
+                canvas_size=(self.input_height, self.input_width),
+            )
+        else:
+            target["boxes"] = tv_tensors.BoundingBoxes(
+                target["boxes"],
+                format="XYXY",
+                canvas_size=(self.input_height, self.input_width),
+            )
 
         target["size"] = torch.tensor([self.input_height, self.input_width])
 
@@ -174,7 +185,11 @@ class MosaicMixupDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]]):
         result_img = Image.fromarray(canvas)
 
         result_target: dict[str, Any] = {
-            "boxes": boxes,
+            "boxes": tv_tensors.BoundingBoxes(
+                boxes,
+                format="XYXY",
+                canvas_size=(self.input_height, self.input_width),
+            ),
             "labels": labels,
             "image_id": (
                 first_target["image_id"]

@@ -17,11 +17,13 @@ import sys
 from pathlib import Path
 
 import torch
+from torchvision.transforms import v2
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from object_detection_training.data.coco_data_module import COCODataModule
 from object_detection_training.models.yolox_lightning import YOLOXLightningModel
+from object_detection_training.transforms import ToFloat32Tensor
 
 DATA_ROOT = Path(
     "/Users/ortizeg/1Projects"
@@ -47,6 +49,24 @@ def main():
     )
     model.train()
 
+    yolox_transforms = {
+        "train": v2.Compose(
+            [
+                v2.RandomHorizontalFlip(p=0.5),
+                v2.Resize(size=[416, 416]),
+                v2.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
+                ToFloat32Tensor(scale=False),
+                v2.RandomErasing(p=0.3, scale=(0.02, 0.2), ratio=(0.3, 3.3)),
+            ]
+        ),
+        "val": v2.Compose(
+            [
+                v2.Resize(size=[416, 416]),
+                ToFloat32Tensor(scale=False),
+            ]
+        ),
+    }
+
     dm = COCODataModule(
         train_path=str(DATA_ROOT / "train"),
         val_path=str(DATA_ROOT / "valid"),
@@ -54,16 +74,11 @@ def main():
         num_workers=0,
         input_height=416,
         input_width=416,
-        multi_scale=False,
-        expanded_scales=False,
-        skip_random_resize=True,
-        patch_size=16,
-        num_windows=2,
         pin_memory=False,
         persistent_workers=False,
-        square_resize_div_64=True,
         image_mean=[0.0, 0.0, 0.0],
         image_std=[1.0, 1.0, 1.0],
+        transforms=yolox_transforms,
         selected_categories=[
             "ball",
             "ball-in-basket",

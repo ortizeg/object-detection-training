@@ -1,0 +1,55 @@
+# RF-DETR Square Resize Transform Pipeline (default)
+# Square resize divisible by 64 for transformer patch tokens.
+# Output: normalized CXCYWH boxes in [0,1] range.
+train:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: torchvision.transforms.v2.RandomHorizontalFlip
+      p: 0.5
+    - _target_: torchvision.transforms.v2.RandomChoice
+      transforms:
+        - _target_: object_detection_training.transforms.MultiScaleResize
+          base_resolution: ${data.input_height}
+          expanded_scales: ${data.expanded_scales}
+          patch_size: ${data.patch_size}
+          num_windows: ${data.num_windows}
+          skip_random_resize: ${data.skip_random_resize}
+        - _target_: torchvision.transforms.v2.Compose
+          transforms:
+            - _target_: torchvision.transforms.v2.Resize
+              size: [400]
+            - _target_: object_detection_training.transforms.RandomSizeCrop
+              min_size: 384
+              max_size: 600
+            - _target_: object_detection_training.transforms.MultiScaleResize
+              base_resolution: ${data.input_height}
+              expanded_scales: ${data.expanded_scales}
+              patch_size: ${data.patch_size}
+              num_windows: ${data.num_windows}
+              skip_random_resize: ${data.skip_random_resize}
+      p: [0.5, 0.5]
+    - _target_: torchvision.transforms.v2.SanitizeBoundingBoxes
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: false
+    - _target_: torchvision.transforms.v2.Normalize
+      mean: ${data.image_mean}
+      std: ${data.image_std}
+    - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
+      format: CXCYWH
+    - _target_: object_detection_training.transforms.NormalizeBoxCoords
+
+val:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: torchvision.transforms.v2.Resize
+      size:
+        - ${data.input_height}
+        - ${data.input_width}
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: false
+    - _target_: torchvision.transforms.v2.Normalize
+      mean: ${data.image_mean}
+      std: ${data.image_std}
+    - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
+      format: CXCYWH
+    - _target_: object_detection_training.transforms.NormalizeBoxCoords

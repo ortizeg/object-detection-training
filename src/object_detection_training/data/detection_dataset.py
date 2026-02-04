@@ -20,6 +20,7 @@ import pandas as pd
 import torch
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from torchvision import tv_tensors
 
 
 class SizeThresholds(BaseModel):
@@ -399,7 +400,7 @@ class DetectionDataset(torch.utils.data.Dataset[tuple[Any, dict[str, Any]]], ABC
             iscrowd = torch.as_tensor(iscrowd_list, dtype=torch.int64)
 
         target = {
-            "boxes": boxes,
+            "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(h, w)),
             "labels": labels,
             "image_id": torch.tensor([image_id]),
             "area": areas,
