@@ -1,6 +1,8 @@
 # RF-DETR Aspect-Ratio-Preserving Transform Pipeline
 # Standard DETR transforms with max_size cap (no forced square resize).
 # Output: normalized CXCYWH boxes in [0,1] range.
+#
+# Image normalization: [0,255] → [0,1] → ImageNet normalize
 train_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
@@ -32,10 +34,10 @@ train_transforms:
       p: [0.5, 0.5]
     - _target_: torchvision.transforms.v2.SanitizeBoundingBoxes
     - _target_: object_detection_training.transforms.ToFloat32Tensor
-      scale: false
+      scale: true
     - _target_: torchvision.transforms.v2.Normalize
-      mean: ${data.image_mean}
-      std: ${data.image_std}
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
       format: CXCYWH
     - _target_: object_detection_training.transforms.NormalizeBoxCoords
@@ -51,10 +53,10 @@ val_transforms:
       skip_random_resize: true
       max_size: 1333
     - _target_: object_detection_training.transforms.ToFloat32Tensor
-      scale: false
+      scale: true
     - _target_: torchvision.transforms.v2.Normalize
-      mean: ${data.image_mean}
-      std: ${data.image_std}
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
       format: CXCYWH
     - _target_: object_detection_training.transforms.NormalizeBoxCoords
@@ -70,10 +72,10 @@ test_transforms:
       skip_random_resize: true
       max_size: 1333
     - _target_: object_detection_training.transforms.ToFloat32Tensor
-      scale: false
+      scale: true
     - _target_: torchvision.transforms.v2.Normalize
-      mean: ${data.image_mean}
-      std: ${data.image_std}
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
       format: CXCYWH
     - _target_: object_detection_training.transforms.NormalizeBoxCoords

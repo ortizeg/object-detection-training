@@ -40,8 +40,6 @@ class COCODataModule(L.LightningDataModule):
         input_width: int = 640,
         pin_memory: bool = True,
         persistent_workers: bool = True,
-        image_mean: list[float] | None = None,
-        image_std: list[float] | None = None,
         selected_categories: list[str] | None = None,
         size_thresholds: dict[str, float] | None = None,
         # -- v2 transform pipelines (from Hydra conf/transforms/*.yaml) --
@@ -70,8 +68,6 @@ class COCODataModule(L.LightningDataModule):
             input_width: Base input width (must be divisible by 64 for RFDETR).
             pin_memory: Whether to pin memory for faster GPU transfer.
             persistent_workers: Whether to keep workers alive between epochs.
-            image_mean: Mean for image normalization (0-255 scale).
-            image_std: Std for image normalization (0-255 scale).
             selected_categories: Optional category names to keep.
             size_thresholds: Box size classification thresholds.
             train_transforms: v2.Compose pipeline for training augmentation.
@@ -106,10 +102,6 @@ class COCODataModule(L.LightningDataModule):
 
         self.input_height = input_height
         self.input_width = input_width
-        self.image_mean = (
-            image_mean if image_mean is not None else [123.675, 116.28, 103.53]
-        )
-        self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
 
         # v2 transform pipelines
         self.train_transforms = train_transforms

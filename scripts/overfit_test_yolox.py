@@ -74,8 +74,6 @@ def main():
         input_width=416,
         pin_memory=False,
         persistent_workers=False,
-        image_mean=[0.0, 0.0, 0.0],
-        image_std=[1.0, 1.0, 1.0],
         train_transforms=train_tfm,
         val_transforms=val_tfm,
         selected_categories=[

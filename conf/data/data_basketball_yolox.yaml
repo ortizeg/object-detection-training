@@ -45,7 +45,3 @@ num_windows: 2
 # Memory settings
 pin_memory: true
 persistent_workers: true
-
-# Normalization parameters (kept for reference)
-image_mean: ${models.image_mean}
-image_std: ${models.image_std}

@@ -36,16 +36,15 @@ class VisualizationCallback(L.Callback):
         Args:
             num_samples: Number of images to visualize.
             output_dir: Directory to save visualized images.
-            mean: Normalization mean (RGB).
-            std: Normalization std (RGB).
+            mean: ImageNet normalization mean (0-1 scale). None for unnormalized images.
+            std: ImageNet normalization std (0-1 scale). None for unnormalized images.
         """
         super().__init__()
         self.num_samples = num_samples
         self.output_dir = Path(output_dir)
-        _mean = mean if mean is not None else [123.675, 116.28, 103.53]
-        _std = std if std is not None else [58.395, 57.12, 57.375]
-        self.mean = torch.tensor(_mean).view(3, 1, 1)
-        self.std = torch.tensor(_std).view(3, 1, 1)
+        # None means no normalization was applied (e.g. YOLOX raw 0-255)
+        self.mean = torch.tensor(mean).view(3, 1, 1) if mean is not None else None
+        self.std = torch.tensor(std).view(3, 1, 1) if std is not None else None
 
         self.val_samples: list[dict[str, Any]] = []
         self.test_samples: list[dict[str, Any]] = []
@@ -56,13 +55,19 @@ class VisualizationCallback(L.Callback):
 
         self.confidence_threshold = confidence_threshold
 
-    def _denormalize(self, tensor: torch.Tensor) -> np.ndarray[Any, np.dtype[Any]]:
-        """Denormalize image tensor to numpy array [H, W, 3] (0-255)."""
-        # tensor is [3, H, W]
-        tensor = tensor.cpu()
+    def _to_display_image(self, tensor: torch.Tensor) -> np.ndarray[Any, np.dtype[Any]]:
+        """Convert model input tensor to displayable uint8 numpy array [H, W, 3].
 
-        # Denormalize using std and mean (result is back in 0-255 range)
-        tensor = tensor * self.std + self.mean
+        Handles two cases:
+        - Normalized (RF-DETR): undo ImageNet norm, scale [0,1] to [0,255]
+        - Unnormalized (YOLOX): already 0-255 float, just convert
+        """
+        tensor = tensor.cpu().float()
+
+        if self.mean is not None and self.std is not None:
+            # Undo ImageNet normalization → [0, 1] range, then scale to 0-255
+            tensor = tensor * self.std + self.mean
+            tensor = tensor * 255.0
 
         array = tensor.permute(1, 2, 0).numpy()
         return np.clip(array, 0, 255).astype(np.uint8)
@@ -138,7 +143,7 @@ class VisualizationCallback(L.Callback):
                 preds = pl_module.get_predictions(outputs, confidence_threshold=0.01)[0]  # type: ignore[operator]
 
                 # Denormalize image for drawing
-                image_np = self._denormalize(img_tensor.cpu())
+                image_np = self._to_display_image(img_tensor.cpu())
                 img_h, img_w = image_np.shape[:2]
 
                 # Use Supervision
@@ -256,7 +261,7 @@ class VisualizationCallback(L.Callback):
                 outputs = pl_module(img_tensor.unsqueeze(0))
                 preds = pl_module.get_predictions(outputs, confidence_threshold=0.0)[0]  # type: ignore[operator]
 
-                image_np = self._denormalize(img_tensor.cpu())
+                image_np = self._to_display_image(img_tensor.cpu())
                 img_h, img_w = image_np.shape[:2]
 
                 # Scale boxes to absolute pixel coordinates
@@ -347,7 +352,7 @@ class VisualizationCallback(L.Callback):
             if isinstance(img_id, torch.Tensor):
                 img_id = img_id.item()
 
-            image_np = self._denormalize(img_tensor)
+            image_np = self._to_display_image(img_tensor)
 
             # Ground Truth Detections
             # Target boxes are normalized cxcywh [0, 1] from RFDETR transforms
