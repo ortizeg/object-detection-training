@@ -22,7 +22,7 @@ from object_detection_training.types import (
     ModelOutputs,
     OptimizerConfig,
 )
-from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
+from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.hydra import register
 
 # YOLOX checkpoint URLs from official releases, keyed by checkpoint filename

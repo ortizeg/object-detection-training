@@ -121,7 +121,7 @@ class TrainTask(BaseTask):
         logger.info(f"Output directory: {self.output_dir}")
 
         # Setup trainer with callbacks and loggers
-        trainer_kwargs = {}
+        trainer_kwargs: dict[str, object] = {}
         if self.callbacks:
             logger.info(f"Callbacks type: {type(self.callbacks)}")
             if isinstance(self.callbacks, dict):
@@ -131,14 +131,14 @@ class TrainTask(BaseTask):
             trainer_kwargs["callbacks"] = self.callbacks
         if self.loggers:
             trainer_kwargs["logger"] = self.loggers
-        trainer_kwargs["default_root_dir"] = str(self.output_dir)  # type: ignore[assignment]
+        trainer_kwargs["default_root_dir"] = str(self.output_dir)
 
         # Merge trainer config with additional kwargs
         if isinstance(self.trainer, L.Trainer):
             trainer = self.trainer
         else:
             # Assume it's a config dict that needs instantiation
-            trainer = L.Trainer(**{**self.trainer, **trainer_kwargs})
+            trainer = L.Trainer(**{**self.trainer, **trainer_kwargs})  # type: ignore[arg-type]
 
         # Log model info
         logger.info(f"Model: {type(self.model).__name__}")

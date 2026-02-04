@@ -6,7 +6,7 @@ and utilities.  Import from here instead of re-defining inline.
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import numpy as np
 import numpy.typing as npt
@@ -70,6 +70,8 @@ class ModelStats(TypedDict, total=False):
     inference_time_ms: float
     fps: float
     input_shape: list[int]
+    model_class: str
+    num_classes: int | None
 
 
 # ---------------------------------------------------------------------------
@@ -93,10 +95,10 @@ class ONNXExportState(TypedDict):
 # Detection curves
 # ---------------------------------------------------------------------------
 class CurveData(TypedDict):
-    precision: npt.NDArray[np.floating]
-    recall: npt.NDArray[np.floating]
-    scores: npt.NDArray[np.floating]
-    f1: npt.NDArray[np.floating]
+    precision: npt.NDArray[np.floating[Any]]
+    recall: npt.NDArray[np.floating[Any]]
+    scores: npt.NDArray[np.floating[Any]]
+    f1: npt.NDArray[np.floating[Any]]
 
 
 DetectionCurves = dict[int | str, CurveData]
@@ -104,7 +106,7 @@ DetectionCurves = dict[int | str, CurveData]
 # ---------------------------------------------------------------------------
 # Numpy alias
 # ---------------------------------------------------------------------------
-NDArrayFloat = npt.NDArray[np.floating]
+NDArrayFloat = npt.NDArray[np.floating[Any]]
 
 
 # ---------------------------------------------------------------------------

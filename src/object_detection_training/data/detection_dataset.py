@@ -418,7 +418,7 @@ class DetectionDataset(
         if self.transforms is not None:
             img, target = self.transforms(img, target)
 
-        return img, target
+        return img, target  # type: ignore[return-value]
 
     @property
     def labels_mapping(self) -> dict[int, str]:

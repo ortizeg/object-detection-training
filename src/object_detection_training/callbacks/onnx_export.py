@@ -7,6 +7,7 @@ Automatically exports models to ONNX format during training.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import lightning as L
 import omegaconf
@@ -168,10 +169,11 @@ class ONNXExportCallback(L.Callback):
 
         logger.info(f"Exported {len(self._exported_checkpoints)} ONNX models")
 
-    def state_dict(self) -> ONNXExportState:
+    def state_dict(self) -> dict[str, Any]:
         """Return callback state."""
-        return {"exported_checkpoints": self._exported_checkpoints}
+        state: ONNXExportState = {"exported_checkpoints": self._exported_checkpoints}
+        return state  # type: ignore[return-value]
 
-    def load_state_dict(self, state_dict: ONNXExportState) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load callback state."""
         self._exported_checkpoints = state_dict.get("exported_checkpoints", [])

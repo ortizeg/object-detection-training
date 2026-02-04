@@ -15,6 +15,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
+from object_detection_training.data.coco_data_module import COCODataModule
 from object_detection_training.data.dataset_stats import DatasetStatistics
 from object_detection_training.data.detection_dataset import DetectionDataset
 
@@ -70,27 +71,21 @@ class DatasetStatisticsCallback(L.Callback):
         self, datamodule: L.LightningDataModule, split: str
     ) -> DetectionDataset | None:
         """Get the underlying DetectionDataset for a split."""
-        # Try to get detection dataset directly from COCODataModule
-        if split == "train" and hasattr(datamodule, "train_detection_dataset"):
+        if not isinstance(datamodule, COCODataModule):
+            return None
+
+        if split == "train":
             return datamodule.train_detection_dataset
 
-        # For val/test, we need to create them
-        if hasattr(datamodule, "_create_detection_dataset"):
-            try:
-                if split == "train":
-                    return datamodule._create_detection_dataset(
-                        datamodule.train_path, "train"
-                    )
-                elif split == "val":
-                    return datamodule._create_detection_dataset(
-                        datamodule.val_path, "val"
-                    )
-                elif split == "test" and datamodule.test_path:
-                    return datamodule._create_detection_dataset(
-                        datamodule.test_path, "test"
-                    )
-            except Exception as e:
-                logger.debug(f"Could not create detection dataset for {split}: {e}")
+        try:
+            if split == "val":
+                return datamodule._create_detection_dataset(datamodule.val_path, "val")
+            elif split == "test" and datamodule.test_path:
+                return datamodule._create_detection_dataset(
+                    datamodule.test_path, "test"
+                )
+        except Exception as e:
+            logger.debug(f"Could not create detection dataset for {split}: {e}")
 
         return None
 

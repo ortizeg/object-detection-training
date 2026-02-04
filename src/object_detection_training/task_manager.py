@@ -14,6 +14,7 @@ Usage:
 from __future__ import annotations
 
 import sys
+from typing import Any
 
 import hydra
 import numpy as np
@@ -25,6 +26,7 @@ from omegaconf import DictConfig, OmegaConf
 
 # Import models to ensure they are registered in Hydra's ConfigStore
 import object_detection_training.models  # noqa: F401
+from object_detection_training.data.coco_data_module import COCODataModule
 from object_detection_training.utils.hydra import (
     instantiate_callbacks,
     instantiate_datamodule,
@@ -40,7 +42,7 @@ if not hasattr(onnx.helper, "float32_to_bfloat16"):
     logger.warning("Monkey-patching onnx.helper.float32_to_bfloat16 for compatibility")
 
     def float32_to_bfloat16(
-        x: npt.NDArray[np.floating],
+        x: npt.NDArray[np.floating[Any]],
     ) -> npt.NDArray[np.uint16]:
         # bfloat16 is the top 16 bits of float32
         y = np.ascontiguousarray(x).view(np.uint32)
@@ -114,6 +116,10 @@ def main(cfg: DictConfig) -> None:
     datamodule = instantiate_datamodule(cfg.data)
 
     # Auto-detect num_classes from data if model doesn't specify it
+    if not isinstance(datamodule, COCODataModule):
+        raise RuntimeError(
+            f"DataModule must provide num_classes. Got {type(datamodule).__name__}"
+        )
     num_classes = datamodule.num_classes
     logger.info(f"Auto-detected num_classes={num_classes} from dataset")
 

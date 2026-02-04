@@ -77,7 +77,7 @@ class MultiScaleResize(v2.Transform):
     def transform(
         self, inpt: torch.Tensor, params: dict[str, list[int]]
     ) -> torch.Tensor:
-        return self._call_kernel(F.resize, inpt, size=params["size"])
+        return self._call_kernel(F.resize, inpt, size=params["size"])  # type: ignore[no-any-return]
 
 
 class MultiScaleRandomResize(v2.Transform):
@@ -111,6 +111,6 @@ class MultiScaleRandomResize(v2.Transform):
         return {"size": size}
 
     def transform(self, inpt: torch.Tensor, params: dict[str, int]) -> torch.Tensor:
-        return self._call_kernel(
+        return self._call_kernel(  # type: ignore[no-any-return]
             F.resize, inpt, size=[params["size"]], max_size=self.max_size
         )

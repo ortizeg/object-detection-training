@@ -119,7 +119,7 @@ class VisualizationCallback(L.Callback):
         samples: list[VisualizationSample] = []
         dataset = dataloader.dataset
 
-        total = len(dataset)
+        total = len(dataset)  # type: ignore[arg-type]
         indices = random.sample(range(total), min(num, total))
 
         for idx in indices:

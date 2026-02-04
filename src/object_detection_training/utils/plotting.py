@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,8 +12,8 @@ from object_detection_training.types import DetectionCurves
 
 
 def plot_pr_curve(
-    recall: npt.NDArray[np.floating],
-    precision: npt.NDArray[np.floating],
+    recall: npt.NDArray[np.floating[Any]],
+    precision: npt.NDArray[np.floating[Any]],
     class_name: str,
     save_path: Path,
     ap: float | None = None,
@@ -104,19 +105,19 @@ def save_detection_curves_plots(
 
                     # If classes tensor is available, map class ID to index in
                     # map_per_class
-                    if classes_tensor is not None:
+                    if isinstance(classes_tensor, torch.Tensor):
                         # Find where this class ID appears in the classes tensor
                         matches = (classes_tensor == c_idx_int).nonzero(as_tuple=True)[
                             0
                         ]
                         if len(matches) > 0:
-                            mapped_idx = matches[0].item()
+                            mapped_idx = int(matches[0].item())
                             if isinstance(map_per_class, torch.Tensor):
                                 ap = map_per_class[mapped_idx].item()
-                            elif isinstance(map_per_class, (list, np.ndarray)):
+                            elif isinstance(map_per_class, list | np.ndarray):
                                 ap = map_per_class[mapped_idx]
                                 if isinstance(
-                                    ap, (np.ndarray, torch.Tensor)
+                                    ap, np.ndarray | torch.Tensor
                                 ) and hasattr(ap, "mean"):
                                     ap = float(ap.mean())
                     else:
@@ -126,10 +127,10 @@ def save_detection_curves_plots(
                         ):
                             ap = map_per_class[c_idx_int].item()
                         elif isinstance(
-                            map_per_class, (list, np.ndarray)
+                            map_per_class, list | np.ndarray
                         ) and c_idx_int < len(map_per_class):
                             ap = map_per_class[c_idx_int]
-                            if isinstance(ap, (np.ndarray, torch.Tensor)) and hasattr(
+                            if isinstance(ap, np.ndarray | torch.Tensor) and hasattr(
                                 ap, "mean"
                             ):
                                 ap = float(ap.mean())
@@ -138,4 +139,5 @@ def save_detection_curves_plots(
 
         # PR Curve
         save_path = output_dir / f"{prefix}pr_curve_{name}.png"
-        plot_pr_curve(curve["recall"], curve["precision"], name, save_path, ap=ap)
+        ap_float = float(ap) if ap is not None else None
+        plot_pr_curve(curve["recall"], curve["precision"], name, save_path, ap=ap_float)

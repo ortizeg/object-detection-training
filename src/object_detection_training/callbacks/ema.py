@@ -7,6 +7,8 @@ Maintains a shadow copy of model weights using exponential moving average.
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
+from typing import Any
 
 import lightning as L
 import torch
@@ -48,7 +50,7 @@ class EMACallback(L.Callback):
         self,
         trainer: L.Trainer,
         pl_module: L.LightningModule,
-        outputs: torch.Tensor | dict[str, torch.Tensor],
+        outputs: torch.Tensor | Mapping[str, Any] | None,
         batch: DetectionBatch,
         batch_idx: int,
     ) -> None:
@@ -109,15 +111,16 @@ class EMACallback(L.Callback):
             pl_module.load_state_dict(self.original_state_dict)
             self._ema_applied = False
 
-    def state_dict(self) -> EMAState:
+    def state_dict(self) -> dict[str, Any]:
         """Return callback state for checkpointing."""
-        return {
+        state: EMAState = {
             "ema_state_dict": self.ema_state_dict,
             "step_count": self.step_count,
             "decay": self.decay,
         }
+        return dict(state)
 
-    def load_state_dict(self, state_dict: EMAState) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load callback state from checkpoint."""
         self.ema_state_dict = state_dict.get("ema_state_dict", {})
         self.step_count = state_dict.get("step_count", 0)
