@@ -172,7 +172,7 @@ class ONNXExportCallback(L.Callback):
     def state_dict(self) -> dict[str, Any]:
         """Return callback state."""
         state: ONNXExportState = {"exported_checkpoints": self._exported_checkpoints}
-        return state  # type: ignore[return-value]
+        return dict(state)
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Load callback state."""
