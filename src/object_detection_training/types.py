@@ -38,6 +38,7 @@ DetectionBatch = tuple[torch.Tensor, list[DetectionTarget]]
 # ---------------------------------------------------------------------------
 ModelOutputs = dict[str, torch.Tensor]
 
+
 # ---------------------------------------------------------------------------
 # Prediction dict returned by get_predictions()
 # ---------------------------------------------------------------------------
@@ -104,6 +105,7 @@ DetectionCurves = dict[int | str, CurveData]
 # Numpy alias
 # ---------------------------------------------------------------------------
 NDArrayFloat = npt.NDArray[np.floating]
+
 
 # ---------------------------------------------------------------------------
 # Lightning optimizer config

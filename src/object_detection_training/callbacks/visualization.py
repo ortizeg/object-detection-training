@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import random
 from pathlib import Path
-from typing import Any
 
 import lightning as L
 import numpy as np
+import numpy.typing as npt
 import supervision as sv
 import torch
 import wandb
 from loguru import logger
 from PIL import Image
+from torch.utils.data import DataLoader
 
+from object_detection_training.types import DetectionTarget, VisualizationSample
 from object_detection_training.utils.boxes import cxcywh_to_xyxy
 
 
@@ -46,8 +48,8 @@ class VisualizationCallback(L.Callback):
         self.mean = torch.tensor(mean).view(3, 1, 1) if mean is not None else None
         self.std = torch.tensor(std).view(3, 1, 1) if std is not None else None
 
-        self.val_samples: list[dict[str, Any]] = []
-        self.test_samples: list[dict[str, Any]] = []
+        self.val_samples: list[VisualizationSample] = []
+        self.test_samples: list[VisualizationSample] = []
 
         # Annotators
         self.box_annotator = sv.BoxAnnotator()
@@ -55,7 +57,7 @@ class VisualizationCallback(L.Callback):
 
         self.confidence_threshold = confidence_threshold
 
-    def _to_display_image(self, tensor: torch.Tensor) -> np.ndarray[Any, np.dtype[Any]]:
+    def _to_display_image(self, tensor: torch.Tensor) -> npt.NDArray[np.uint8]:
         """Convert model input tensor to displayable uint8 numpy array [H, W, 3].
 
         Handles two cases:
@@ -72,9 +74,13 @@ class VisualizationCallback(L.Callback):
         array = tensor.permute(1, 2, 0).numpy()
         return np.clip(array, 0, 255).astype(np.uint8)
 
-    def _collect_samples(self, dataloader: Any, num: int) -> list[dict[str, Any]]:
+    def _collect_samples(
+        self,
+        dataloader: DataLoader[tuple[torch.Tensor, DetectionTarget]],
+        num: int,
+    ) -> list[VisualizationSample]:
         """Collect random samples from dataloader."""
-        samples = []
+        samples: list[VisualizationSample] = []
         dataset = dataloader.dataset
 
         # Random indices
@@ -329,7 +335,7 @@ class VisualizationCallback(L.Callback):
 
     def _visualize_gt(
         self,
-        samples: list[dict[str, Any]],
+        samples: list[VisualizationSample],
         split: str,
         trainer: L.Trainer,
         pl_module: L.LightningModule,
