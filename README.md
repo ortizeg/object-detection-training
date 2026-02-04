@@ -33,7 +33,7 @@ To start the training process:
 pixi run train
 ```
 This runs `src/object_detection_training/train.py`.
-You can customize the training configuration by modifying `conf/config.yaml` or passing overrides to Hydra:
+You can customize the training configuration by modifying `src/object_detection_training/conf/train.yaml` or passing overrides to Hydra:
 ```bash
 pixi run train -- training.epochs=50
 ```
@@ -62,7 +62,7 @@ pixi run lint
 ## Project Structure
 
 - `src/`: Source code for the project.
-- `conf/`: Hydra configuration files.
+- `src/object_detection_training/conf/`: Hydra configuration files.
 - `tests/`: Unit tests.
 - `pixi.toml`: Project configuration and dependencies.
 - `scripts/`: Helper scripts.

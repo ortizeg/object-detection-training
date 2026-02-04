@@ -5,7 +5,7 @@
 /src/ @ortizeg
 
 # Configuration
-/conf/ @ortizeg
+/src/object_detection_training/conf/ @ortizeg
 pixi.toml @ortizeg
 pyproject.toml @ortizeg
 

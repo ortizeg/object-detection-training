@@ -13,10 +13,12 @@ sys.path.append(join(dirname(__file__), "../src"))
 # Register model configs by importing the wrappers
 import object_detection_training.models as _  # noqa: F401
 
+CONF_PATH = "../src/object_detection_training/conf"
+
 
 def test_hydra_configuration():
     """Verify that we can load the configuration using Hydra."""
-    with hydra.initialize(version_base=None, config_path="../conf"):
+    with hydra.initialize(version_base=None, config_path=CONF_PATH):
         cfg = hydra.compose(config_name="train")
 
         # Check basic config structure
@@ -53,7 +55,7 @@ def test_hydra_configuration():
 
 def test_hydra_model_override():
     """Test that we can override the model with YOLOX."""
-    with hydra.initialize(version_base=None, config_path="../conf"):
+    with hydra.initialize(version_base=None, config_path=CONF_PATH):
         cfg = hydra.compose(config_name="train", overrides=["models=yolox_s"])
 
         # Check YOLOX model config
@@ -66,7 +68,7 @@ def test_hydra_model_override():
 
 def test_hydra_callbacks():
     """Test callback configuration."""
-    with hydra.initialize(version_base=None, config_path="../conf"):
+    with hydra.initialize(version_base=None, config_path=CONF_PATH):
         cfg = hydra.compose(config_name="train")
 
         # Check callbacks

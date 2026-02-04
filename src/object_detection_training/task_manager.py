@@ -90,7 +90,7 @@ def setup_logging(log_level: str = "INFO") -> None:
         torch.set_printoptions(profile="full")  # type: ignore[no-untyped-call]
 
 
-@hydra.main(version_base=None, config_path="../../conf", config_name="train")
+@hydra.main(version_base=None, config_path="conf", config_name="train")
 def main(cfg: DictConfig) -> None:
     """
     Main entrypoint for the task manager.
