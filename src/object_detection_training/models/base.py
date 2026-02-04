@@ -36,6 +36,8 @@ class BaseDetectionModel(L.LightningModule):
         warmup_epochs: int = 5,
         input_height: int = 576,
         input_width: int = 576,
+        image_mean: list[float] | None = None,
+        image_std: list[float] | None = None,
         output_dir: str = "outputs",
     ):
         """
@@ -55,6 +57,8 @@ class BaseDetectionModel(L.LightningModule):
         self.warmup_epochs = warmup_epochs
         self.input_height = input_height
         self.input_width = input_width
+        self.image_mean = image_mean
+        self.image_std = image_std
         self.output_dir = Path(output_dir)
 
         self._export_mode = False

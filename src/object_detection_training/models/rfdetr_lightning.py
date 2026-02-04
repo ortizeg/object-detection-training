@@ -69,6 +69,8 @@ class RFDETRLightningModel(BaseDetectionModel):
         warmup_epochs: int = 0,
         input_height: int = 512,
         input_width: int = 512,
+        image_mean: list[float] | None = None,
+        image_std: list[float] | None = None,
         output_dir: str = "outputs",
         # --- RFDETR training params (from rfdetr_base.yaml) ---
         lr_encoder: float = 1.5e-4,
@@ -127,6 +129,8 @@ class RFDETRLightningModel(BaseDetectionModel):
             warmup_epochs=warmup_epochs,
             input_height=input_height,
             input_width=input_width,
+            image_mean=image_mean,
+            image_std=image_std,
             output_dir=output_dir,
         )
 
