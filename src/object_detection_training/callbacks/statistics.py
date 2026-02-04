@@ -8,6 +8,7 @@ using the DatasetStatistics class.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 import lightning as L
 from loguru import logger
@@ -15,9 +16,27 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from object_detection_training.data.coco_data_module import COCODataModule
 from object_detection_training.data.dataset_stats import DatasetStatistics
 from object_detection_training.data.detection_dataset import DetectionDataset
+
+
+@runtime_checkable
+class _DetectionDataModule(Protocol):
+    """Structural type for datamodules that expose DetectionDatasets."""
+
+    @property
+    def train_detection_dataset(self) -> DetectionDataset | None: ...
+
+    @property
+    def train_path(self) -> Path: ...
+
+    @property
+    def val_path(self) -> Path: ...
+
+    @property
+    def test_path(self) -> Path | None: ...
+
+    def _create_detection_dataset(self, path: Path, split: str) -> DetectionDataset: ...
 
 
 class DatasetStatisticsCallback(L.Callback):
@@ -71,7 +90,7 @@ class DatasetStatisticsCallback(L.Callback):
         self, datamodule: L.LightningDataModule, split: str
     ) -> DetectionDataset | None:
         """Get the underlying DetectionDataset for a split."""
-        if not isinstance(datamodule, COCODataModule):
+        if not isinstance(datamodule, _DetectionDataModule):
             return None
 
         if split == "train":
