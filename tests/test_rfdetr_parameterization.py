@@ -17,6 +17,8 @@ import torch
 sys.path.append(join(dirname(__file__), "../src"))
 import object_detection_training.models as _  # noqa: F401
 
+CONF_PATH = "../src/object_detection_training/conf"
+
 # ---------------------------------------------------------------------------
 # Variant parameter definitions (source of truth: Pydantic config classes)
 # ---------------------------------------------------------------------------
@@ -159,13 +161,13 @@ class TestHydraConfigCompleteness:
         yaml_name = VARIANT_YAML_MAP[variant]
         expected = VARIANT_EXPECTED_PARAMS[variant]
 
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
 
         for key, expected_val in expected.items():
-            assert key in cfg.models, (
-                f"Missing param '{key}' in {yaml_name}.yaml config"
-            )
+            assert (
+                key in cfg.models
+            ), f"Missing param '{key}' in {yaml_name}.yaml config"
             actual = cfg.models[key]
             # Convert OmegaConf lists to plain lists for comparison
             if hasattr(actual, "__iter__") and not isinstance(actual, str):
@@ -177,7 +179,7 @@ class TestHydraConfigCompleteness:
 
     def test_base_params_present(self):
         """rfdetr_base.yaml must define common loss/matcher/scheduler params."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train", overrides=["models=rfdetr_small"])
 
         base_params = [
@@ -229,7 +231,7 @@ class TestYamlPydanticEquivalence:
         pydantic_dict = pydantic_config.model_dump()
 
         yaml_name = VARIANT_YAML_MAP[variant]
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
 
         # Check architecture params that exist in both Pydantic and YAML
@@ -289,7 +291,7 @@ class TestYamlPydanticEquivalence:
         pydantic_scale = config_cls().projector_scale
 
         yaml_name = VARIANT_YAML_MAP[variant]
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
         yaml_scale = list(cfg.models.projector_scale)
         assert yaml_scale == pydantic_scale, (
@@ -315,7 +317,7 @@ class TestYamlPydanticEquivalence:
         pydantic_indexes = config_cls().out_feature_indexes
 
         yaml_name = VARIANT_YAML_MAP[variant]
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
         yaml_indexes = list(cfg.models.out_feature_indexes)
         assert yaml_indexes == pydantic_indexes, (
@@ -415,13 +417,13 @@ class TestSchedulerParamsConfigurable:
 
     def test_warmup_start_factor_stored(self):
         """warmup_start_factor must be stored on the model instance."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train", overrides=["models=rfdetr_small"])
         assert cfg.models.warmup_start_factor == 1e-3
 
     def test_cosine_eta_min_factor_stored(self):
         """cosine_eta_min_factor must be stored on the model instance."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train", overrides=["models=rfdetr_small"])
         assert cfg.models.cosine_eta_min_factor == 0.05
 
@@ -436,7 +438,7 @@ class TestHydraOverride:
 
     def test_override_hidden_dim(self):
         """Override hidden_dim via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train",
                 overrides=["models=rfdetr_small", "models.hidden_dim=384"],
@@ -445,7 +447,7 @@ class TestHydraOverride:
 
     def test_override_dec_layers(self):
         """Override dec_layers via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train",
                 overrides=["models=rfdetr_small", "models.dec_layers=6"],
@@ -454,7 +456,7 @@ class TestHydraOverride:
 
     def test_override_scheduler_params(self):
         """Override scheduler params via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train",
                 overrides=[
@@ -468,7 +470,7 @@ class TestHydraOverride:
 
     def test_override_loss_coef(self):
         """Override loss coefficient via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train",
                 overrides=["models=rfdetr_small", "models.cls_loss_coef=2.0"],
@@ -477,7 +479,7 @@ class TestHydraOverride:
 
     def test_override_projector_scale(self):
         """Override projector_scale list via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train",
                 overrides=[

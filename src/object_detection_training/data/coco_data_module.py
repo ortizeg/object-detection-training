@@ -26,7 +26,8 @@ class COCODataModule(L.LightningDataModule):
     Transforms are provided as pre-built ``v2.Compose`` pipelines via
     explicit parameters (``train_transforms``, ``val_transforms``,
     ``test_transforms``, ``post_mosaic_transforms``).  These are
-    instantiated by Hydra from the YAML configs in ``conf/transforms/``.
+    instantiated by Hydra from the YAML configs in ``conf/transforms/``
+    (co-located in the package at ``object_detection_training/conf/``).
     """
 
     def __init__(

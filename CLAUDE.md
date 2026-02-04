@@ -43,17 +43,17 @@ This is an object detection training framework built with PyTorch Lightning, Hyd
 │   │   ├── hydra.py              # Hydra configuration helpers
 │   │   ├── seed.py               # Random seed management
 │   │   └── json_utils.py         # JSON utilities
+│   ├── conf/                        # Hydra configuration files
+│   │   ├── train.yaml              # Main training config
+│   │   ├── train_basketball_rfdetr.yaml # Basketball dataset RFDETR config
+│   │   ├── train_yolox.yaml       # YOLOX training config
+│   │   ├── models/                 # Model configurations
+│   │   ├── data/                   # Dataset configurations
+│   │   ├── callbacks/              # Callback configurations
+│   │   ├── task/                   # Task configurations
+│   │   ├── logging/                # Logging configurations
+│   │   └── trainer/                # Trainer configurations
 │   └── tasks.py                     # Task definitions
-├── conf/                            # Hydra configuration files
-│   ├── train.yaml                  # Main training config
-│   ├── train_basketball_rfdetr.yaml # Basketball dataset RFDETR config
-│   ├── train_yolox.yaml           # YOLOX training config
-│   ├── models/                     # Model configurations
-│   ├── data/                       # Dataset configurations
-│   ├── callbacks/                  # Callback configurations
-│   ├── task/                       # Task configurations
-│   ├── logging/                    # Logging configurations
-│   └── trainer/                    # Trainer configurations
 ├── tests/                           # Unit tests
 ├── scripts/                         # Helper scripts
 │   └── dev-install.sh             # Development installation script
@@ -98,9 +98,9 @@ pixi run lint                               # Lint with ruff
 
 ### Configuration with Hydra
 
-The project uses Hydra for hierarchical configuration management. All configs are in `conf/`:
+The project uses Hydra for hierarchical configuration management. All configs are in `src/object_detection_training/conf/`:
 
-- Modify `conf/train.yaml` for general training settings
+- Modify `src/object_detection_training/conf/train.yaml` for general training settings
 - Override from command line: `pixi run train -- model.learning_rate=0.001`
 - Use config groups for different models, datasets, etc.
 
@@ -127,7 +127,7 @@ Located in `src/object_detection_training/callbacks/`:
 
 ### Experiment Tracking
 
-- **Weights & Biases**: Configure via `conf/logging/`
+- **Weights & Biases**: Configure via `src/object_detection_training/conf/logging/`
 - **TensorBoard**: Built-in Lightning integration
 
 ## Code Style & Quality
@@ -187,19 +187,19 @@ Key constraints:
 
 1. Create model class in `src/object_detection_training/models/`
 2. Create Lightning module wrapper if needed
-3. Add Hydra config in `conf/models/`
+3. Add Hydra config in `src/object_detection_training/conf/models/`
 4. Update task configuration
 
 ### Adding a New Dataset
 
 1. Create dataset class (use PyTorch Dataset API)
-2. Add Hydra config in `conf/data/`
+2. Add Hydra config in `src/object_detection_training/conf/data/`
 3. Update data module configuration
 
 ### Adding a Callback
 
 1. Implement callback in `src/object_detection_training/callbacks/`
-2. Add config in `conf/callbacks/`
+2. Add config in `src/object_detection_training/conf/callbacks/`
 3. Register in training config
 
 ## Entry Points

@@ -18,6 +18,8 @@ sys.path.append(join(dirname(__file__), "../src"))
 import object_detection_training.models as _  # noqa: F401
 from object_detection_training.models.yolox_lightning import YOLOXLightningModel
 
+CONF_PATH = "../src/object_detection_training/conf"
+
 # ---------------------------------------------------------------------------
 # Variant parameter definitions (source of truth: original YOLOX_CONFIGS dict)
 # ---------------------------------------------------------------------------
@@ -101,7 +103,7 @@ class TestHydraConfigCompleteness:
         yaml_name = VARIANT_YAML_MAP[variant]
         expected = VARIANT_EXPECTED_PARAMS[variant]
 
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_yolox", overrides=[f"models={yaml_name}"]
             )
@@ -120,7 +122,7 @@ class TestHydraConfigCompleteness:
 
     def test_base_params_present(self) -> None:
         """yolox_base.yaml must define common training hyperparameters."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train_yolox", overrides=["models=yolox_s"])
 
         base_params = [
@@ -156,7 +158,7 @@ class TestYamlConfigDictEquivalence:
         original = ORIGINAL_YOLOX_CONFIGS[variant]
         yaml_name = VARIANT_YAML_MAP[variant]
 
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_yolox", overrides=[f"models={yaml_name}"]
             )
@@ -285,7 +287,7 @@ class TestHydraOverride:
 
     def test_override_depth(self) -> None:
         """Override depth via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_yolox",
                 overrides=["models=yolox_s", "models.depth=0.67"],
@@ -294,7 +296,7 @@ class TestHydraOverride:
 
     def test_override_width(self) -> None:
         """Override width via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_yolox",
                 overrides=["models=yolox_s", "models.width=0.75"],
@@ -303,7 +305,7 @@ class TestHydraOverride:
 
     def test_override_depthwise(self) -> None:
         """Override depthwise via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_yolox",
                 overrides=["models=yolox_s", "models.depthwise=true"],
@@ -312,7 +314,7 @@ class TestHydraOverride:
 
     def test_override_iou_loss_type(self) -> None:
         """Override iou_loss_type via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_yolox",
                 overrides=["models=yolox_s", "models.iou_loss_type=giou"],
@@ -321,7 +323,7 @@ class TestHydraOverride:
 
     def test_override_in_channels(self) -> None:
         """Override in_channels list via Hydra CLI."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_yolox",
                 overrides=["models=yolox_s", "models.in_channels=[128,256,512]"],
@@ -339,7 +341,7 @@ class TestBasketballConfig:
 
     def test_basketball_has_architecture_params(self) -> None:
         """Basketball config must include architecture params from yolox_s."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train_basketball_yolox")
 
         assert cfg.models.depth == 0.33
@@ -349,14 +351,14 @@ class TestBasketballConfig:
 
     def test_basketball_num_classes(self) -> None:
         """Basketball config must override num_classes to 10."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(config_name="train_basketball_yolox")
 
         assert cfg.models.num_classes == 10
 
     def test_basketball_allows_arch_override(self) -> None:
         """Basketball config must allow architecture overrides."""
-        with hydra.initialize(version_base=None, config_path="../conf"):
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_basketball_yolox",
                 overrides=["models.depth=0.67", "models.width=0.75"],
