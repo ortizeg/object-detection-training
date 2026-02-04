@@ -14,10 +14,10 @@ Usage:
 from __future__ import annotations
 
 import sys
-from typing import Any
 
 import hydra
 import numpy as np
+import numpy.typing as npt
 import onnx.helper
 from hydra.core.hydra_config import HydraConfig
 from loguru import logger
@@ -40,8 +40,8 @@ if not hasattr(onnx.helper, "float32_to_bfloat16"):
     logger.warning("Monkey-patching onnx.helper.float32_to_bfloat16 for compatibility")
 
     def float32_to_bfloat16(
-        x: np.ndarray[Any, np.dtype[Any]],
-    ) -> np.ndarray[Any, np.dtype[Any]]:
+        x: npt.NDArray[np.floating],
+    ) -> npt.NDArray[np.uint16]:
         # bfloat16 is the top 16 bits of float32
         y = np.ascontiguousarray(x).view(np.uint32)
         return (y >> 16).astype(np.uint16)

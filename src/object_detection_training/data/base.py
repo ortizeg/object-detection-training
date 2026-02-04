@@ -5,10 +5,12 @@ Base data module for object detection training.
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any
 
 import lightning as L
-from torch.utils.data import DataLoader
+import torch
+from torch.utils.data import DataLoader, Dataset
+
+from object_detection_training.types import DetectionBatch, DetectionTarget
 
 
 class BaseDataModule(L.LightningDataModule):
@@ -41,26 +43,34 @@ class BaseDataModule(L.LightningDataModule):
         self.pin_memory = pin_memory
         self.persistent_workers = persistent_workers if num_workers > 0 else False
 
-        self.train_dataset: Any | None = None
-        self.val_dataset: Any | None = None
-        self.test_dataset: Any | None = None
+        self.train_dataset: Dataset[tuple[torch.Tensor, DetectionTarget]] | None = None
+        self.val_dataset: Dataset[tuple[torch.Tensor, DetectionTarget]] | None = None
+        self.test_dataset: Dataset[tuple[torch.Tensor, DetectionTarget]] | None = None
 
     @abstractmethod
-    def setup_train_dataset(self) -> Any:
+    def setup_train_dataset(
+        self,
+    ) -> Dataset[tuple[torch.Tensor, DetectionTarget]]:
         """Create and return the training dataset."""
         pass
 
     @abstractmethod
-    def setup_val_dataset(self) -> Any:
+    def setup_val_dataset(
+        self,
+    ) -> Dataset[tuple[torch.Tensor, DetectionTarget]]:
         """Create and return the validation dataset."""
         pass
 
-    def setup_test_dataset(self) -> Any | None:
+    def setup_test_dataset(
+        self,
+    ) -> Dataset[tuple[torch.Tensor, DetectionTarget]] | None:
         """Create and return the test dataset. Optional, returns None by default."""
         return None
 
     @abstractmethod
-    def collate_fn(self, batch: Any) -> Any:
+    def collate_fn(
+        self, batch: list[tuple[torch.Tensor, DetectionTarget]]
+    ) -> DetectionBatch:
         """Custom collate function for batching."""
         pass
 
@@ -73,7 +83,7 @@ class BaseDataModule(L.LightningDataModule):
         if stage == "test" or stage is None:
             self.test_dataset = self.setup_test_dataset()
 
-    def train_dataloader(self) -> DataLoader[Any]:
+    def train_dataloader(self) -> DataLoader[tuple[torch.Tensor, DetectionTarget]]:
         """Return training data loader."""
         return DataLoader(
             self.train_dataset,  # type: ignore[arg-type]
@@ -86,7 +96,7 @@ class BaseDataModule(L.LightningDataModule):
             drop_last=True,
         )
 
-    def val_dataloader(self) -> DataLoader[Any]:
+    def val_dataloader(self) -> DataLoader[tuple[torch.Tensor, DetectionTarget]]:
         """Return validation data loader."""
         return DataLoader(
             self.val_dataset,  # type: ignore[arg-type]
@@ -98,7 +108,9 @@ class BaseDataModule(L.LightningDataModule):
             collate_fn=self.collate_fn,
         )
 
-    def test_dataloader(self) -> DataLoader[Any] | None:
+    def test_dataloader(
+        self,
+    ) -> DataLoader[tuple[torch.Tensor, DetectionTarget]] | None:
         """Return test data loader if test dataset exists."""
         if self.test_dataset is None:
             return None

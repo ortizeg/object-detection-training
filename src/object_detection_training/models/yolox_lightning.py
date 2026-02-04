@@ -16,7 +16,13 @@ from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
 from object_detection_training.models.yolox import YOLOPAFPN, YOLOX, YOLOXHead
-from object_detection_training.utils.boxes import cxcywh_to_xyxy
+from object_detection_training.types import (
+    DetectionBatch,
+    DetectionTarget,
+    ModelOutputs,
+    OptimizerConfig,
+)
+from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
 from object_detection_training.utils.hydra import register
 
 # YOLOX checkpoint URLs from official releases, keyed by checkpoint filename
@@ -366,7 +372,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         self.model.load_state_dict(filtered_state_dict, strict=False)
         logger.info("Weights loaded successfully")
 
-    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
+    def training_step(self, batch: DetectionBatch, batch_idx: int) -> torch.Tensor:
         """Training step."""
         images, targets = batch
         # self(images, targets) returns dict from YOLOX.forward
@@ -403,8 +409,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         return torch.as_tensor(loss)
 
     def forward(
-        self, images: torch.Tensor, targets: list[dict[str, Any]] | None = None
-    ) -> dict[str, Any]:
+        self, images: torch.Tensor, targets: list[DetectionTarget] | None = None
+    ) -> ModelOutputs:
         """Forward pass.
 
         Targets are expected in pixel CXCYWH format (from YOLOX transforms
@@ -426,7 +432,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         if targets is not None:
             # Transforms output pixel CXCYWH — pass directly to YOLOX head
-            outputs: dict[str, Any] = self.model(images, targets)
+            outputs: ModelOutputs = self.model(images, targets)
             if "image_shape" not in outputs:
                 outputs["image_shape"] = images.shape[2:]
             return outputs
@@ -526,7 +532,7 @@ class YOLOXLightningModel(BaseDetectionModel):
 
         return predictions
 
-    def validation_step(self, batch: Any, batch_idx: int) -> None:
+    def validation_step(self, batch: DetectionBatch, batch_idx: int) -> None:
         """Validation step for YOLOX.
 
         Targets are in pixel CXCYWH (from YOLOX transforms). Predictions are
@@ -580,7 +586,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             [{k: v.cpu() for k, v in t.items()} for t in norm_targets]
         )
 
-    def configure_optimizers(self) -> Any:
+    def configure_optimizers(self) -> OptimizerConfig:
         """
         Configure optimizer and learning rate scheduler.
 

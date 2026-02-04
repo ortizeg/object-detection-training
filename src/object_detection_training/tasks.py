@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
 
+import lightning as L
 from loguru import logger
 from pydantic import BaseModel, Field, model_validator
 
@@ -30,14 +30,14 @@ class BaseTask(BaseModel, ABC):
         default=None, description="Output directory for task artifacts"
     )
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "forbid", "arbitrary_types_allowed": True}
 
     @abstractmethod
-    def run(self) -> Any:
+    def run(self) -> dict[str, str | None]:
         """Execute the task."""
         pass
 
-    def __call__(self) -> Any:
+    def __call__(self) -> dict[str, str | None]:
         """Allow tasks to be called directly."""
         logger.info(f"Running task: {self.name}")
         return self.run()
@@ -55,23 +55,27 @@ class TrainTask(BaseTask):
     name: str = Field(default="train", description="Task name")
 
     # Model configuration
-    model: Any = Field(description="Model configuration (instantiated via Hydra)")
+    model: L.LightningModule = Field(
+        description="Model configuration (instantiated via Hydra)"
+    )
 
     # Data configuration
-    data: Any = Field(description="DataModule configuration (instantiated via Hydra)")
+    data: L.LightningDataModule = Field(
+        description="DataModule configuration (instantiated via Hydra)"
+    )
 
     # Trainer configuration
-    trainer: Any = Field(
+    trainer: L.Trainer | dict[str, object] = Field(
         description="PyTorch Lightning Trainer configuration (instantiated via Hydra)"
     )
 
     # Callbacks
-    callbacks: list[Any] | None = Field(
+    callbacks: list[L.Callback] | dict[str, L.Callback] | None = Field(
         default=None, description="List of callbacks (instantiated via Hydra)"
     )
 
     # Loggers
-    loggers: list[Any] | None = Field(
+    loggers: list[L.pytorch.loggers.Logger] | None = Field(
         default=None, description="List of loggers (instantiated via Hydra)"
     )
 
@@ -89,7 +93,7 @@ class TrainTask(BaseTask):
             self.output_dir = Path("outputs")
         return self
 
-    def run(self) -> Any:
+    def run(self) -> dict[str, str | None]:
         """
         Execute the training task.
 
