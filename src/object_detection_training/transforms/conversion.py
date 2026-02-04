@@ -21,7 +21,7 @@ class NormalizeBoxCoords(v2.Transform):
     unchanged.
     """
 
-    def transform(self, inpt: Any, params: dict[str, Any]) -> Any:
+    def transform(self, inpt: Any, params: dict[str, object]) -> Any:
         if not isinstance(inpt, tv_tensors.BoundingBoxes):
             return inpt
 
