@@ -2,3 +2,9 @@ defaults:
   - YOLOXM
   - yolox_base
   - _self_
+
+# YOLOX-M (Medium)
+depth: 0.67
+width: 0.75
+depthwise: false
+checkpoint_name: yolox_m.pth

@@ -19,43 +19,44 @@ from object_detection_training.models.yolox import YOLOPAFPN, YOLOX, YOLOXHead
 from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
 from object_detection_training.utils.hydra import register
 
-# YOLOX checkpoint URLs from official releases
+# YOLOX checkpoint URLs from official releases, keyed by checkpoint filename
 YOLOX_CHECKPOINT_URLS = {
-    "nano": (
+    "yolox_nano.pth": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_nano.pth"
     ),
-    "tiny": (
+    "yolox_tiny.pth": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_tiny.pth"
     ),
-    "s": (
+    "yolox_s.pth": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_s.pth"
     ),
-    "m": (
+    "yolox_m.pth": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_m.pth"
     ),
-    "l": (
+    "yolox_l.pth": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_l.pth"
     ),
-    "x": (
+    "yolox_x.pth": (
         "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/"
         "yolox_x.pth"
     ),
 }
 
-# YOLOX model configurations (depth, width)
-YOLOX_CONFIGS = {
-    "nano": {"depth": 0.33, "width": 0.25, "depthwise": True},
-    "tiny": {"depth": 0.33, "width": 0.375, "depthwise": False},
-    "s": {"depth": 0.33, "width": 0.50, "depthwise": False},
-    "m": {"depth": 0.67, "width": 0.75, "depthwise": False},
-    "l": {"depth": 1.0, "width": 1.0, "depthwise": False},
-    "x": {"depth": 1.33, "width": 1.25, "depthwise": False},
-}
+# Original YOLOX model configurations (kept as documentation reference).
+# Architecture params are now passed explicitly from Hydra YAML configs.
+# YOLOX_CONFIGS = {
+#     "nano": {"depth": 0.33, "width": 0.25, "depthwise": True},
+#     "tiny": {"depth": 0.33, "width": 0.375, "depthwise": False},
+#     "s":    {"depth": 0.33, "width": 0.50,  "depthwise": False},
+#     "m":    {"depth": 0.67, "width": 0.75,  "depthwise": False},
+#     "l":    {"depth": 1.0,  "width": 1.0,   "depthwise": False},
+#     "x":    {"depth": 1.33, "width": 1.25,  "depthwise": False},
+# }
 
 
 def download_checkpoint(url: str, destination: Path) -> Path:
@@ -109,7 +110,6 @@ class YOLOXLightningModel(BaseDetectionModel):
 
     def __init__(
         self,
-        variant: str = "s",
         num_classes: int = 80,
         pretrain_weights: str | None = None,
         learning_rate: float = 1e-3,
@@ -124,12 +124,16 @@ class YOLOXLightningModel(BaseDetectionModel):
         freeze_backbone_epochs: int = 0,
         l1_loss_epoch: int = 0,
         iou_loss_type: str = "iou",
+        depth: float = 0.33,
+        width: float = 0.50,
+        depthwise: bool = False,
+        in_channels: list[int] | None = None,
+        checkpoint_name: str = "yolox_s.pth",
     ):
         """
         Initialize YOLOX Lightning model.
 
         Args:
-            variant: Model variant (nano, tiny, s, m, l, x).
             num_classes: Number of detection classes.
             pretrain_weights: Path to pretrained weights file.
             learning_rate: Base learning rate.
@@ -146,6 +150,11 @@ class YOLOXLightningModel(BaseDetectionModel):
                 localization. 0 disables.
             iou_loss_type: IoU loss variant for box regression ('iou' or 'giou').
                 GIoU provides better gradients for non-overlapping boxes.
+            depth: Network depth multiplier.
+            width: Network width multiplier.
+            depthwise: Use depthwise-separable convolutions.
+            in_channels: Feature map channel sizes for FPN/head.
+            checkpoint_name: Filename for pretrained checkpoint lookup and caching.
         """
         super().__init__(
             num_classes=num_classes,
@@ -160,28 +169,23 @@ class YOLOXLightningModel(BaseDetectionModel):
         self.image_mean = image_mean if image_mean is not None else [0.0, 0.0, 0.0]
         self.image_std = image_std if image_std is not None else [1.0, 1.0, 1.0]
 
-        self.variant = variant
         self.pretrain_weights = pretrain_weights
         self.download_pretrained = download_pretrained
         self.input_height = input_height
         self.input_width = input_width
         self.freeze_backbone_epochs = freeze_backbone_epochs
         self.l1_loss_epoch = l1_loss_epoch
+        self.checkpoint_name = checkpoint_name
 
-        if variant not in YOLOX_CONFIGS:
-            raise ValueError(
-                f"Unknown variant: {variant}. Choose from {list(YOLOX_CONFIGS.keys())}"
-            )
-
-        config = YOLOX_CONFIGS[variant]
-        depth = config["depth"]
-        width = config["width"]
-        depthwise = config["depthwise"]
+        if in_channels is None:
+            in_channels = [256, 512, 1024]
 
         # Build YOLOX model
-        logger.info(f"Initializing YOLOX {variant} model")
+        logger.info(
+            f"Initializing YOLOX model "
+            f"(depth={depth}, width={width}, depthwise={depthwise})"
+        )
 
-        in_channels = [256, 512, 1024]
         backbone = YOLOPAFPN(  # type: ignore[no-untyped-call]
             depth=depth,
             width=width,
@@ -288,21 +292,21 @@ class YOLOXLightningModel(BaseDetectionModel):
         """Download and load pretrained weights.
 
         Raises:
-            RuntimeError: If the variant has no checkpoint URL, or if
+            RuntimeError: If the checkpoint_name has no URL, or if
                 download/loading fails. Training must not proceed
                 without pretrained weights when they were requested.
         """
-        if self.variant not in YOLOX_CHECKPOINT_URLS:
+        if self.checkpoint_name not in YOLOX_CHECKPOINT_URLS:
             raise RuntimeError(
                 f"download_pretrained=True but no checkpoint URL for "
-                f"variant '{self.variant}'. Available: "
+                f"checkpoint_name '{self.checkpoint_name}'. Available: "
                 f"{list(YOLOX_CHECKPOINT_URLS.keys())}"
             )
 
         cache_dir = Path.home() / ".cache" / "yolox"
-        checkpoint_path = cache_dir / f"yolox_{self.variant}.pth"
+        checkpoint_path = cache_dir / self.checkpoint_name
 
-        url = YOLOX_CHECKPOINT_URLS[self.variant]
+        url = YOLOX_CHECKPOINT_URLS[self.checkpoint_name]
         download_checkpoint(url, checkpoint_path)
         self._load_weights(str(checkpoint_path))
 
@@ -346,7 +350,7 @@ class YOLOXLightningModel(BaseDetectionModel):
                 unmatched.append(k)
 
         # Log summary
-        logger.info(f"Checkpoint match summary for {self.variant}:")
+        logger.info(f"Checkpoint match summary for {self.checkpoint_name}:")
         logger.info(f"  Matched: {len(matched)} / {len(model_state_dict)}")
         if class_mismatch:
             logger.info(f"  Class mismatch (skipped): {len(class_mismatch)}")
@@ -659,51 +663,69 @@ class YOLOXLightningModel(BaseDetectionModel):
 class YOLOXNanoModel(YOLOXLightningModel):
     """YOLOX Nano model for Hydra instantiation."""
 
+    _checkpoint_name = "yolox_nano.pth"
+
     def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
-        super().__init__(variant="nano", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
 
 
 @register(name="YOLOXTiny")
 class YOLOXTinyModel(YOLOXLightningModel):
     """YOLOX Tiny model for Hydra instantiation."""
 
+    _checkpoint_name = "yolox_tiny.pth"
+
     def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
-        super().__init__(variant="tiny", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
 
 
 @register(name="YOLOXS")
 class YOLOXSModel(YOLOXLightningModel):
     """YOLOX Small model for Hydra instantiation."""
 
+    _checkpoint_name = "yolox_s.pth"
+
     def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
-        super().__init__(variant="s", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
 
 
 @register(name="YOLOXM")
 class YOLOXMModel(YOLOXLightningModel):
     """YOLOX Medium model for Hydra instantiation."""
 
+    _checkpoint_name = "yolox_m.pth"
+
     def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
-        super().__init__(variant="m", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
 
 
 @register(name="YOLOXL")
 class YOLOXLModel(YOLOXLightningModel):
     """YOLOX Large model for Hydra instantiation."""
 
+    _checkpoint_name = "yolox_l.pth"
+
     def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
-        super().__init__(variant="l", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)
 
 
 @register(name="YOLOXX")
 class YOLOXXModel(YOLOXLightningModel):
     """YOLOX X-Large model for Hydra instantiation."""
 
+    _checkpoint_name = "yolox_x.pth"
+
     def __init__(self, **kwargs: Any) -> None:
         kwargs.pop("variant", None)
-        super().__init__(variant="x", **kwargs)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        super().__init__(**kwargs)

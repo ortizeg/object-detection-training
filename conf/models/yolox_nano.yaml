@@ -2,3 +2,9 @@ defaults:
   - YOLOXNano
   - yolox_base
   - _self_
+
+# YOLOX-Nano: lightweight depthwise-separable variant
+depth: 0.33
+width: 0.25
+depthwise: true
+checkpoint_name: yolox_nano.pth

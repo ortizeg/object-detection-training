@@ -13,6 +13,15 @@ freeze_backbone_epochs: 0
 l1_loss_epoch: 0
 iou_loss_type: iou
 
+# --- Architecture (common defaults, matching YOLOX-S) ---
+depth: 0.33
+width: 0.50
+depthwise: false
+in_channels:
+  - 256
+  - 512
+  - 1024
+
 # Normalization parameters for YOLOX (keeps raw 0-255 values)
 image_mean: [0.0, 0.0, 0.0]
 image_std: [1.0, 1.0, 1.0]

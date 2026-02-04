@@ -2,3 +2,9 @@ defaults:
   - YOLOXS
   - yolox_base
   - _self_
+
+# YOLOX-S (Small) — base defaults match, but explicit for clarity
+depth: 0.33
+width: 0.50
+depthwise: false
+checkpoint_name: yolox_s.pth
