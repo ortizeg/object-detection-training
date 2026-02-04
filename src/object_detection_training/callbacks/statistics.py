@@ -8,7 +8,6 @@ using the DatasetStatistics class.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import lightning as L
 from loguru import logger
@@ -17,6 +16,7 @@ from rich.console import Console
 from rich.table import Table
 
 from object_detection_training.data.dataset_stats import DatasetStatistics
+from object_detection_training.data.detection_dataset import DetectionDataset
 
 
 class DatasetStatisticsCallback(L.Callback):
@@ -66,7 +66,9 @@ class DatasetStatisticsCallback(L.Callback):
 
         logger.info(f"Dataset statistics exported to {self.output_dir}")
 
-    def _get_detection_dataset(self, datamodule: Any, split: str) -> Any:
+    def _get_detection_dataset(
+        self, datamodule: L.LightningDataModule, split: str
+    ) -> DetectionDataset | None:
         """Get the underlying DetectionDataset for a split."""
         # Try to get detection dataset directly from COCODataModule
         if split == "train" and hasattr(datamodule, "train_detection_dataset"):
@@ -179,10 +181,10 @@ class DatasetStatisticsCallback(L.Callback):
         logger.info("\nClass Distribution:")
         console.print(table)
 
-    def state_dict(self) -> dict[str, Any]:
+    def state_dict(self) -> dict[str, object]:
         """Return callback state."""
         return {}
 
-    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict: dict[str, object]) -> None:
         """Load callback state."""
         pass

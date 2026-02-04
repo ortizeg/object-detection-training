@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import lightning as L
 import torch
@@ -11,6 +10,7 @@ from torchvision.transforms import v2
 
 from object_detection_training.data.coco_detection_dataset import COCODetectionDataset
 from object_detection_training.models.rfdetr.collate import collate_fn
+from object_detection_training.types import DetectionTarget
 from object_detection_training.utils.hydra import register
 
 
@@ -236,7 +236,9 @@ class COCODataModule(L.LightningDataModule):
         self._train_detection_dataset.transforms = self.train_transforms
         return self._train_detection_dataset
 
-    def train_dataloader(self) -> torch.utils.data.DataLoader[Any]:
+    def train_dataloader(
+        self,
+    ) -> torch.utils.data.DataLoader[tuple[torch.Tensor, DetectionTarget]]:
         """Return training data loader using new COCODetectionDataset."""
         if self._train_detection_dataset is None:
             self._train_detection_dataset = self._create_detection_dataset(
@@ -247,7 +249,7 @@ class COCODataModule(L.LightningDataModule):
             self._class_names = list(self._train_detection_dataset.class_names)
             self._label_map = self._train_detection_dataset.label_map
 
-        train_dataset: torch.utils.data.Dataset[Any]
+        train_dataset: torch.utils.data.Dataset[tuple[torch.Tensor, DetectionTarget]]
         if self._mosaic_enabled:
             # Mosaic operates on raw PIL images — base dataset has no transforms
             self._train_detection_dataset.transforms = None
@@ -274,7 +276,9 @@ class COCODataModule(L.LightningDataModule):
             persistent_workers=self.persistent_workers,
         )
 
-    def val_dataloader(self) -> torch.utils.data.DataLoader[Any]:
+    def val_dataloader(
+        self,
+    ) -> torch.utils.data.DataLoader[tuple[torch.Tensor, DetectionTarget]]:
         """Return validation data loader using new COCODetectionDataset."""
         val_dataset = self._create_detection_dataset(self.val_path, "val")
         val_dataset.transforms = self.val_transforms
@@ -288,7 +292,9 @@ class COCODataModule(L.LightningDataModule):
             persistent_workers=self.persistent_workers,
         )
 
-    def test_dataloader(self) -> torch.utils.data.DataLoader[Any] | None:
+    def test_dataloader(
+        self,
+    ) -> torch.utils.data.DataLoader[tuple[torch.Tensor, DetectionTarget]] | None:
         """Return test data loader if test dataset exists."""
         if not self.test_path:
             return None

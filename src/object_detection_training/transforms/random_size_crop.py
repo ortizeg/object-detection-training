@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import random
-from typing import Any
 
+import torch
 from torchvision.transforms import v2
 from torchvision.transforms.v2 import functional as F
 
@@ -23,7 +23,7 @@ class RandomSizeCrop(v2.Transform):
         self.min_size = min_size
         self.max_size = max_size
 
-    def make_params(self, flat_inputs: list[Any]) -> dict[str, Any]:
+    def make_params(self, flat_inputs: list[torch.Tensor]) -> dict[str, int]:
         # Get image spatial size from first spatial input
         orig_h, orig_w = F.get_size(flat_inputs[0])
 
@@ -44,7 +44,7 @@ class RandomSizeCrop(v2.Transform):
             "width": crop_w,
         }
 
-    def transform(self, inpt: Any, params: dict[str, Any]) -> Any:
+    def transform(self, inpt: torch.Tensor, params: dict[str, int]) -> torch.Tensor:
         return self._call_kernel(
             F.crop,
             inpt,

@@ -6,13 +6,15 @@ import numpy as np
 from torch import Tensor
 from torchvision.ops import box_iou
 
+from object_detection_training.types import DetectionCurves
+
 
 def compute_detection_curves(
     preds: list[dict[str, Tensor]],
     targets: list[dict[str, Tensor]],
     num_classes: int,
     iou_threshold: float = 0.5,
-) -> dict[int | str, dict[str, Any]]:
+) -> DetectionCurves:
     """
     Compute Precision-Recall and F1 curves for object detection.
 
@@ -51,7 +53,7 @@ def compute_detection_curves(
             if mask.any():
                 class_gts[c].append({"boxes": t_boxes[mask], "image_id": i})
 
-    curves: dict[int | str, dict[str, Any]] = {}
+    curves: DetectionCurves = {}
 
     for c in range(num_classes):
         c_preds = class_preds[c]
@@ -65,7 +67,7 @@ def compute_detection_curves(
         # Organize GTs by image_id for faster matching
         gts_by_image = {g["image_id"]: g["boxes"] for g in c_gts}
         # Keep track of matched GTs to avoid double counting
-        seen_gts: dict[Any, set[Any]] = {g["image_id"]: set() for g in c_gts}
+        seen_gts: dict[int, set[int]] = {g["image_id"]: set() for g in c_gts}
 
         # Use 'scores' effectively as confidence thresholds
         # We need to sort by score descending for PR curve calculation?
@@ -175,7 +177,7 @@ def compute_detection_curves(
         all_scores_list: list[float] = []
 
         # Reset matched GTs globally
-        global_seen_gts: dict[int, dict[Any, set[Any]]] = {
+        global_seen_gts: dict[int, dict[int, set[int]]] = {
             c: {g["image_id"]: set() for g in class_gts[c]} for c in range(num_classes)
         }
         gts_by_class_image = {

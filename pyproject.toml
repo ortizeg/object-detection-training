@@ -92,7 +92,6 @@ module = [
     "object_detection_training.models.yolox.*",
     "object_detection_training.models.yolox_lightning",
     "object_detection_training.data.mosaic",
-    "object_detection_training.transforms.*",
 ]
 strict = false
 disallow_untyped_defs = false
@@ -101,6 +100,11 @@ disallow_untyped_calls = false
 check_untyped_defs = false
 warn_return_any = false
 disable_error_code = ["type-arg", "misc", "assignment", "arg-type", "attr-defined", "no-redef", "union-attr", "return-value", "operator", "var-annotated", "untyped-decorator", "name-defined", "import-not-found", "unused-ignore"]
+
+[[tool.mypy.overrides]]
+module = ["object_detection_training.transforms.*"]
+disallow_untyped_calls = false
+disable_error_code = ["misc"]
 
 [tool.semantic_release]
 version_variable = "pyproject.toml:version"

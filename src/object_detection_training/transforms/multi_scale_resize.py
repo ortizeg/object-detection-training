@@ -7,8 +7,8 @@ from the RF-DETR multi-scale resolution list.
 from __future__ import annotations
 
 import random
-from typing import Any
 
+import torch
 from torchvision.transforms import v2
 from torchvision.transforms.v2 import functional as F
 
@@ -70,11 +70,13 @@ class MultiScaleResize(v2.Transform):
             scales = [scales[-1]]
         self.scales = scales
 
-    def make_params(self, flat_inputs: list[Any]) -> dict[str, Any]:
+    def make_params(self, flat_inputs: list[torch.Tensor]) -> dict[str, list[int]]:
         scale = random.choice(self.scales)  # noqa: S311
         return {"size": [scale, scale]}
 
-    def transform(self, inpt: Any, params: dict[str, Any]) -> Any:
+    def transform(
+        self, inpt: torch.Tensor, params: dict[str, list[int]]
+    ) -> torch.Tensor:
         return self._call_kernel(F.resize, inpt, size=params["size"])
 
 
@@ -104,11 +106,11 @@ class MultiScaleRandomResize(v2.Transform):
         self.scales = scales
         self.max_size = max_size
 
-    def make_params(self, flat_inputs: list[Any]) -> dict[str, Any]:
+    def make_params(self, flat_inputs: list[torch.Tensor]) -> dict[str, int]:
         size = random.choice(self.scales)  # noqa: S311
         return {"size": size}
 
-    def transform(self, inpt: Any, params: dict[str, Any]) -> Any:
+    def transform(self, inpt: torch.Tensor, params: dict[str, int]) -> torch.Tensor:
         return self._call_kernel(
             F.resize, inpt, size=[params["size"]], max_size=self.max_size
         )
