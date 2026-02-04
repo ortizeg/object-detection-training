@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
 import torch
+
+from object_detection_training.types import DetectionCurves
 
 
 def plot_pr_curve(
-    recall: np.ndarray[Any, np.dtype[Any]],
-    precision: np.ndarray[Any, np.dtype[Any]],
+    recall: npt.NDArray[np.floating],
+    precision: npt.NDArray[np.floating],
     class_name: str,
     save_path: Path,
     ap: float | None = None,
@@ -51,11 +53,11 @@ def plot_pr_curve(
 
 
 def save_detection_curves_plots(
-    curves_data: dict[int | str, Any],
+    curves_data: DetectionCurves,
     class_names: list[str] | None,
     output_dir: Path,
     prefix: str = "",
-    metrics: dict[str, Any] | None = None,
+    metrics: dict[str, float | torch.Tensor | None] | None = None,
 ) -> None:
     """
     Save plots for all classes in curves_data.
