@@ -2,7 +2,7 @@
 # No box normalization (pixel xyxy throughout), no image normalization (raw 0-255),
 # adds ColorJitter + RandomErasing augmentation.
 defaults:
-  - /transforms@transforms: yolox
+  - /transforms@_here_: yolox
   - _self_
 
 _target_: object_detection_training.data.coco_data_module.COCODataModule

@@ -1,7 +1,7 @@
 # COCO Dataset Configuration (RF-DETR default)
 # Uses square resize transforms with normalized CXCYWH boxes.
 defaults:
-  - /transforms@transforms: rfdetr_square
+  - /transforms@_here_: rfdetr_square
   - _self_
 
 _target_: object_detection_training.data.coco_data_module.COCODataModule

@@ -1,7 +1,7 @@
 # RF-DETR Aspect-Ratio-Preserving Transform Pipeline
 # Standard DETR transforms with max_size cap (no forced square resize).
 # Output: normalized CXCYWH boxes in [0,1] range.
-train:
+train_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
     - _target_: torchvision.transforms.v2.RandomHorizontalFlip
@@ -40,7 +40,26 @@ train:
       format: CXCYWH
     - _target_: object_detection_training.transforms.NormalizeBoxCoords
 
-val:
+val_transforms:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: object_detection_training.transforms.MultiScaleRandomResize
+      base_resolution: ${data.input_height}
+      expanded_scales: false
+      patch_size: ${data.patch_size}
+      num_windows: ${data.num_windows}
+      skip_random_resize: true
+      max_size: 1333
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: false
+    - _target_: torchvision.transforms.v2.Normalize
+      mean: ${data.image_mean}
+      std: ${data.image_std}
+    - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
+      format: CXCYWH
+    - _target_: object_detection_training.transforms.NormalizeBoxCoords
+
+test_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
     - _target_: object_detection_training.transforms.MultiScaleRandomResize

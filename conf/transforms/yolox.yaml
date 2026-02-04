@@ -1,7 +1,7 @@
 # YOLOX Transform Pipeline
 # No box normalization (pixel xyxy throughout), no image normalization (raw 0-255),
 # stronger color augmentation for regularization.
-train:
+train_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
     - _target_: torchvision.transforms.v2.RandomHorizontalFlip
@@ -22,7 +22,17 @@ train:
       scale: [0.02, 0.2]
       ratio: [0.3, 3.3]
 
-val:
+val_transforms:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: torchvision.transforms.v2.Resize
+      size:
+        - ${data.input_height}
+        - ${data.input_width}
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: false
+
+test_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
     - _target_: torchvision.transforms.v2.Resize
@@ -33,7 +43,7 @@ val:
       scale: false
 
 # Post-mosaic transforms: skip Resize since mosaic canvas is already at target size
-post_mosaic:
+post_mosaic_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
     - _target_: torchvision.transforms.v2.RandomHorizontalFlip

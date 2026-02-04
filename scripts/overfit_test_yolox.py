@@ -49,23 +49,21 @@ def main():
     )
     model.train()
 
-    yolox_transforms = {
-        "train": v2.Compose(
-            [
-                v2.RandomHorizontalFlip(p=0.5),
-                v2.Resize(size=[416, 416]),
-                v2.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
-                ToFloat32Tensor(scale=False),
-                v2.RandomErasing(p=0.3, scale=(0.02, 0.2), ratio=(0.3, 3.3)),
-            ]
-        ),
-        "val": v2.Compose(
-            [
-                v2.Resize(size=[416, 416]),
-                ToFloat32Tensor(scale=False),
-            ]
-        ),
-    }
+    train_tfm = v2.Compose(
+        [
+            v2.RandomHorizontalFlip(p=0.5),
+            v2.Resize(size=[416, 416]),
+            v2.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1),
+            ToFloat32Tensor(scale=False),
+            v2.RandomErasing(p=0.3, scale=(0.02, 0.2), ratio=(0.3, 3.3)),
+        ]
+    )
+    val_tfm = v2.Compose(
+        [
+            v2.Resize(size=[416, 416]),
+            ToFloat32Tensor(scale=False),
+        ]
+    )
 
     dm = COCODataModule(
         train_path=str(DATA_ROOT / "train"),
@@ -78,7 +76,8 @@ def main():
         persistent_workers=False,
         image_mean=[0.0, 0.0, 0.0],
         image_std=[1.0, 1.0, 1.0],
-        transforms=yolox_transforms,
+        train_transforms=train_tfm,
+        val_transforms=val_tfm,
         selected_categories=[
             "ball",
             "ball-in-basket",

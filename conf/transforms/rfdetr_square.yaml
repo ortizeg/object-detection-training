@@ -1,7 +1,7 @@
 # RF-DETR Square Resize Transform Pipeline (default)
 # Square resize divisible by 64 for transformer patch tokens.
 # Output: normalized CXCYWH boxes in [0,1] range.
-train:
+train_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
     - _target_: torchvision.transforms.v2.RandomHorizontalFlip
@@ -38,7 +38,23 @@ train:
       format: CXCYWH
     - _target_: object_detection_training.transforms.NormalizeBoxCoords
 
-val:
+val_transforms:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: torchvision.transforms.v2.Resize
+      size:
+        - ${data.input_height}
+        - ${data.input_width}
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: false
+    - _target_: torchvision.transforms.v2.Normalize
+      mean: ${data.image_mean}
+      std: ${data.image_std}
+    - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
+      format: CXCYWH
+    - _target_: object_detection_training.transforms.NormalizeBoxCoords
+
+test_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
     - _target_: torchvision.transforms.v2.Resize

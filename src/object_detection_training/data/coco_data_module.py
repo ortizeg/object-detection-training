@@ -23,10 +23,10 @@ class COCODataModule(L.LightningDataModule):
     - val_path/images/ and val_path/_annotations.coco.json
     - test_path/images/ and test_path/_annotations.coco.json (optional)
 
-    Transforms are provided as pre-built ``v2.Compose`` pipelines via the
-    ``transforms`` dict (keys: ``"train"``, ``"val"``, and optionally
-    ``"post_mosaic"``).  These are instantiated by Hydra from the YAML
-    configs in ``conf/transforms/``.
+    Transforms are provided as pre-built ``v2.Compose`` pipelines via
+    explicit parameters (``train_transforms``, ``val_transforms``,
+    ``test_transforms``, ``post_mosaic_transforms``).  These are
+    instantiated by Hydra from the YAML configs in ``conf/transforms/``.
     """
 
     def __init__(
@@ -45,7 +45,10 @@ class COCODataModule(L.LightningDataModule):
         selected_categories: list[str] | None = None,
         size_thresholds: dict[str, float] | None = None,
         # -- v2 transform pipelines (from Hydra conf/transforms/*.yaml) --
-        transforms: dict[str, v2.Compose] | None = None,
+        train_transforms: v2.Compose | None = None,
+        val_transforms: v2.Compose | None = None,
+        test_transforms: v2.Compose | None = None,
+        post_mosaic_transforms: v2.Compose | None = None,
         # -- Mosaic / MixUp config (DataModule-level) --
         mosaic: dict[str, bool | float] | None = None,
         # -- Multi-scale params kept for Hydra ${data.*} interpolation --
@@ -71,7 +74,10 @@ class COCODataModule(L.LightningDataModule):
             image_std: Std for image normalization (0-255 scale).
             selected_categories: Optional category names to keep.
             size_thresholds: Box size classification thresholds.
-            transforms: Dict of v2.Compose pipelines keyed by split name.
+            train_transforms: v2.Compose pipeline for training augmentation.
+            val_transforms: v2.Compose pipeline for validation preprocessing.
+            test_transforms: v2.Compose pipeline for test preprocessing.
+            post_mosaic_transforms: v2.Compose pipeline applied after mosaic/mixup.
             mosaic: Mosaic/MixUp config dict with ``enabled`` and ``mixup_prob``.
             multi_scale: Enable multi-scale augmentation (used by transform YAML refs).
             expanded_scales: Use expanded scale range (used by transform YAML refs).
@@ -106,7 +112,10 @@ class COCODataModule(L.LightningDataModule):
         self.image_std = image_std if image_std is not None else [58.395, 57.12, 57.375]
 
         # v2 transform pipelines
-        self._transforms = transforms
+        self.train_transforms = train_transforms
+        self.val_transforms = val_transforms
+        self.test_transforms = test_transforms
+        self.post_mosaic_transforms = post_mosaic_transforms
 
         # Mosaic config
         mosaic = mosaic or {}
@@ -202,16 +211,6 @@ class COCODataModule(L.LightningDataModule):
                 f"{self._class_names}"
             )
 
-    def _get_transforms(self, image_set: str) -> v2.Compose | None:
-        """Get the v2 transform pipeline for the given split.
-
-        Falls back to ``"val"`` for unknown split names (e.g. ``"test"``).
-        """
-        if self._transforms is None:
-            return None
-        key = image_set if image_set in self._transforms else "val"
-        return self._transforms.get(key)
-
     def _get_img_folder(self, path: Path) -> Path:
         """Helper to find image folder (either path itself or path/images)."""
         images_dir = path / "images"
@@ -242,7 +241,7 @@ class COCODataModule(L.LightningDataModule):
                 self.train_path, "train"
             )
         # Apply transforms directly to the same dataset object
-        self._train_detection_dataset.transforms = self._get_transforms("train")
+        self._train_detection_dataset.transforms = self.train_transforms
         return self._train_detection_dataset
 
     def train_dataloader(self) -> torch.utils.data.DataLoader[Any]:
@@ -262,16 +261,15 @@ class COCODataModule(L.LightningDataModule):
             self._train_detection_dataset.transforms = None
             from object_detection_training.data.mosaic import MosaicMixupDataset
 
-            post_transforms = self._get_transforms("post_mosaic")
             train_dataset = MosaicMixupDataset(
                 self._train_detection_dataset,
                 input_height=self.input_height,
                 input_width=self.input_width,
                 mixup_prob=self._mixup_prob,
-                post_transforms=post_transforms,
+                post_transforms=self.post_mosaic_transforms,
             )
         else:
-            self._train_detection_dataset.transforms = self._get_transforms("train")
+            self._train_detection_dataset.transforms = self.train_transforms
             train_dataset = self._train_detection_dataset
 
         return torch.utils.data.DataLoader(
@@ -287,7 +285,7 @@ class COCODataModule(L.LightningDataModule):
     def val_dataloader(self) -> torch.utils.data.DataLoader[Any]:
         """Return validation data loader using new COCODetectionDataset."""
         val_dataset = self._create_detection_dataset(self.val_path, "val")
-        val_dataset.transforms = self._get_transforms("val")
+        val_dataset.transforms = self.val_transforms
         return torch.utils.data.DataLoader(
             val_dataset,
             batch_size=self.batch_size,
@@ -304,7 +302,7 @@ class COCODataModule(L.LightningDataModule):
             return None
 
         test_dataset = self._create_detection_dataset(self.test_path, "test")
-        test_dataset.transforms = self._get_transforms("test")
+        test_dataset.transforms = self.test_transforms
         return torch.utils.data.DataLoader(
             test_dataset,
             batch_size=self.batch_size,
