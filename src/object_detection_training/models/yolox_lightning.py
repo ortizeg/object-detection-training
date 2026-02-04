@@ -16,7 +16,7 @@ from loguru import logger
 
 from object_detection_training.models.base import BaseDetectionModel
 from object_detection_training.models.yolox import YOLOPAFPN, YOLOX, YOLOXHead
-from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
+from object_detection_training.utils.boxes import cxcywh_to_xyxy
 from object_detection_training.utils.hydra import register
 
 # YOLOX checkpoint URLs from official releases, keyed by checkpoint filename
@@ -407,9 +407,9 @@ class YOLOXLightningModel(BaseDetectionModel):
     ) -> dict[str, Any]:
         """Forward pass.
 
-        Targets are expected in pixel xyxy format (from YOLOX transforms which
-        skip box normalization). They are converted to pixel cxcywh for the
-        YOLOX head internally.
+        Targets are expected in pixel CXCYWH format (from YOLOX transforms
+        which apply ConvertBoundingBoxFormat). They are passed directly to the
+        YOLOX head — no format conversion needed here.
         """
         # Handle NestedTensor from rfdetr collation
         if hasattr(images, "tensors"):
@@ -425,16 +425,8 @@ class YOLOXLightningModel(BaseDetectionModel):
             return result
 
         if targets is not None:
-            # Convert pixel xyxy → pixel cxcywh for YOLOX head.
-            # No normalization/un-normalization — boxes stay in pixel coords.
-            cxcywh_targets = []
-            for t in targets:
-                new_t = t.copy()
-                if "boxes" in new_t and new_t["boxes"].numel() > 0:
-                    new_t["boxes"] = xyxy_to_cxcywh(new_t["boxes"])
-                cxcywh_targets.append(new_t)
-
-            outputs: dict[str, Any] = self.model(images, cxcywh_targets)
+            # Transforms output pixel CXCYWH — pass directly to YOLOX head
+            outputs: dict[str, Any] = self.model(images, targets)
             if "image_shape" not in outputs:
                 outputs["image_shape"] = images.shape[2:]
             return outputs
@@ -452,7 +444,9 @@ class YOLOXLightningModel(BaseDetectionModel):
     ) -> list[dict[str, torch.Tensor]]:
         """Convert model outputs to prediction format.
 
-        Returns boxes in pixel xyxy coordinates (same space as input targets).
+        Returns boxes in normalized [0,1] XYXY coordinates when
+        ``original_sizes`` is not provided (matching the base class contract).
+        When ``original_sizes`` is provided, boxes are in absolute pixel XYXY.
         """
         predictions: list[dict[str, torch.Tensor]] = []
 
@@ -463,6 +457,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         # YOLOX outputs: [batch, num_anchors, 5 + num_classes]
         # Format: [cx, cy, w, h, obj_conf, cls_conf...] in pixel coords
         batch_size = pred.shape[0]
+        img_shape = outputs.get("image_shape", (self.input_height, self.input_width))
+        img_h, img_w = img_shape[0], img_shape[1]
 
         for b in range(batch_size):
             box_preds = pred[b]  # [num_anchors, 5 + num_classes]
@@ -502,8 +498,24 @@ class YOLOXLightningModel(BaseDetectionModel):
             scores = scores[keep_indices]
             labels = labels[keep_indices]
 
-            # Return pixel xyxy — no normalization.
-            # Caller normalizes to [0,1] if needed for metrics.
+            if original_sizes is not None:
+                # Scale to requested original image dimensions
+                orig_h, orig_w = original_sizes[b]
+                scale = torch.tensor(
+                    [orig_w / img_w, orig_h / img_h, orig_w / img_w, orig_h / img_h],
+                    device=boxes.device,
+                    dtype=boxes.dtype,
+                )
+                boxes = boxes * scale
+            elif boxes.numel() > 0:
+                # Normalize to [0,1] XYXY — standard output format
+                norm_scale = torch.tensor(
+                    [img_w, img_h, img_w, img_h],
+                    device=boxes.device,
+                    dtype=boxes.dtype,
+                )
+                boxes = boxes / norm_scale
+
             predictions.append(
                 {
                     "boxes": boxes,
@@ -517,10 +529,9 @@ class YOLOXLightningModel(BaseDetectionModel):
     def validation_step(self, batch: Any, batch_idx: int) -> None:
         """Validation step for YOLOX.
 
-        Targets are in pixel xyxy (from YOLOX transforms, no box
-        normalization). Predictions are also in pixel xyxy from
-        get_predictions. Both are normalized to [0,1] for the
-        supervision MeanAveragePrecision metric.
+        Targets are in pixel CXCYWH (from YOLOX transforms). Predictions are
+        normalized [0,1] XYXY from get_predictions(). Targets are converted to
+        [0,1] XYXY to match for the supervision MeanAveragePrecision metric.
         """
         images, targets = batch
         outputs = self(images, targets)
@@ -544,35 +555,26 @@ class YOLOXLightningModel(BaseDetectionModel):
             log_name = name if name.startswith("val/") else f"val/{name}"
             self.log(log_name, value, on_step=False, on_epoch=True)
 
-        # --- Predictions (pixel xyxy) ---
+        # Predictions are already normalized [0,1] XYXY from get_predictions()
         preds = self.get_predictions(outputs, confidence_threshold=0.0)
 
-        # --- Normalize both to [0,1] xyxy for metrics ---
+        # Convert targets from pixel CXCYWH → normalized [0,1] XYXY for metrics
         img_h, img_w = outputs.get("image_shape", (self.input_height, self.input_width))
-        norm_preds = []
-        for p in preds:
-            boxes = p["boxes"].clone()
-            if boxes.numel() > 0:
-                boxes[:, [0, 2]] /= img_w
-                boxes[:, [1, 3]] /= img_h
-            norm_preds.append(
-                {"boxes": boxes, "scores": p["scores"], "labels": p["labels"]}
-            )
-
         norm_targets = []
         for t in targets:
             boxes = t["boxes"].clone()
             if boxes.numel() > 0:
+                boxes = cxcywh_to_xyxy(boxes)
                 boxes[:, [0, 2]] /= img_w
                 boxes[:, [1, 3]] /= img_h
             norm_targets.append({"boxes": boxes, "labels": t["labels"]})
 
-        sv_preds, sv_targets = self._to_sv_detections(norm_preds, norm_targets)
+        sv_preds, sv_targets = self._to_sv_detections(preds, norm_targets)
         self.val_map.update(sv_preds, sv_targets)
 
         # Store for curve computation (CPU, normalized [0,1] xyxy)
         self.val_preds_storage.extend(
-            [{k: v.cpu() for k, v in p.items()} for p in norm_preds]
+            [{k: v.cpu() for k, v in p.items()} for p in preds]
         )
         self.val_targets_storage.extend(
             [{k: v.cpu() for k, v in t.items()} for t in norm_targets]

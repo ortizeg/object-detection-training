@@ -53,8 +53,6 @@ visualization:
   num_samples: 10
   output_dir: ${hydra:runtime.output_dir}/outputs
   confidence_threshold: 0.3
-  mean: ${models.image_mean}
-  std: ${models.image_std}
 
 history_plotter:
   _target_: object_detection_training.callbacks.plotting.TrainingHistoryPlotter
