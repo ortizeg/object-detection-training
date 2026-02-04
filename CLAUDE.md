@@ -160,6 +160,29 @@ from object_detection_training.utils.boxes import box_iou
 3. **Type annotations**: This project uses strict typing (MyPy). Always add type hints
 4. **Format code**: Run `pixi run format` before committing
 5. **Tests**: Add tests in `tests/` for new functionality
+6. **Verify CI passes**: After pushing, always check CI status with `gh pr checks <PR#>` and fix any failures before considering a task complete
+
+### Completing a Task (PR Workflow)
+
+A task is **not complete** until CI is green and the PR is merge-ready. Follow this checklist:
+
+1. Run local checks before pushing: `pixi run lint`, `pixi run test`, `pixi run format`
+2. Push and create/update the PR
+3. Check CI status: `gh pr checks <PR#>`
+4. If CI fails:
+   - Read the failing job logs: `gh run view <run-id> --log-failed`
+   - Fix the issue locally, commit, and push
+   - Re-check CI until all checks pass
+5. If there are merge conflicts with the target branch:
+   - Merge or rebase the target branch into your feature branch
+   - Resolve conflicts, re-run local checks, push
+   - Re-check CI
+6. Only report the task as done once all CI checks are green
+
+**Common CI pitfalls:**
+- Pre-commit ruff version must match pixi ruff version (see `.pre-commit-config.yaml`)
+- CI runs `pixi run format-check` (read-only) — always run `pixi run format` locally first
+- CI runs `pixi run typecheck` — run `pixi run typecheck` locally if you changed type signatures
 
 ### Model Code Exceptions
 

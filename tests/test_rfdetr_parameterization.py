@@ -165,9 +165,9 @@ class TestHydraConfigCompleteness:
             cfg = hydra.compose(config_name="train", overrides=[f"models={yaml_name}"])
 
         for key, expected_val in expected.items():
-            assert (
-                key in cfg.models
-            ), f"Missing param '{key}' in {yaml_name}.yaml config"
+            assert key in cfg.models, (
+                f"Missing param '{key}' in {yaml_name}.yaml config"
+            )
             actual = cfg.models[key]
             # Convert OmegaConf lists to plain lists for comparison
             if hasattr(actual, "__iter__") and not isinstance(actual, str):
