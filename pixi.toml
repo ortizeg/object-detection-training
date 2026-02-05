@@ -18,6 +18,8 @@ format = "ruff format ."
 format-check = "ruff format --check ."
 lint = "ruff check ."
 typecheck = "mypy src/"
+build = { cmd = "bash scripts/cloud-build.sh" }
+build-local = { cmd = "bash scripts/build-docker.sh --local" }
 
 
 [dependencies]
