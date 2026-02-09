@@ -1,9 +1,43 @@
+# Git and version control
 .git
+.github
+
+# Pixi and Python environments
 .pixi
 .pytest_cache
-.vscode
-outputs
+.mypy_cache
+.ruff_cache
 __pycache__
 *.pyc
+
+# Build artifacts
+dist/
+build/
+*.egg-info
+*.egg
+
+# IDE and editor
+.vscode
+.idea
+
+# Project outputs (not needed in container)
+output/
+outputs/
+multirun/
+lightning_logs/
+
+# Development files
+tests/
+scripts/
+.claude/
+CLAUDE.md
+README.md
+cloudbuild.yaml
+.pre-commit-config.yaml
+
+# Environment and secrets
+.env
+.env.*
+
+# OS files
 .DS_Store
-lightning_logs

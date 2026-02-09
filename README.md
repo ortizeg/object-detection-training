@@ -54,10 +54,59 @@ To format the code using `black`:
 pixi run format
 ```
 
-To lint the code using `flake8`:
+To lint the code using `ruff`:
 ```bash
 pixi run lint
 ```
+
+## Docker Build
+
+The project includes Docker support for running training jobs on GCP Vertex AI.
+
+### Cloud Build (Recommended)
+
+Cloud Build runs the Docker build on GCP infrastructure, which is much faster than building locally on ARM Macs (no cross-compilation, no large image upload over home internet).
+
+```bash
+# Submit build to Cloud Build
+./scripts/cloud-build.sh
+# or
+pixi run build
+
+# Preview the command without submitting
+./scripts/cloud-build.sh --dry-run
+```
+
+**What happens:**
+1. Your code is uploaded as a ~50MB tarball to Cloud Build
+2. Cloud Build pulls the previous `:latest` image for layer caching
+3. Builds the AMD64 image natively (2-5 min with cache)
+4. Pushes to Artifact Registry with both `:SHORT_SHA` and `:latest` tags
+
+**Prerequisites:**
+- `gcloud` CLI configured with your project: `gcloud config set project <PROJECT_ID>`
+- Cloud Build API enabled: `gcloud services enable cloudbuild.googleapis.com`
+- Artifact Registry repository exists (created separately)
+
+### Local Build
+
+For testing Docker builds locally without pushing:
+
+```bash
+./scripts/build-docker.sh --local
+# or
+pixi run build-local
+```
+
+To build and push from your local machine (slower on ARM Macs):
+
+```bash
+./scripts/build-docker.sh
+```
+
+### Runtime Secrets
+
+The Docker image does not contain secrets. `WANDB_API_KEY` and other credentials must be injected at runtime via environment variables (e.g., in Vertex AI job specs).
 
 ## Project Structure
 
