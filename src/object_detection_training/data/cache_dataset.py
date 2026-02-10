@@ -13,8 +13,10 @@ produce different results each epoch.
 
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import io
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any, Literal
@@ -23,6 +25,7 @@ import numpy as np
 import torch
 from loguru import logger
 from PIL import Image
+from tqdm import tqdm
 
 from object_detection_training.data.detection_dataset import DetectionDataset
 from object_detection_training.types import DetectionTarget
@@ -121,6 +124,9 @@ class CacheDataset(
         stochastic augmentations produce different results each epoch.
     rebuild:
         If ``True``, delete any existing cache and rebuild from scratch.
+    num_threads:
+        Number of worker threads for parallel cache building. Defaults to
+        min(32, os.cpu_count() + 4).
     """
 
     def __init__(
@@ -130,10 +136,18 @@ class CacheDataset(
         cache_dir: str | Path | None = None,
         transforms: Any | None = None,
         rebuild: bool = False,
+        num_threads: int | None = None,
     ) -> None:
         self._dataset = dataset
         self.transforms = transforms
         self._cache_type = cache_type
+
+        if num_threads is None:
+            # Default to reasonable number of threads for I/O bound work
+            cpu_count = os.cpu_count() or 1
+            self.num_threads = min(32, cpu_count + 4)
+        else:
+            self.num_threads = num_threads
 
         # --- RAM cache state ---
         self._ram_cache: list[tuple[Image.Image, DetectionTarget] | None] | None = None
@@ -167,14 +181,27 @@ class CacheDataset(
         self._dataset.transforms = None
 
         total = len(self._dataset)
-        logger.info(f"Building RAM cache: {total} samples")
+        logger.info(f"Building RAM cache: {total} samples (threads={self.num_threads})")
 
-        self._ram_cache = [None] * total
-        for idx in range(total):
+        def _load_sample(idx: int) -> tuple[Image.Image, DetectionTarget]:
             img, target = self._dataset[idx]
             img = _coerce_to_pil(img)
-            self._ram_cache[idx] = (img, target)
+            return img, target
 
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=self.num_threads
+        ) as executor:
+            # Use map to preserve order corresponding to indices
+            results = list(
+                tqdm(
+                    executor.map(_load_sample, range(total)),
+                    total=total,
+                    desc="RAM Cache",
+                    unit="img",
+                )
+            )
+
+        self._ram_cache = results
         self._dataset.transforms = saved_transforms
         logger.info(f"RAM cache built: {total} samples in memory")
 
@@ -220,7 +247,8 @@ class CacheDataset(
         """Populate the SQLite cache from the underlying dataset.
 
         Temporarily strips transforms from the wrapped dataset so that
-        raw (pre-transform) data is cached.
+        raw (pre-transform) data is cached. Uses ThreadPoolExecutor for
+        parallel I/O and encoding.
         """
         saved_transforms = self._dataset.transforms
         self._dataset.transforms = None
@@ -229,27 +257,66 @@ class CacheDataset(
         conn.execute(_CREATE_TABLE)
 
         total = len(self._dataset)
-        batch_size = 500  # commit every N inserts for performance
+        batch_size = 1000
 
-        for idx in range(total):
-            # Check if already cached
-            row = conn.execute(_SELECT, (idx,)).fetchone()
-            if row is not None:
-                continue
+        # Optimization: Fetch all existing indices at once to avoid SELECT inside loop
+        existing_cursor = conn.execute("SELECT idx FROM cache")
+        existing_indices = {row[0] for row in existing_cursor.fetchall()}
 
-            img, target = self._dataset[idx]
-            img = _coerce_to_pil(img)
+        indices_to_process = [i for i in range(total) if i not in existing_indices]
 
-            img_bytes = _serialize_image(img)
-            target_bytes = _serialize_target(target)
+        if not indices_to_process:
+            self._dataset.transforms = saved_transforms
+            logger.info("All samples already cached.")
+            return
 
-            conn.execute(_INSERT, (idx, img_bytes, target_bytes))
+        logger.info(
+            f"Building disk cache: {len(indices_to_process)} samples "
+            f"(threads={self.num_threads})"
+        )
 
-            if (idx + 1) % batch_size == 0:
-                conn.commit()
-                logger.debug(f"  cached {idx + 1}/{total} samples")
+        def _process_sample(idx: int) -> tuple[int, bytes, bytes] | None:
+            try:
+                img, target = self._dataset[idx]
+                img = _coerce_to_pil(img)
+                img_bytes = _serialize_image(img)
+                target_bytes = _serialize_target(target)
+                return idx, img_bytes, target_bytes
+            except Exception as e:
+                logger.error(f"Failed to process sample {idx}: {e}")
+                return None
 
-        conn.commit()
+        # Execute parallel processing
+        pending_inserts = []
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=self.num_threads
+        ) as executor:
+            futures = [
+                executor.submit(_process_sample, idx) for idx in indices_to_process
+            ]
+
+            for future in tqdm(
+                concurrent.futures.as_completed(futures),
+                total=len(indices_to_process),
+                desc="Disk Cache",
+                unit="img",
+            ):
+                result = future.result()
+                if result is None:
+                    continue
+
+                pending_inserts.append(result)
+
+                if len(pending_inserts) >= batch_size:
+                    conn.executemany(_INSERT, pending_inserts)
+                    conn.commit()
+                    pending_inserts.clear()
+
+        # Flush remaining
+        if pending_inserts:
+            conn.executemany(_INSERT, pending_inserts)
+            conn.commit()
+
         self._dataset.transforms = saved_transforms
         logger.info(f"Cache built: {total} samples in {self._db_path}")
 
