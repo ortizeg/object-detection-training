@@ -44,12 +44,23 @@ Models, tasks, and data modules are registered with Hydra's ConfigStore via the 
 ```python
 from object_detection_training.utils.hydra import register
 
-@register(group="models", num_classes=None)
-class MyModel(BaseDetectionModel):
+# Explicit group and name
+@register(group="task")
+class TrainTask(BaseTask):
+    ...
+
+# Group and name inferred from module path and class name
+@register
+class COCODataModule(L.LightningDataModule):
+    ...
+
+# Custom name (group inferred as "models" from module path)
+@register(name="RFDETRNano")
+class RFDETRNanoModel(RFDETRLightningModel):
     ...
 ```
 
-This makes the class available as a Hydra config group option.
+Any extra `**kwargs` passed to `@register` become default values in the Hydra config node. This makes the class available as a Hydra config group option.
 
 ## Output Directory
 
