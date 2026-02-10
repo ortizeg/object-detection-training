@@ -76,14 +76,15 @@ def _deserialize_image(
 def _serialize_target(target: DetectionTarget) -> bytes:
     """Serialize a target dict of tensors to bytes using torch.save."""
     buf = io.BytesIO()
-    torch.save(target, buf)  # type: ignore[no-untyped-call]
+    torch.save(target, buf)
     return buf.getvalue()
 
 
 def _deserialize_target(data: bytes) -> DetectionTarget:
     """Deserialize a target dict from bytes."""
     buf = io.BytesIO(data)
-    return torch.load(buf, weights_only=False)  # type: ignore[no-untyped-call]
+    result: DetectionTarget = torch.load(buf, weights_only=False)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +246,7 @@ class CacheDataset(
         if self.transforms is not None:
             img, target = self.transforms(img, target)
 
-        return img, target  # type: ignore[return-value]
+        return img, target
 
     # ------------------------------------------------------------------
     # Proxy properties for compatibility

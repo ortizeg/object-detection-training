@@ -305,7 +305,7 @@ class COCODataModule(L.LightningDataModule):
             val_dataset_raw.transforms = self.val_transforms
             val_dataset = val_dataset_raw  # type: ignore[assignment]
         return torch.utils.data.DataLoader(
-            val_dataset,  # type: ignore[arg-type]
+            val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
