@@ -1,0 +1,65 @@
+site_name: Object Detection Training
+site_description: Training framework for RFDETR and YOLOX object detection models
+site_url: https://ortizeg.github.io/object-detection-training
+repo_url: https://github.com/ortizeg/object-detection-training
+repo_name: ortizeg/object-detection-training
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.expand
+    - toc.follow
+
+plugins:
+  - search
+  - mkdocstrings:
+      enabled: true
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            members_order: source
+            allow_inspection: false
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - Contributing: contributing.md
+  - API Reference:
+      - Models: api/models.md
+      - Callbacks: api/callbacks.md
+      - Data: api/data.md
+      - Metrics: api/metrics.md
+      - Transforms: api/transforms.md
+      - Utils: api/utils.md
+      - Tasks: api/tasks.md
+      - Types: api/types.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
