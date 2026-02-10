@@ -35,45 +35,41 @@ __all__ = ["CacheDataset"]
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS cache (
     idx       INTEGER PRIMARY KEY,
-    img_bytes BLOB    NOT NULL,
-    img_mode  TEXT    NOT NULL,
-    img_w     INTEGER NOT NULL,
-    img_h     INTEGER NOT NULL,
+    img_blob  BLOB    NOT NULL,
     target    BLOB    NOT NULL
 );
 """
 
 _INSERT = """
-INSERT OR REPLACE INTO cache (idx, img_bytes, img_mode, img_w, img_h, target)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO cache (idx, img_blob, target)
+VALUES (?, ?, ?);
 """
 
-_SELECT = "SELECT img_bytes, img_mode, img_w, img_h, target FROM cache WHERE idx = ?;"
+_SELECT = "SELECT img_blob, target FROM cache WHERE idx = ?;"
 
 _COUNT = "SELECT COUNT(*) FROM cache;"
+
+# JPEG quality for compressed storage (95 is visually lossless)
+_JPEG_QUALITY = 95
 
 
 # ---------------------------------------------------------------------------
 # Serialization helpers
 # ---------------------------------------------------------------------------
-def _serialize_image(img: Image.Image) -> tuple[bytes, str, int, int]:
-    """Serialize a PIL Image to raw bytes + metadata.
+def _serialize_image(img: Image.Image) -> bytes:
+    """Serialize a PIL Image to compressed JPEG bytes.
 
-    Stores raw pixel data (no re-encoding) for fast deserialization.
+    Stores JPEG-compressed data (~20-30x smaller than raw pixels for
+    typical photos) while remaining visually lossless at quality=95.
     """
-    img_array = np.array(img)
-    return img_array.tobytes(), img.mode, img.size[0], img.size[1]
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=_JPEG_QUALITY)
+    return buf.getvalue()
 
 
-def _deserialize_image(
-    img_bytes: bytes, mode: str, width: int, height: int
-) -> Image.Image:
-    """Reconstruct a PIL Image from raw bytes + metadata."""
-    channels = len(mode)  # "RGB" -> 3, "L" -> 1
-    img_array = np.frombuffer(img_bytes, dtype=np.uint8).reshape(
-        (height, width, channels)
-    )
-    return Image.fromarray(img_array, mode=mode)
+def _deserialize_image(img_bytes: bytes) -> Image.Image:
+    """Reconstruct a PIL Image from JPEG bytes."""
+    return Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
 
 def _serialize_target(target: DetectionTarget) -> bytes:
@@ -244,10 +240,10 @@ class CacheDataset(
             img, target = self._dataset[idx]
             img = _coerce_to_pil(img)
 
-            img_bytes, mode, w, h = _serialize_image(img)
+            img_bytes = _serialize_image(img)
             target_bytes = _serialize_target(target)
 
-            conn.execute(_INSERT, (idx, img_bytes, mode, w, h, target_bytes))
+            conn.execute(_INSERT, (idx, img_bytes, target_bytes))
 
             if (idx + 1) % batch_size == 0:
                 conn.commit()
@@ -298,8 +294,8 @@ class CacheDataset(
                 f"Delete {self._db_path} and re-run to rebuild."
             )
 
-        img_bytes, mode, w, h, target_bytes = row
-        img = _deserialize_image(img_bytes, mode, w, h)
+        img_bytes, target_bytes = row
+        img = _deserialize_image(img_bytes)
         target: DetectionTarget = _deserialize_target(target_bytes)
 
         if self.transforms is not None:
