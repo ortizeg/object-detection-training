@@ -2,7 +2,7 @@
 
 Creates a temporary synthetic COCO dataset (in-memory), wraps it with
 CacheDataset, and verifies:
-1. Cached output is identical to uncached output.
+1. Cached output is identical to uncached output (both RAM and disk modes).
 2. Cached iteration is measurably faster than uncached.
 """
 
@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -110,19 +111,45 @@ def base_dataset(coco_root: Path) -> COCODetectionDataset:
 
 
 @pytest.fixture()
-def cached_dataset(base_dataset: COCODetectionDataset) -> CacheDataset:
-    """Create a cached version of the dataset."""
+def cached_dataset_disk(base_dataset: COCODetectionDataset) -> CacheDataset:
+    """Create a disk-cached version of the dataset."""
     return CacheDataset(
         dataset=base_dataset,
+        cache_type="disk",
         rebuild=True,
     )
 
 
+@pytest.fixture()
+def cached_dataset_ram(base_dataset: COCODetectionDataset) -> CacheDataset:
+    """Create a RAM-cached version of the dataset."""
+    return CacheDataset(
+        dataset=base_dataset,
+        cache_type="ram",
+    )
+
+
 # ---------------------------------------------------------------------------
-# Correctness tests
+# Correctness tests (parametrized over cache backends)
 # ---------------------------------------------------------------------------
 class TestCacheDatasetCorrectness:
     """Verify cached output matches uncached output exactly."""
+
+    @pytest.fixture(
+        params=["disk", "ram"],
+    )
+    def cached_dataset(
+        self,
+        request: pytest.FixtureRequest,
+        base_dataset: COCODetectionDataset,
+    ) -> CacheDataset:
+        """Parametrized fixture yielding both cache backends."""
+        cache_type: Literal["ram", "disk"] = request.param
+        return CacheDataset(
+            dataset=base_dataset,
+            cache_type=cache_type,
+            rebuild=True,
+        )
 
     def test_same_length(
         self,
@@ -145,8 +172,6 @@ class TestCacheDatasetCorrectness:
             orig_arr = np.array(img_orig)
             cached_arr = np.array(img_cached)
 
-            # JPEG re-encoding in the synthetic dataset means raw pixels
-            # should still match since we cache the decoded PIL image
             assert orig_arr.shape == cached_arr.shape, (
                 f"Image shape mismatch at idx {idx}: "
                 f"{orig_arr.shape} vs {cached_arr.shape}"
@@ -185,15 +210,21 @@ class TestCacheDatasetCorrectness:
     ) -> None:
         assert cached_dataset.label_map == base_dataset.label_map
 
+
+# ---------------------------------------------------------------------------
+# Disk-specific tests
+# ---------------------------------------------------------------------------
+class TestCacheDatasetDisk:
+    """Tests specific to the disk (SQLite) backend."""
+
     def test_rebuild_flag(
         self,
         base_dataset: COCODetectionDataset,
     ) -> None:
         """Rebuild=True recreates the cache from scratch."""
-        cache1 = CacheDataset(dataset=base_dataset, rebuild=True)
-        cache2 = CacheDataset(dataset=base_dataset, rebuild=True)
+        cache1 = CacheDataset(dataset=base_dataset, cache_type="disk", rebuild=True)
+        cache2 = CacheDataset(dataset=base_dataset, cache_type="disk", rebuild=True)
         assert len(cache1) == len(cache2)
-        # Both should produce identical results
         img1, _ = cache1[0]
         img2, _ = cache2[0]
         assert np.array_equal(np.array(img1), np.array(img2))
@@ -205,22 +236,24 @@ class TestCacheDatasetCorrectness:
     ) -> None:
         """Second CacheDataset reuses existing DB without rebuilding."""
         cache_dir = tmp_path / "shared_cache"
-        cache1 = CacheDataset(dataset=base_dataset, cache_dir=cache_dir, rebuild=True)
+        cache1 = CacheDataset(
+            dataset=base_dataset,
+            cache_type="disk",
+            cache_dir=cache_dir,
+            rebuild=True,
+        )
         db_path = cache_dir / f"{base_dataset.split}.db"
         assert db_path.exists()
         mtime_after_build = db_path.stat().st_mtime
 
-        # Small sleep to detect any file modification
         time.sleep(0.1)
 
-        # Creating another CacheDataset should NOT rebuild
-        _cache2 = CacheDataset(dataset=base_dataset, cache_dir=cache_dir)
+        _cache2 = CacheDataset(
+            dataset=base_dataset, cache_type="disk", cache_dir=cache_dir
+        )
         mtime_reuse = db_path.stat().st_mtime
 
-        # File should not have been modified (no rebuild)
         assert mtime_reuse == mtime_after_build
-
-        # Should still work
         assert len(cache1) == len(base_dataset)
 
 
@@ -230,38 +263,51 @@ class TestCacheDatasetCorrectness:
 class TestCacheDatasetBenchmark:
     """Measure iteration speed: cached vs uncached."""
 
-    def test_cached_faster_than_uncached(
+    def test_disk_cached_faster_than_uncached(
         self,
         base_dataset: COCODetectionDataset,
-        cached_dataset: CacheDataset,
+        cached_dataset_disk: CacheDataset,
     ) -> None:
-        """Cached dataset iteration should be at least 1.5x faster."""
-        n_samples = len(base_dataset)
+        """Disk-cached dataset should be at least 1.5x faster."""
+        speedup = self._measure_speedup(base_dataset, cached_dataset_disk)
+        assert speedup >= 1.5, (
+            f"Expected >=1.5x speedup for disk cache, got {speedup:.2f}x"
+        )
 
-        # Warm up cached dataset (already built by fixture)
-        _ = cached_dataset[0]
+    def test_ram_cached_faster_than_uncached(
+        self,
+        base_dataset: COCODetectionDataset,
+        cached_dataset_ram: CacheDataset,
+    ) -> None:
+        """RAM-cached dataset should be at least 2x faster."""
+        speedup = self._measure_speedup(base_dataset, cached_dataset_ram)
+        assert speedup >= 2.0, (
+            f"Expected >=2x speedup for RAM cache, got {speedup:.2f}x"
+        )
 
-        # Benchmark uncached
+    @staticmethod
+    def _measure_speedup(base: COCODetectionDataset, cached: CacheDataset) -> float:
+        n_samples = len(base)
+        _ = cached[0]  # warm up
+
         t0 = time.perf_counter()
         for _ in range(NUM_BENCHMARK_ITERS):
             for idx in range(n_samples):
-                _img, _target = base_dataset[idx]
+                _img, _target = base[idx]
         uncached_time = time.perf_counter() - t0
 
-        # Benchmark cached
         t0 = time.perf_counter()
         for _ in range(NUM_BENCHMARK_ITERS):
             for idx in range(n_samples):
-                _img, _target = cached_dataset[idx]
+                _img, _target = cached[idx]
         cached_time = time.perf_counter() - t0
 
         speedup = uncached_time / cached_time
 
-        # Print results for visibility in test output
         print(f"\n{'=' * 60}")
         print(
             f"  CacheDataset Benchmark ({n_samples} images x "
-            f"{NUM_BENCHMARK_ITERS} iters)"
+            f"{NUM_BENCHMARK_ITERS} iters, type={cached._cache_type})"
         )
         print(f"{'=' * 60}")
         print(f"  Uncached: {uncached_time:.3f}s")
@@ -269,7 +315,4 @@ class TestCacheDatasetBenchmark:
         print(f"  Speedup:  {speedup:.2f}x")
         print(f"{'=' * 60}")
 
-        assert speedup >= 1.5, (
-            f"Expected ≥1.5x speedup, got {speedup:.2f}x "
-            f"(uncached={uncached_time:.3f}s, cached={cached_time:.3f}s)"
-        )
+        return speedup

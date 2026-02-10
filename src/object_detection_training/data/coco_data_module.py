@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 import lightning as L
 import torch
@@ -58,6 +59,7 @@ class COCODataModule(L.LightningDataModule):
         patch_size: int = 16,
         num_windows: int = 4,
         use_cache: bool = False,
+        cache_type: Literal["ram", "disk"] = "disk",
     ):
         """Initialize COCO data module.
 
@@ -83,7 +85,9 @@ class COCODataModule(L.LightningDataModule):
             skip_random_resize: Skip random resize (used by transform YAML refs).
             patch_size: Patch size for multi-scale (used by transform YAML refs).
             num_windows: Windows for multi-scale (transform YAML refs).
-            use_cache: Cache decoded images in SQLite for faster loading.
+            use_cache: Cache decoded images for faster loading.
+            cache_type: Cache backend - 'ram' (fastest, lost on exit) or
+                'disk' (SQLite, persists across runs).
         """
         super().__init__()
         self.train_path = Path(train_path)
@@ -136,6 +140,7 @@ class COCODataModule(L.LightningDataModule):
 
         # Caching
         self.use_cache = use_cache
+        self.cache_type = cache_type
 
         # Lazy-loaded detection dataset for DataFrame access
         self._train_detection_dataset: COCODetectionDataset | None = None
@@ -273,6 +278,7 @@ class COCODataModule(L.LightningDataModule):
             self._train_detection_dataset.transforms = None
             train_dataset = CacheDataset(  # type: ignore[assignment]
                 self._train_detection_dataset,
+                cache_type=self.cache_type,
                 transforms=self.train_transforms,
             )
         else:
@@ -299,6 +305,7 @@ class COCODataModule(L.LightningDataModule):
             val_dataset_raw.transforms = None
             val_dataset = CacheDataset(  # type: ignore[assignment]
                 val_dataset_raw,
+                cache_type=self.cache_type,
                 transforms=self.val_transforms,
             )
         else:
