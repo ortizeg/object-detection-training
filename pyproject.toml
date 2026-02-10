@@ -7,6 +7,7 @@ name = "object_detection_training"
 version = "0.0.1"
 description = "Object detector training project using rfnet and hydra"
 authors = [{name = "Enrique G. Ortiz", email = "ortizeg@gmail.com"}]
+license = {text = "Apache-2.0"}
 dependencies = [
     "hydra-core",
     "loguru",

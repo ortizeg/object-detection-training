@@ -45,5 +45,8 @@ outputs/
 multirun/
 .DS_Store
 
+# MkDocs
+site/
+
 # Claude Code (personal settings)
 .claude/settings.local.json

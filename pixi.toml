@@ -20,6 +20,8 @@ lint = "ruff check ."
 typecheck = "mypy src/"
 build = { cmd = "bash scripts/cloud-build.sh" }
 build-local = { cmd = "bash scripts/build-docker.sh --local" }
+docs = "mkdocs serve"
+docs-build = "mkdocs build"
 
 
 [dependencies]
@@ -51,6 +53,8 @@ tensorboard = ">=2.20.0,<3"
 ruff = "*"
 mypy = "*"
 pre-commit = "*"
+mkdocs = "*"
+mkdocs-material = "*"
 
 [environments]
 default = ["dev"]
@@ -67,3 +71,4 @@ dotenv = "*"
 orjson = "*"  # Fast JSON parsing for dataset loading
 supervision = "*"
 peft = "*"
+mkdocstrings = { version = "*", extras = ["python"] }
