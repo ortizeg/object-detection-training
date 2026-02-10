@@ -1,6 +1,11 @@
+[![Test Suite](https://github.com/ortizeg/object-detection-training/actions/workflows/test.yml/badge.svg)](https://github.com/ortizeg/object-detection-training/actions/workflows/test.yml)
+[![Lint & Format](https://github.com/ortizeg/object-detection-training/actions/workflows/lint.yml/badge.svg)](https://github.com/ortizeg/object-detection-training/actions/workflows/lint.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/ortizeg/object-detection-training/blob/main/LICENSE)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+
 # Object Detection Training
 
-This project is designed for training an object detector using `rfnet` and `hydra`. It leverages `pixi` for dependency management and environment handling.
+Training framework for object detection models (RFDETR and YOLOX) built with PyTorch Lightning, Hydra, and Pixi.
 
 ## Prerequisites
 
@@ -11,7 +16,7 @@ This project is designed for training an object detector using `rfnet` and `hydr
 
 1.  **Clone the repository:**
     ```bash
-    git clone <repository_url>
+    git clone https://github.com/ortizeg/object-detection-training.git
     cd object-detection-training
     ```
 
@@ -32,7 +37,7 @@ To start the training process:
 ```bash
 pixi run train
 ```
-This runs `src/object_detection_training/train.py`.
+This runs `src/object_detection_training/task_manager.py`.
 You can customize the training configuration by modifying `src/object_detection_training/conf/train.yaml` or passing overrides to Hydra:
 ```bash
 pixi run train -- training.epochs=50
@@ -49,7 +54,7 @@ This executes `pytest`.
 
 ### Code Quality
 
-To format the code using `black`:
+To format the code using `ruff`:
 ```bash
 pixi run format
 ```
@@ -57,6 +62,11 @@ pixi run format
 To lint the code using `ruff`:
 ```bash
 pixi run lint
+```
+
+To type-check using `mypy`:
+```bash
+pixi run typecheck
 ```
 
 ## Docker Build
@@ -110,9 +120,51 @@ The Docker image does not contain secrets. `WANDB_API_KEY` and other credentials
 
 ## Project Structure
 
-- `src/`: Source code for the project.
-- `src/object_detection_training/conf/`: Hydra configuration files.
-- `tests/`: Unit tests.
-- `pixi.toml`: Project configuration and dependencies.
-- `scripts/`: Helper scripts.
-- `outputs/`: Training outputs and logs.
+```
+.
+├── src/object_detection_training/    # Main source code
+│   ├── models/                       # Model implementations
+│   │   ├── yolox/                   # YOLOX model family
+│   │   ├── rfdetr/                  # RFDETR model family
+│   │   ├── yolox_lightning.py       # Lightning module for YOLOX
+│   │   └── rfdetr_lightning.py      # Lightning module for RFDETR
+│   ├── callbacks/                    # Lightning callbacks
+│   │   ├── ema.py                   # Exponential Moving Average
+│   │   ├── onnx_export.py          # ONNX export callback
+│   │   ├── plotting.py             # Training plots
+│   │   ├── visualization.py        # Visualizations
+│   │   ├── model_info.py          # Model information
+│   │   └── statistics.py          # Training statistics
+│   ├── data/                         # Data modules and datasets
+│   │   ├── detection_dataset.py    # Base detection dataset
+│   │   ├── dataset_stats.py        # Dataset statistics
+│   │   └── base.py                 # Base data module
+│   ├── metrics/                      # Custom metrics
+│   │   └── curves.py               # Precision-recall curves
+│   ├── utils/                        # Utility functions
+│   │   ├── boxes.py                # Bounding box utilities
+│   │   ├── plotting.py            # Plotting utilities
+│   │   ├── hydra.py              # Hydra configuration helpers
+│   │   ├── seed.py               # Random seed management
+│   │   └── json_utils.py         # JSON utilities
+│   ├── conf/                        # Hydra configuration files
+│   │   ├── train.yaml              # Main training config
+│   │   ├── models/                 # Model configurations
+│   │   ├── data/                   # Dataset configurations
+│   │   ├── callbacks/              # Callback configurations
+│   │   └── trainer/                # Trainer configurations
+│   ├── tasks.py                     # Task definitions
+│   ├── task_manager.py              # CLI entry point
+│   └── types.py                     # Shared type definitions
+├── tests/                           # Unit tests
+├── docs/                            # Documentation (MkDocs)
+├── scripts/                         # Helper scripts
+├── pixi.toml                       # Pixi project configuration
+├── pyproject.toml                  # Python project metadata
+├── Dockerfile                      # Docker configuration
+└── .pre-commit-config.yaml        # Pre-commit hooks
+```
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
