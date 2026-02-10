@@ -1,0 +1,47 @@
+# Basketball Detection Dataset Configuration for YOLOX
+# Category filtering + YOLOX transforms (no box/image normalization)
+defaults:
+  - /transforms@_here_: yolox
+  - _self_
+
+_target_: object_detection_training.data.coco_data_module.COCODataModule
+_convert_: all
+
+# Required paths
+train_path: ??? # Required - path to training data
+val_path: ??? # Required - path to validation data
+test_path: null # Optional - path to test data
+
+# Category filter - only these classes are loaded
+selected_categories:
+  - ball
+  - ball-in-basket
+  - number
+  - player
+  - player-in-possession
+  - player-jump-shot
+  - player-layup-dunk
+  - player-shot-block
+  - referee
+  - rim
+
+# Box size classification thresholds
+size_thresholds:
+  small: 32
+  medium: 96
+
+# DataLoader settings
+num_workers: 8
+input_height: ${models.input_height}
+input_width: ${models.input_width}
+
+# Multi-scale params
+multi_scale: false
+expanded_scales: false
+skip_random_resize: true
+patch_size: 16
+num_windows: 2
+
+# Memory settings
+pin_memory: true
+persistent_workers: true

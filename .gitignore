@@ -40,6 +40,10 @@ venv.bak/
 *.swo
 
 # Project specific
+lightning_logs/
 outputs/
 multirun/
 .DS_Store
+
+# Claude Code (personal settings)
+.claude/settings.local.json

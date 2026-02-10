@@ -1,0 +1,81 @@
+# RF-DETR Aspect-Ratio-Preserving Transform Pipeline
+# Standard DETR transforms with max_size cap (no forced square resize).
+# Output: normalized CXCYWH boxes in [0,1] range.
+#
+# Image normalization: [0,255] → [0,1] → ImageNet normalize
+train_transforms:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: torchvision.transforms.v2.RandomHorizontalFlip
+      p: 0.5
+    - _target_: torchvision.transforms.v2.RandomChoice
+      transforms:
+        - _target_: object_detection_training.transforms.MultiScaleRandomResize
+          base_resolution: ${data.input_height}
+          expanded_scales: ${data.expanded_scales}
+          patch_size: ${data.patch_size}
+          num_windows: ${data.num_windows}
+          skip_random_resize: ${data.skip_random_resize}
+          max_size: 1333
+        - _target_: torchvision.transforms.v2.Compose
+          transforms:
+            - _target_: torchvision.transforms.v2.Resize
+              size: [400]
+            - _target_: object_detection_training.transforms.RandomSizeCrop
+              min_size: 384
+              max_size: 600
+            - _target_: object_detection_training.transforms.MultiScaleRandomResize
+              base_resolution: ${data.input_height}
+              expanded_scales: ${data.expanded_scales}
+              patch_size: ${data.patch_size}
+              num_windows: ${data.num_windows}
+              skip_random_resize: ${data.skip_random_resize}
+              max_size: 1333
+      p: [0.5, 0.5]
+    - _target_: torchvision.transforms.v2.SanitizeBoundingBoxes
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: true
+    - _target_: torchvision.transforms.v2.Normalize
+      mean: ${models.image_mean}
+      std: ${models.image_std}
+    - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
+      format: CXCYWH
+    - _target_: object_detection_training.transforms.NormalizeBoxCoords
+
+val_transforms:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: object_detection_training.transforms.MultiScaleRandomResize
+      base_resolution: ${data.input_height}
+      expanded_scales: false
+      patch_size: ${data.patch_size}
+      num_windows: ${data.num_windows}
+      skip_random_resize: true
+      max_size: 1333
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: true
+    - _target_: torchvision.transforms.v2.Normalize
+      mean: ${models.image_mean}
+      std: ${models.image_std}
+    - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
+      format: CXCYWH
+    - _target_: object_detection_training.transforms.NormalizeBoxCoords
+
+test_transforms:
+  _target_: torchvision.transforms.v2.Compose
+  transforms:
+    - _target_: object_detection_training.transforms.MultiScaleRandomResize
+      base_resolution: ${data.input_height}
+      expanded_scales: false
+      patch_size: ${data.patch_size}
+      num_windows: ${data.num_windows}
+      skip_random_resize: true
+      max_size: 1333
+    - _target_: object_detection_training.transforms.ToFloat32Tensor
+      scale: true
+    - _target_: torchvision.transforms.v2.Normalize
+      mean: ${models.image_mean}
+      std: ${models.image_std}
+    - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
+      format: CXCYWH
+    - _target_: object_detection_training.transforms.NormalizeBoxCoords

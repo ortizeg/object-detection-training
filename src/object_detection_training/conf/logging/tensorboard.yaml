@@ -1,0 +1,8 @@
+# TensorBoard Logger Configuration
+tensorboard:
+  _target_: lightning.pytorch.loggers.TensorBoardLogger
+  save_dir: ${hydra:runtime.output_dir}
+  name: tensorboard
+  version: null
+  log_graph: false
+  default_hp_metric: true

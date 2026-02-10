@@ -1,0 +1,10 @@
+defaults:
+  - YOLOXL
+  - yolox_base
+  - _self_
+
+# YOLOX-L (Large)
+depth: 1.0
+width: 1.0
+depthwise: false
+checkpoint_name: yolox_l.pth

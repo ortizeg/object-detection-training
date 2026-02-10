@@ -1,0 +1,30 @@
+# COCO Dataset Configuration for YOLOX
+# No box normalization (pixel xyxy throughout), no image normalization (raw 0-255),
+# adds ColorJitter + RandomErasing augmentation.
+defaults:
+  - /transforms@_here_: yolox
+  - _self_
+
+_target_: object_detection_training.data.coco_data_module.COCODataModule
+_convert_: all
+
+train_path: ??? # Required - path to training data
+val_path: ??? # Required - path to validation data
+test_path: null # Optional - path to test data
+
+# Optimized for total batch size 32 (16 * 2 accumulation) on L4 GPU
+batch_size: 16
+num_workers: 8
+
+input_height: ${models.input_height}
+input_width: ${models.input_width}
+
+# Multi-scale params (referenced by transform YAML via ${data.*})
+multi_scale: true
+expanded_scales: true
+skip_random_resize: false
+patch_size: 16
+num_windows: 2
+
+pin_memory: true
+persistent_workers: true

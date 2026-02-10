@@ -12,6 +12,10 @@ RUN curl -fsSL https://pixi.sh/install.sh | bash
 # Add pixi to PATH
 ENV PATH="/root/.pixi/bin:$PATH"
 
+# Override CUDA version for pixi to allow installation of cuda-dependent packages
+# even if the build environment doesn't have a GPU attached.
+ENV CONDA_OVERRIDE_CUDA=12.1
+
 COPY pixi.toml pixi.lock* pyproject.toml ./
 
 # Create a dummy project structure to allow pixi (and flit) to install dependencies
@@ -23,8 +27,9 @@ RUN pixi install --environment prod
 
 # Copy source code
 COPY . .
-# If we have a lot of code, we might want to be more selective, but this follows standard practice.
-# .dockerignore should be used to exclude unrelated files.
+
+# Runtime secrets (WANDB_API_KEY, etc.) should be injected via
+# environment variables at container run time, NOT baked into the image.
 
 # Set entrypoint to run the training task defined in pixi.toml
 ENTRYPOINT ["pixi", "run", "train"]
