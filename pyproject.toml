@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.scripts]
-train-detect = "object_detection_training.task_manager:main"
+task_manager = "object_detection_training.task_manager:main"
 
 [tool.ruff]
 target-version = "py311"

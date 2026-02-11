@@ -118,8 +118,32 @@ def main(cfg: DictConfig) -> None:
         logger.info("Instantiating model for ONNX export...")
         model_kwargs: dict[str, Any] = {}
         task_num_classes = cfg.task.get("num_classes")
+
         if task_num_classes is not None:
             model_kwargs["num_classes"] = task_num_classes
+        else:
+            # Try to infer from checkpoint
+            ckpt_path = cfg.task.get("checkpoint_path")
+            if ckpt_path:
+                try:
+                    from object_detection_training.utils.checkpoint import (
+                        get_checkpoint_hparams,
+                    )
+
+                    hparams = get_checkpoint_hparams(ckpt_path)
+                    ckpt_num_classes = hparams.get("num_classes")
+                    # Check if 'num_classes' in checkpoint is foreground or total?
+                    # RFDETRLightningModel saves `num_classes` which is foreground
+                    # count (e.g. 10 or 80) and internally adds +1 for background.
+                    # So passing this value to __init__ should be correct.
+                    if ckpt_num_classes is not None:
+                        logger.info(
+                            f"Inferred num_classes={ckpt_num_classes} from checkpoint"
+                        )
+                        model_kwargs["num_classes"] = ckpt_num_classes
+                except Exception as e:
+                    logger.warning(f"Could not infer num_classes from checkpoint: {e}")
+
         model = instantiate_model(cfg.models, **model_kwargs)
 
         logger.info("Instantiating task...")

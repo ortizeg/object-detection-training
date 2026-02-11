@@ -410,6 +410,8 @@ class RFDETRLightningModel(BaseDetectionModel):
         """Export model to ONNX format."""
         from copy import deepcopy
 
+        import onnx
+
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -426,20 +428,16 @@ class RFDETRLightningModel(BaseDetectionModel):
         logger.info(f"Exporting RFDETR model to ONNX: {out_path}")
 
         # Forcing legacy ONNX exporter as the new Dynamo exporter (torch.export)
-        # has issues with RF-DETR's architectural complexities (like unallocated
-        # tensors)
+        # has issues with RF-DETR's architectural complexities
         os.environ["TORCH_ONNX_LEGACY_EXPORTER"] = "1"
 
         # Explicit monkeypatch for torch.onnx.export to enforce dynamo=False
-        # this ensures that even if environment variables are ignored, the export
-        # will fall back to the legacy TorchScript-based path.
         original_export = torch.onnx.export
 
         def monkeypatched_export(*args: Any, **kwargs: Any) -> Any:
             kwargs["dynamo"] = False
             return original_export(*args, **kwargs)
 
-        # Replace temporarily
         torch.onnx.export = monkeypatched_export
 
         device = self._rfdetr_model.device
@@ -448,22 +446,49 @@ class RFDETRLightningModel(BaseDetectionModel):
         model.eval()
         model.export()
 
-        resolution = self._rfdetr_model.resolution
-        dummy_input = torch.randn(1, 3, resolution, resolution, device=device)
+        # Create dummy input with requested dimensions
+        dummy_input = torch.randn(1, 3, input_height, input_width, device=device)
 
-        with torch.no_grad():
-            torch.onnx.export(
-                model,
-                dummy_input,
-                str(out_path),
-                input_names=["input"],
-                output_names=["dets", "labels"],
-                opset_version=opset_version,
-            )
+        if dynamic_axes is None:
+            dynamic_axes = {
+                "input": {0: "batch_size"},
+                "dets": {0: "batch_size"},
+                "labels": {0: "batch_size"},
+            }
 
-        # Restore original export
-        torch.onnx.export = original_export
-        self.model.to(device)
+        try:
+            with torch.no_grad():
+                torch.onnx.export(
+                    model,
+                    dummy_input,
+                    str(out_path),
+                    input_names=["input"],
+                    output_names=["dets", "labels"],
+                    opset_version=opset_version,
+                    dynamic_axes=dynamic_axes,
+                )
+
+            if simplify:
+                try:
+                    import onnxsim
+
+                    model_onnx = onnx.load(str(out_path))
+                    model_simp, check = onnxsim.simplify(model_onnx)
+                    if check:
+                        onnx.save(model_simp, str(out_path))
+                        logger.info("ONNX model simplified successfully")
+                    else:
+                        logger.warning(
+                            "ONNX simplification failed, using original model"
+                        )
+                except Exception as e:
+                    logger.warning(f"ONNX simplification failed: {e}")
+                    logger.warning("Using original ONNX model")
+
+        finally:
+            # Restore original export and cleanup
+            torch.onnx.export = original_export
+            self.model.to(device)
 
         return str(out_path)
 

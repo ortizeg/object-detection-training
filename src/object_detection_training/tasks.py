@@ -206,8 +206,13 @@ class ONNXExportTask(BaseTask):
     )
     opset_version: int = Field(default=17, description="ONNX opset version")
     simplify: bool = Field(default=True, description="Simplify the ONNX graph")
-    input_height: int = Field(default=640, description="Input image height")
-    input_width: int = Field(default=640, description="Input image width")
+    input_height: int | None = Field(
+        default=None,
+        description="Input image height (inferred from checkpoint if None)",
+    )
+    input_width: int | None = Field(
+        default=None, description="Input image width (inferred from checkpoint if None)"
+    )
     num_classes: int | None = Field(
         default=None,
         description=(
@@ -215,6 +220,10 @@ class ONNXExportTask(BaseTask):
             "Required when the checkpoint class count differs from the "
             "model default (e.g. 80 for COCO)."
         ),
+    )
+    dynamic_batch: bool = Field(
+        default=True,
+        description="Whether to export with dynamic batch size (axis 0)",
     )
 
     # ------------------------------------------------------------------
@@ -266,6 +275,32 @@ class ONNXExportTask(BaseTask):
         self.model.load_state_dict(state_dict)
         logger.info("Checkpoint weights loaded successfully")
 
+        # Infer dimensions from checkpoint if not provided
+        hparams = checkpoint.get("hyper_parameters", {})
+
+        # Use local variables to avoid mutating self if we want preservation,
+        # but self is okay here.
+        input_height = self.input_height
+        input_width = self.input_width
+
+        if input_height is None:
+            input_height = hparams.get("input_height", 640)
+            logger.info(f"Inferred input_height={input_height} from checkpoint")
+
+        if input_width is None:
+            input_width = hparams.get("input_width", 640)
+            logger.info(f"Inferred input_width={input_width} from checkpoint")
+
+        # Prepare dynamic axes
+        dynamic_axes = None
+        if self.dynamic_batch:
+            dynamic_axes = {
+                "input": {0: "batch_size"},
+                "dets": {0: "batch_size"},
+                "labels": {0: "batch_size"},
+            }
+            logger.info("Exporting with dynamic batch size")
+
         # Export via BaseDetectionModel.export_onnx
         if not hasattr(self.model, "export_onnx"):
             msg = (
@@ -276,10 +311,11 @@ class ONNXExportTask(BaseTask):
 
         onnx_path = self.model.export_onnx(  # type: ignore[operator]
             output_path=str(onnx_out),
-            input_height=self.input_height,
-            input_width=self.input_width,
+            input_height=input_height,
+            input_width=input_width,
             opset_version=self.opset_version,
             simplify=self.simplify,
+            dynamic_axes=dynamic_axes,
         )
         logger.info(f"ONNX model exported to {onnx_path}")
 
