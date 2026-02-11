@@ -265,6 +265,18 @@ class TestRFDETRPostProcessor:
             assert 0.0 <= d.bbox.x <= 1.0
             assert 0.0 <= d.bbox.y <= 1.0
 
+    def test_swapped_outputs(self) -> None:
+        """Test robustness when outputs are [boxes, logits] (swapped order)."""
+        pp = RFDETRPostProcessor(LABEL_MAP, confidence_threshold=0.5)
+        # Normal order: [logits, boxes]
+        logits, boxes = self._make_predictions()
+        # Swapped order
+        swapped = [boxes, logits]
+        dets = pp(swapped, image_width=640, image_height=480)
+
+        assert len(dets) == 1
+        assert dets[0].label == "person"
+
 
 # =========================================================================
 # DetectionAnnotationWriter tests

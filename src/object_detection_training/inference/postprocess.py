@@ -225,13 +225,31 @@ class RFDETRPostProcessor(BasePostProcessor):
         image_height: int,
     ) -> list[Detection]:
         """Decode RFDETR predictions for a single image."""
-        logits = np.asarray(outputs[0], dtype=np.float32)
-        boxes = np.asarray(outputs[1], dtype=np.float32)
+        # Dynamically identify outputs by shape (boxes always have last dim 4)
+        out0 = np.asarray(outputs[0], dtype=np.float32)
+        out1 = np.asarray(outputs[1], dtype=np.float32)
 
-        if logits.ndim == 3:
-            logits = logits[0]
-        if boxes.ndim == 3:
-            boxes = boxes[0]
+        if out0.ndim == 3:
+            out0 = out0[0]
+        if out1.ndim == 3:
+            out1 = out1[0]
+
+        if out0.shape[-1] == 4:
+            boxes = out0
+            logits = out1
+        elif out1.shape[-1] == 4:
+            boxes = out1
+            logits = out0
+        else:
+            # Fallback (assume logits first) or raise error?
+            # If neither has shape 4, we likely have bigger issues.
+            # Let's assume logits first as per docstring, but log a warning.
+            logger.warning(
+                "Could not identify boxes by shape (expected last dim 4). "
+                "Assuming outputs[0]=logits."
+            )
+            logits = out0
+            boxes = out1
 
         # Sigmoid activation
         probs = 1.0 / (1.0 + np.exp(-logits))
