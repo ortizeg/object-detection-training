@@ -51,3 +51,7 @@ num_windows: 2
 # Memory settings
 pin_memory: true
 persistent_workers: true
+
+# Cache settings
+cache_type: auto
+use_cache: true
