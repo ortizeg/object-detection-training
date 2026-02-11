@@ -7,3 +7,4 @@ opset_version: 17
 simplify: true
 input_height: 640
 input_width: 640
+num_classes: null  # Optional: set to match checkpoint (e.g. 11)

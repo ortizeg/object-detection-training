@@ -208,6 +208,14 @@ class ONNXExportTask(BaseTask):
     simplify: bool = Field(default=True, description="Simplify the ONNX graph")
     input_height: int = Field(default=640, description="Input image height")
     input_width: int = Field(default=640, description="Input image width")
+    num_classes: int | None = Field(
+        default=None,
+        description=(
+            "Number of classes the checkpoint was trained with. "
+            "Required when the checkpoint class count differs from the "
+            "model default (e.g. 80 for COCO)."
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Helpers
