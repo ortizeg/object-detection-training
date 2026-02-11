@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 
 import lightning as L
+import omegaconf
+import torch
 from loguru import logger
 from pydantic import BaseModel, Field, model_validator
 
@@ -173,3 +176,103 @@ class TrainTask(BaseTask):
             ),
             "output_dir": str(self.output_dir),
         }
+
+
+@register(group="task")
+class ONNXExportTask(BaseTask):
+    """Export a trained checkpoint to an optimized ONNX file.
+
+    Loads a PyTorch Lightning checkpoint (or raw state-dict) into the
+    specified model class and delegates to
+    :pymeth:`BaseDetectionModel.export_onnx` for the actual export.
+    """
+
+    name: str = Field(default="export_onnx", description="Task name")
+
+    # Model to export - instantiated via Hydra (same as TrainTask.model)
+    model: L.LightningModule = Field(
+        description="Model instance (instantiated via Hydra)"
+    )
+
+    # Checkpoint / weights path
+    checkpoint_path: Path = Field(
+        description="Path to a .ckpt (Lightning) or .pt/.pth (raw state-dict) file"
+    )
+
+    # Export settings
+    output_path: Path = Field(
+        default=Path("model.onnx"),
+        description="Destination path for the exported ONNX file",
+    )
+    opset_version: int = Field(default=17, description="ONNX opset version")
+    simplify: bool = Field(default=True, description="Simplify the ONNX graph")
+    input_height: int = Field(default=640, description="Input image height")
+    input_width: int = Field(default=640, description="Input image width")
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _register_safe_globals() -> None:
+        """Allow omegaconf containers to be unpickled safely."""
+        torch.serialization.add_safe_globals(
+            [
+                omegaconf.listconfig.ListConfig,
+                omegaconf.dictconfig.DictConfig,
+                omegaconf.base.ContainerMetadata,
+                omegaconf.base.Metadata,
+                omegaconf.nodes.AnyNode,
+            ]
+        )
+
+    def _load_checkpoint(self) -> dict[str, Any]:
+        """Load a checkpoint file and return the raw dict."""
+        self._register_safe_globals()
+        logger.info(f"Loading checkpoint from {self.checkpoint_path}")
+        checkpoint: dict[str, Any] = torch.load(
+            self.checkpoint_path, map_location="cpu", weights_only=False
+        )
+        return checkpoint
+
+    # ------------------------------------------------------------------
+    # Task execution
+    # ------------------------------------------------------------------
+
+    def run(self) -> dict[str, str | None]:
+        """Load checkpoint weights into the model and export to ONNX.
+
+        Returns:
+            Dict with ``onnx_path`` pointing to the exported file.
+        """
+        # Resolve output directory
+        if self.output_dir is not None:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            onnx_out = self.output_dir / self.output_path
+        else:
+            onnx_out = self.output_path
+
+        # Load and apply weights
+        checkpoint = self._load_checkpoint()
+        state_dict = checkpoint.get("state_dict", checkpoint)
+        self.model.load_state_dict(state_dict)
+        logger.info("Checkpoint weights loaded successfully")
+
+        # Export via BaseDetectionModel.export_onnx
+        if not hasattr(self.model, "export_onnx"):
+            msg = (
+                f"Model {type(self.model).__name__} does not implement export_onnx. "
+                "Only BaseDetectionModel subclasses are supported."
+            )
+            raise AttributeError(msg)
+
+        onnx_path = self.model.export_onnx(  # type: ignore[operator]
+            output_path=str(onnx_out),
+            input_height=self.input_height,
+            input_width=self.input_width,
+            opset_version=self.opset_version,
+            simplify=self.simplify,
+        )
+        logger.info(f"ONNX model exported to {onnx_path}")
+
+        return {"onnx_path": onnx_path}
