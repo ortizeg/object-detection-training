@@ -1,0 +1,12 @@
+# ONNX Inference Task Configuration
+_target_: object_detection_training.tasks.ONNXInferenceTask
+name: inference_onnx
+model_path: ???        # Required: path to .onnx model file
+image_dir: ???         # Required: directory containing images
+label_map: ???         # Required: {0: "class_a", 1: "class_b", ...}
+post_processor_type: rfdetr
+confidence_threshold: 0.25
+nms_iou_threshold: 0.45
+input_height: 640
+input_width: 640
+batch_size: 1
