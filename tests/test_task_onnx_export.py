@@ -52,8 +52,8 @@ class TestONNXExportTaskInit:
         assert task.name == "export_onnx"
         assert task.opset_version == 17
         assert task.simplify is True
-        assert task.input_height == 640
-        assert task.input_width == 640
+        assert task.input_height is None
+        assert task.input_width is None
 
     def test_custom_opset(self, tmp_path: Path) -> None:
         """Opset version can be overridden."""
@@ -74,7 +74,7 @@ class TestONNXExportTaskInit:
 class TestONNXExportTaskRun:
     """Tests for the run() method."""
 
-    @patch("object_detection_training.tasks.torch")
+    @patch("object_detection_training.tasks.onnx_export_task.torch")
     def test_run_calls_export_onnx(self, mock_torch: MagicMock, tmp_path: Path) -> None:
         """run() loads checkpoint and calls model.export_onnx."""
         mock_torch.load.return_value = {"state_dict": {}}
@@ -97,7 +97,7 @@ class TestONNXExportTaskRun:
 
         assert "onnx_path" in result
 
-    @patch("object_detection_training.tasks.torch")
+    @patch("object_detection_training.tasks.onnx_export_task.torch")
     def test_run_handles_raw_state_dict(
         self, mock_torch: MagicMock, tmp_path: Path
     ) -> None:
@@ -111,7 +111,7 @@ class TestONNXExportTaskRun:
         # When there's no 'state_dict' key, the whole dict is the state dict
         task.model.load_state_dict.assert_called_once_with(raw_weights)
 
-    @patch("object_detection_training.tasks.torch")
+    @patch("object_detection_training.tasks.onnx_export_task.torch")
     def test_run_raises_without_export_onnx(
         self, mock_torch: MagicMock, tmp_path: Path
     ) -> None:
@@ -128,7 +128,7 @@ class TestONNXExportTaskRun:
         with pytest.raises(AttributeError, match="does not implement export_onnx"):
             task.run()
 
-    @patch("object_detection_training.tasks.torch")
+    @patch("object_detection_training.tasks.onnx_export_task.torch")
     def test_run_creates_output_dir(
         self, mock_torch: MagicMock, tmp_path: Path
     ) -> None:
@@ -150,7 +150,7 @@ class TestONNXExportTaskRun:
 class TestONNXExportTaskLoadCheckpoint:
     """Tests for checkpoint loading."""
 
-    @patch("object_detection_training.tasks.torch")
+    @patch("object_detection_training.tasks.onnx_export_task.torch")
     def test_registers_safe_globals(
         self, mock_torch: MagicMock, tmp_path: Path
     ) -> None:
@@ -162,7 +162,7 @@ class TestONNXExportTaskLoadCheckpoint:
 
         mock_torch.serialization.add_safe_globals.assert_called_once()
 
-    @patch("object_detection_training.tasks.torch")
+    @patch("object_detection_training.tasks.onnx_export_task.torch")
     def test_loads_with_cpu_map_location(
         self, mock_torch: MagicMock, tmp_path: Path
     ) -> None:
