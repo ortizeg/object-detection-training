@@ -177,11 +177,9 @@ class ONNXInferenceTask(BaseTask):
                 image_height=loader.height,
             )
             annotation = DetectionAnnotation(
-                image_filename=loader.filename,
-                image_width=loader.width,
-                image_height=loader.height,
-                label_map=self.label_map,
-                detections=detections,
+                filename=loader.filename,
+                categories=self.label_map,
+                annotations=detections,
             )
             writer.write(annotation)
             logger.debug(f"{loader.filename}: {len(detections)} detections")

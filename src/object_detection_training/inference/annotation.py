@@ -37,7 +37,8 @@ class DetectionAnnotationWriter:
         Returns:
             Path to the written JSON file.
         """
-        stem = Path(annotation.image_filename).stem
+
+        stem = Path(annotation.filename).stem
         out_path = self._output_dir / f"{stem}.json"
 
         # orjson produces bytes; use model_dump for clean serialization
@@ -50,7 +51,7 @@ class DetectionAnnotationWriter:
         )
 
         logger.debug(
-            f"Wrote annotation for {annotation.image_filename} "
-            f"({len(annotation.detections)} detections) -> {out_path}"
+            f"Wrote annotation for {annotation.filename} "
+            f"({len(annotation.annotations)} detections) -> {out_path}"
         )
         return out_path

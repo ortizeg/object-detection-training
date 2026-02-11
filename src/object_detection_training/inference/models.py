@@ -37,10 +37,8 @@ class DetectionAnnotation(BaseModel):
     it includes the label map so the file is interpretable in isolation.
     """
 
-    image_filename: str = Field(description="Original image filename")
-    image_width: int = Field(gt=0, description="Image width in pixels")
-    image_height: int = Field(gt=0, description="Image height in pixels")
-    label_map: dict[int, str] = Field(
+    filename: str = Field(description="Original image filename")
+    categories: dict[int, str] = Field(
         description="Mapping from class index to label name"
     )
-    detections: list[Detection] = Field(default_factory=list)
+    annotations: list[Detection] = Field(default_factory=list)
