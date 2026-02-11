@@ -59,7 +59,7 @@ class COCODataModule(L.LightningDataModule):
         patch_size: int = 16,
         num_windows: int = 4,
         use_cache: bool = False,
-        cache_type: Literal["ram", "disk"] = "disk",
+        cache_type: Literal["ram", "disk", "auto"] = "disk",
     ):
         """Initialize COCO data module.
 
@@ -86,8 +86,7 @@ class COCODataModule(L.LightningDataModule):
             patch_size: Patch size for multi-scale (used by transform YAML refs).
             num_windows: Windows for multi-scale (transform YAML refs).
             use_cache: Cache decoded images for faster loading.
-            cache_type: Cache backend - 'ram' (fastest, lost on exit) or
-                'disk' (SQLite, persists across runs).
+            cache_type: Cache backend - 'ram', 'disk', or 'auto'.
         """
         super().__init__()
         self.train_path = Path(train_path)

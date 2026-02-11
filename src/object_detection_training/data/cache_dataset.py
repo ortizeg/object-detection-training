@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
+import psutil  # type: ignore[import-untyped]
 import torch
 from loguru import logger
 from PIL import Image
@@ -112,10 +113,12 @@ class CacheDataset(
     Parameters
     ----------
     dataset:
-        The underlying DetectionDataset to cache.
+        The underlying DetectionDataset
     cache_type:
-        ``"ram"`` stores samples in a Python list (fastest reads, lost on
-        process exit).  ``"disk"`` persists to a SQLite DB (survives restarts).
+        Type of cache storage backend:
+        - "ram": Store decoded images in memory (fastest, high RAM usage).
+        - "disk": Store compressed images in SQLite (slower, low RAM usage).
+        - "auto": Automatically select based on available system RAM.
     cache_dir:
         Directory for the SQLite DB (disk mode only).  Defaults to
         ``{dataset.root_path}/.cache/``.
@@ -132,7 +135,7 @@ class CacheDataset(
     def __init__(
         self,
         dataset: DetectionDataset,
-        cache_type: Literal["ram", "disk"] = "disk",
+        cache_type: Literal["ram", "disk", "auto"] = "disk",
         cache_dir: str | Path | None = None,
         transforms: Any | None = None,
         rebuild: bool = False,
@@ -140,7 +143,11 @@ class CacheDataset(
     ) -> None:
         self._dataset = dataset
         self.transforms = transforms
-        self._cache_type = cache_type
+
+        if cache_type == "auto":
+            self._cache_type = self._resolve_cache_type()
+        else:
+            self._cache_type = cache_type
 
         if num_threads is None:
             # Default to reasonable number of threads for I/O bound work
@@ -156,7 +163,7 @@ class CacheDataset(
         self._db_path: Path | None = None
         self._conn: sqlite3.Connection | None = None
 
-        if cache_type == "ram":
+        if self._cache_type == "ram":
             self._build_ram_cache()
         else:
             # Determine cache location
@@ -406,3 +413,60 @@ class CacheDataset(
             f"cache_type='disk', cache={self._db_path}, "
             f"cached={len(self)} samples)"
         )
+
+    def _close(self) -> None:
+        """Close SQLite connection if open."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+    def _resolve_cache_type(self) -> Literal["ram", "disk"]:
+        """Determine whether to use RAM or disk cache based on available memory.
+
+        Uses dataset image dimensions (metadata) to estimate uncompressed RAM usage.
+        If estimated usage is < 50% of currently available system RAM, selects 'ram'.
+        Otherwise selects 'disk'.
+        """
+        try:
+            # Estimate dataset size in RAM (uncompressed uint8 pixels)
+            # stored as list of tuples (PIL Image, dict)
+            # Image: W * H * 3 bytes
+            # Target: negligible compared to image
+            total_pixels = self._estimate_dataset_pixels()
+            estimated_bytes = int(total_pixels * 3 * 1.2)  # 1.2x overhead
+
+            # Check system RAM
+            available_bytes = psutil.virtual_memory().available
+            threshold = available_bytes * 0.5
+
+            logger.info(
+                f"Auto-cache: Est. dataset size={estimated_bytes / 1e9:.2f}GB, "
+                f"Available RAM={available_bytes / 1e9:.2f}GB, "
+                f"Threshold={threshold / 1e9:.2f}GB"
+            )
+
+            if estimated_bytes < threshold:
+                logger.info("Auto-cache: Selected 'ram' mode")
+                return "ram"
+            else:
+                logger.info("Auto-cache: Selected 'disk' mode")
+                return "disk"
+
+        except Exception as e:
+            logger.warning(f"Auto-cache dispatch failed: {e}. Defaulting to 'disk'.")
+            return "disk"
+
+    def _estimate_dataset_pixels(self) -> int:
+        """Estimate total pixels in dataset using metadata (no image load)."""
+        try:
+            # DetectionDataset guarantees images_df with width/height columns
+            if self._dataset.images_df is not None:
+                widths = self._dataset.images_df["width"]
+                heights = self._dataset.images_df["height"]
+                return int((widths * heights).sum())
+        except Exception as e:
+            logger.debug(f"Could not access image metadata: {e}")
+
+        # Fallback if metadata unavailable
+        logger.warning("Could not access image metadata. Assuming 1920x1080 per image.")
+        return len(self._dataset) * 1920 * 1080

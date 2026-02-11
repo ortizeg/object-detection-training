@@ -12,6 +12,7 @@ import json
 import time
 from pathlib import Path
 from typing import Literal
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -332,3 +333,56 @@ class TestCacheDatasetBenchmark:
         print(f"{'=' * 60}")
 
         return speedup
+
+
+# ---------------------------------------------------------------------------
+# Auto Mode tests
+# ---------------------------------------------------------------------------
+class TestCacheDatasetAutoMode:
+    """Tests for cache_type='auto' logic."""
+
+    def test_auto_selects_ram(
+        self,
+        base_dataset: COCODetectionDataset,
+    ) -> None:
+        """Should select 'ram' if estimated size < 50% available RAM."""
+        # 20 images * 640 * 480 * 3 bytes ~= 18 MB
+        # Mock available RAM to 1 GB (plenty)
+        with mock.patch("psutil.virtual_memory") as mock_vm:
+            mock_vm.return_value.available = 1024**3  # 1 GB
+
+            cache = CacheDataset(
+                dataset=base_dataset,
+                cache_type="auto",
+            )
+            assert cache._cache_type == "ram"
+            assert cache._ram_cache is not None
+
+    def test_auto_selects_disk(
+        self,
+        base_dataset: COCODetectionDataset,
+    ) -> None:
+        """Should select 'disk' if estimated size >= 50% available RAM."""
+        # 18 MB dataset
+        # Mock available RAM to 20 MB -> threshold 10 MB -> 18 MB > 10 MB -> disk
+        with mock.patch("psutil.virtual_memory") as mock_vm:
+            mock_vm.return_value.available = 20 * 1024**2  # 20 MB
+
+            cache = CacheDataset(
+                dataset=base_dataset,
+                cache_type="auto",
+            )
+            assert cache._cache_type == "disk"
+            assert cache._ram_cache is None
+
+    def test_auto_fallback_on_error(
+        self,
+        base_dataset: COCODetectionDataset,
+    ) -> None:
+        """Should default to 'disk' if psutil fails."""
+        with mock.patch("psutil.virtual_memory", side_effect=ImportError):
+            cache = CacheDataset(
+                dataset=base_dataset,
+                cache_type="auto",
+            )
+            assert cache._cache_type == "disk"
