@@ -48,8 +48,13 @@ class ONNXInferenceTask(BaseTask):
     image_dir: Path = Field(description="Directory containing images")
 
     # Label map
-    label_map: dict[int, str] = Field(
-        description="Mapping from class index to label name"
+    label_map: dict[int, str] | None = Field(
+        default=None,
+        description="Mapping from class index to label name (optional if label_mapping_path is provided)",  # noqa: E501
+    )
+    label_mapping_path: Path | None = Field(
+        default=None,
+        description="Path to labels_mapping.json file (optional if label_map is provided)",  # noqa: E501
     )
 
     # Post-processing
@@ -85,11 +90,36 @@ class ONNXInferenceTask(BaseTask):
         from object_detection_training.inference.models import (
             DetectionAnnotation,
         )
+        from object_detection_training.schemas.label_mapping import (
+            LabelMapping,
+        )
 
         # Resolve output directory
         if self.output_dir is None:
             self.output_dir = Path("inference_output")
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Load label map
+        if self.label_map is None and self.label_mapping_path is None:
+            raise ValueError(
+                "Either 'label_map' or 'label_mapping_path' must be provided."
+            )
+
+        if self.label_mapping_path is not None:
+            logger.info(f"Loading label mapping from {self.label_mapping_path}")
+            mapping = LabelMapping.from_json(self.label_mapping_path)
+            # Use id_to_name from the loaded mapping
+            # Ensure keys are ints (JSON keys are always strings)
+            loaded_map = {int(k): v for k, v in mapping.id_to_name.items()}
+            if self.label_map is not None:
+                logger.warning(
+                    "Both 'label_map' and 'label_mapping_path' provided. "
+                    "Using 'label_mapping_path'."
+                )
+            self.label_map = loaded_map
+
+        if self.label_map is None:
+            raise ValueError("label_map must be initialized before running inference.")
 
         # Build post-processor
         registry = _init_post_processor_registry()
