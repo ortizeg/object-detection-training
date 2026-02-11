@@ -73,6 +73,10 @@ class ONNXInferenceTask(BaseTask):
     input_height: int = Field(default=640, description="Model input height")
     input_width: int = Field(default=640, description="Model input width")
     batch_size: int = Field(default=1, description="Batch size for inference")
+    providers: list[str] | None = Field(
+        default=None,
+        description="List of ONNX execution providers (e.g. ['CPUExecutionProvider'])",
+    )
 
     def run(self) -> dict[str, str | None]:
         """Run inference on all images and write annotation files.
@@ -147,6 +151,7 @@ class ONNXInferenceTask(BaseTask):
             input_height=self.input_height,
             input_width=self.input_width,
             batch_size=self.batch_size,
+            providers=self.providers,
         )
 
         # Discover images

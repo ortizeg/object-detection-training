@@ -44,6 +44,7 @@ class ONNXInferencer:
         batch_size: int = 1,
         image_mean: list[float] | None = None,
         image_std: list[float] | None = None,
+        providers: list[str] | None = None,
     ) -> None:
         self._model_path = Path(model_path)
         self.post_processor = post_processor
@@ -58,7 +59,7 @@ class ONNXInferencer:
         logger.info(f"Loading ONNX model from {self._model_path}")
         self._session = ort.InferenceSession(
             str(self._model_path),
-            providers=ort.get_available_providers(),
+            providers=providers or ort.get_available_providers(),
         )
         self._input_name = self._session.get_inputs()[0].name
         logger.info(
