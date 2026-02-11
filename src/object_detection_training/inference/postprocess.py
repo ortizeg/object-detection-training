@@ -64,23 +64,17 @@ class BasePostProcessor(ABC):
         h: float,
         confidence: float,
         class_id: int,
-    ) -> Detection | None:
-        """Create a single Detection with boundary clamping.
-
-        Returns ``None`` when the class id is missing from the label map.
-        """
-        label = self.label_map.get(class_id)
-        if label is None:
-            logger.debug(f"Unknown class id {class_id}, skipping")
-            return None
-
+    ) -> Detection:
+        """Create a single Detection with boundary clamping."""
         bbox = BoundingBox(
             x=float(np.clip(x, 0.0, 1.0)),
             y=float(np.clip(y, 0.0, 1.0)),
             w=float(np.clip(w, 0.0, 1.0)),
             h=float(np.clip(h, 0.0, 1.0)),
         )
-        return Detection(bbox=bbox, confidence=float(confidence), label=label)
+        return Detection(
+            bbox=bbox, confidence=float(confidence), class_id=int(class_id)
+        )
 
 
 class YOLOXPostProcessor(BasePostProcessor):
@@ -151,8 +145,7 @@ class YOLOXPostProcessor(BasePostProcessor):
                 confidence=float(scores[idx]),
                 class_id=int(class_ids[idx]),
             )
-            if det is not None:
-                detections.append(det)
+            detections.append(det)
 
         return detections
 
@@ -275,7 +268,6 @@ class RFDETRPostProcessor(BasePostProcessor):
                 confidence=float(scores[i]),
                 class_id=int(class_ids[i]),
             )
-            if det is not None:
-                detections.append(det)
+            detections.append(det)
 
         return detections
