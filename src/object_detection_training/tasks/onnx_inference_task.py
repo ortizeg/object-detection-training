@@ -84,14 +84,14 @@ class ONNXInferenceTask(BaseTask):
         Returns:
             Dict with ``output_dir`` and ``num_images`` processed.
         """
-        from object_detection_training.inference.annotation import (
-            DetectionAnnotationWriter,
-        )
-        from object_detection_training.inference.image import ImageLoader
         from object_detection_training.inference.inferencer import (
             ONNXInferencer,
         )
-        from object_detection_training.inference.models import (
+        from object_detection_training.io.annotation import (
+            DetectionAnnotationWriter,
+        )
+        from object_detection_training.io.image import ImageLoader
+        from object_detection_training.schemas.annotation import (
             DetectionAnnotation,
         )
         from object_detection_training.schemas.label_mapping import (

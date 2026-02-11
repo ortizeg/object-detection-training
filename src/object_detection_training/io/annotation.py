@@ -11,7 +11,7 @@ from pathlib import Path
 import orjson
 from loguru import logger
 
-from object_detection_training.inference.models import DetectionAnnotation
+from object_detection_training.schemas.annotation import DetectionAnnotation
 
 
 class DetectionAnnotationWriter:

@@ -16,8 +16,8 @@ import numpy.typing as npt
 import onnxruntime as ort  # type: ignore[import-untyped]
 from loguru import logger
 
-from object_detection_training.inference.models import Detection
 from object_detection_training.inference.postprocess import BasePostProcessor
+from object_detection_training.schemas.detection import Detection
 
 
 class ONNXInferencer:

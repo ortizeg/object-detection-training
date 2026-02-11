@@ -15,7 +15,7 @@ import numpy as np
 import numpy.typing as npt
 from loguru import logger
 
-from object_detection_training.inference.models import BoundingBox, Detection
+from object_detection_training.schemas.detection import BoundingBox, Detection
 
 
 class BasePostProcessor(ABC):
