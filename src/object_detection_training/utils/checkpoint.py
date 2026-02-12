@@ -45,4 +45,6 @@ def get_checkpoint_hparams(checkpoint_path: str | Path) -> dict[str, Any]:
     # Load on CPU to avoid CUDA errors if just peeking metadata
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
 
-    return checkpoint.get("hyper_parameters", {})
+    from typing import cast
+
+    return cast(dict[str, Any], checkpoint.get("hyper_parameters", {}))

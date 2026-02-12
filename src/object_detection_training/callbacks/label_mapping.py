@@ -15,19 +15,21 @@ class LabelMappingCallback(Callback):
 
     def on_train_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         """Save label mapping when training starts."""
-        if trainer.datamodule is None:
+        # Use getattr to avoid MyPy "Trainer has no attribute datamodule" error
+        datamodule = getattr(trainer, "datamodule", None)
+        if datamodule is None:
             return
 
         # Try to get class names from datamodule
         # Assuming datamodule exposes `class_names` property or attribute
-        if hasattr(trainer.datamodule, "class_names"):
-            class_names = trainer.datamodule.class_names
-        elif hasattr(trainer.datamodule, "classes"):
-            class_names = trainer.datamodule.classes
-        elif hasattr(trainer.datamodule, "train_dataset") and hasattr(
-            trainer.datamodule.train_dataset, "classes"
+        if hasattr(datamodule, "class_names"):
+            class_names = datamodule.class_names
+        elif hasattr(datamodule, "classes"):
+            class_names = datamodule.classes
+        elif hasattr(datamodule, "train_dataset") and hasattr(
+            datamodule.train_dataset, "classes"
         ):
-            class_names = trainer.datamodule.train_dataset.classes
+            class_names = datamodule.train_dataset.classes
         else:
             # Fallback or warning if classes not found
             return
