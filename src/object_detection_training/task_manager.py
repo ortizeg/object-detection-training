@@ -110,42 +110,89 @@ def main(cfg: DictConfig) -> None:
     output_dir = HydraConfig.get().runtime.output_dir
     logger.info(f"Output directory: {output_dir}")
 
-    # Instantiate components
-    # Note: Instantiate datamodule first to get num_classes for model
-    logger.info("Instantiating datamodule...")
-    datamodule = instantiate_datamodule(cfg.data)
+    # Determine which task we are running
+    task_target = cfg.task.get("_target_", "")
 
-    # Auto-detect num_classes from data if model doesn't specify it
-    if not isinstance(datamodule, COCODataModule):
-        raise RuntimeError(
-            f"DataModule must provide num_classes. Got {type(datamodule).__name__}"
+    if "ONNXExportTask" in task_target:
+        # ---- ONNX Export: only need the model, no data/trainer ----
+        logger.info("Instantiating model for ONNX export...")
+        model_kwargs: dict[str, Any] = {}
+        task_num_classes = cfg.task.get("num_classes")
+
+        if task_num_classes is not None:
+            model_kwargs["num_classes"] = task_num_classes
+        else:
+            # Try to infer from checkpoint
+            ckpt_path = cfg.task.get("checkpoint_path")
+            if ckpt_path:
+                try:
+                    from object_detection_training.utils.checkpoint import (
+                        get_checkpoint_hparams,
+                    )
+
+                    hparams = get_checkpoint_hparams(ckpt_path)
+                    ckpt_num_classes = hparams.get("num_classes")
+                    # Check if 'num_classes' in checkpoint is foreground or total?
+                    # RFDETRLightningModel saves `num_classes` which is foreground
+                    # count (e.g. 10 or 80) and internally adds +1 for background.
+                    # So passing this value to __init__ should be correct.
+                    if ckpt_num_classes is not None:
+                        logger.info(
+                            f"Inferred num_classes={ckpt_num_classes} from checkpoint"
+                        )
+                        model_kwargs["num_classes"] = ckpt_num_classes
+                except Exception as e:
+                    logger.warning(f"Could not infer num_classes from checkpoint: {e}")
+
+        model = instantiate_model(cfg.models, **model_kwargs)
+
+        logger.info("Instantiating task...")
+        task = hydra.utils.instantiate(
+            cfg.task,
+            output_dir=output_dir,
+            model=model,
         )
-    num_classes = datamodule.num_classes
-    logger.info(f"Auto-detected num_classes={num_classes} from dataset")
+    elif "ONNXInferenceTask" in task_target:
+        # ---- ONNX Inference: no model/data/trainer needed ----
+        logger.info("Instantiating task...")
+        task = hydra.utils.instantiate(
+            cfg.task,
+            output_dir=output_dir,
+        )
+    else:
+        # ---- Default (training): full component instantiation ----
+        logger.info("Instantiating datamodule...")
+        datamodule = instantiate_datamodule(cfg.data)
 
-    logger.info("Instantiating model...")
-    model = instantiate_model(cfg.models, num_classes=num_classes)
+        if not isinstance(datamodule, COCODataModule):
+            raise RuntimeError(
+                f"DataModule must provide num_classes. Got {type(datamodule).__name__}"
+            )
+        num_classes = datamodule.num_classes
+        logger.info(f"Auto-detected num_classes={num_classes} from dataset")
 
-    logger.info("Instantiating callbacks...")
-    callbacks = instantiate_callbacks(cfg.callbacks)
+        logger.info("Instantiating model...")
+        model = instantiate_model(cfg.models, num_classes=num_classes)
 
-    logger.info("Instantiating loggers...")
-    loggers = instantiate_loggers(cfg.get("logging"))
+        logger.info("Instantiating callbacks...")
+        callbacks = instantiate_callbacks(cfg.callbacks)
 
-    logger.info("Instantiating trainer...")
-    trainer = instantiate_trainer(cfg.trainer, callbacks=callbacks, loggers=loggers)
+        logger.info("Instantiating loggers...")
+        loggers = instantiate_loggers(cfg.get("logging"))
 
-    # Instantiate and run the task with all components
-    logger.info("Instantiating task...")
-    task = hydra.utils.instantiate(
-        cfg.task,
-        output_dir=output_dir,
-        model=model,
-        data=datamodule,
-        trainer=trainer,
-        callbacks=callbacks,
-        loggers=loggers,
-    )
+        logger.info("Instantiating trainer...")
+        trainer = instantiate_trainer(cfg.trainer, callbacks=callbacks, loggers=loggers)
+
+        logger.info("Instantiating task...")
+        task = hydra.utils.instantiate(
+            cfg.task,
+            output_dir=output_dir,
+            model=model,
+            data=datamodule,
+            trainer=trainer,
+            callbacks=callbacks,
+            loggers=loggers,
+        )
 
     logger.info(f"Task type: {type(task).__name__}")
     result = task()
