@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 import lightning as L
 import torch
 from loguru import logger
 from torchvision.transforms import v2
 
+from object_detection_training.data.cache_dataset import CacheDataset
 from object_detection_training.data.coco_detection_dataset import COCODetectionDataset
 from object_detection_training.models.rfdetr.collate import collate_fn
 from object_detection_training.types import DetectionTarget
@@ -56,6 +58,8 @@ class COCODataModule(L.LightningDataModule):
         skip_random_resize: bool = True,
         patch_size: int = 16,
         num_windows: int = 4,
+        use_cache: bool = False,
+        cache_type: Literal["ram", "disk", "auto"] = "disk",
     ):
         """Initialize COCO data module.
 
@@ -81,6 +85,8 @@ class COCODataModule(L.LightningDataModule):
             skip_random_resize: Skip random resize (used by transform YAML refs).
             patch_size: Patch size for multi-scale (used by transform YAML refs).
             num_windows: Windows for multi-scale (transform YAML refs).
+            use_cache: Cache decoded images for faster loading.
+            cache_type: Cache backend - 'ram', 'disk', or 'auto'.
         """
         super().__init__()
         self.train_path = Path(train_path)
@@ -130,6 +136,10 @@ class COCODataModule(L.LightningDataModule):
         # Category filtering and size thresholds
         self.selected_categories = selected_categories
         self.size_thresholds = size_thresholds or {"small": 32, "medium": 96}
+
+        # Caching
+        self.use_cache = use_cache
+        self.cache_type = cache_type
 
         # Lazy-loaded detection dataset for DataFrame access
         self._train_detection_dataset: COCODetectionDataset | None = None
@@ -263,6 +273,13 @@ class COCODataModule(L.LightningDataModule):
                 mixup_prob=self._mixup_prob,
                 post_transforms=self.post_mosaic_transforms,
             )
+        elif self.use_cache:
+            self._train_detection_dataset.transforms = None
+            train_dataset = CacheDataset(  # type: ignore[assignment]
+                self._train_detection_dataset,
+                cache_type=self.cache_type,
+                transforms=self.train_transforms,
+            )
         else:
             self._train_detection_dataset.transforms = self.train_transforms
             train_dataset = self._train_detection_dataset  # type: ignore[assignment]
@@ -281,10 +298,20 @@ class COCODataModule(L.LightningDataModule):
         self,
     ) -> torch.utils.data.DataLoader[tuple[torch.Tensor, DetectionTarget]]:
         """Return validation data loader using new COCODetectionDataset."""
-        val_dataset = self._create_detection_dataset(self.val_path, "val")
-        val_dataset.transforms = self.val_transforms
+        val_dataset_raw = self._create_detection_dataset(self.val_path, "val")
+        val_dataset: torch.utils.data.Dataset[tuple[torch.Tensor, DetectionTarget]]
+        if self.use_cache:
+            val_dataset_raw.transforms = None
+            val_dataset = CacheDataset(  # type: ignore[assignment]
+                val_dataset_raw,
+                cache_type=self.cache_type,
+                transforms=self.val_transforms,
+            )
+        else:
+            val_dataset_raw.transforms = self.val_transforms
+            val_dataset = val_dataset_raw  # type: ignore[assignment]
         return torch.utils.data.DataLoader(
-            val_dataset,  # type: ignore[arg-type]
+            val_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
