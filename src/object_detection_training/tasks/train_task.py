@@ -1,46 +1,17 @@
 """
-Task abstractions using Pydantic for configuration validation.
-
-This module provides the base task interface and concrete task implementations
-for the object detection training framework.
+Training Task.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from pathlib import Path
 
 import lightning as L
 from loguru import logger
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
 
+from object_detection_training.tasks.base_task import BaseTask
 from object_detection_training.utils.hydra import register
-
-
-class BaseTask(BaseModel, ABC):
-    """
-    Abstract base task with Pydantic validation.
-
-    All tasks inherit from this class to define their configuration schema
-    and execution logic.
-    """
-
-    name: str = Field(description="Name of the task")
-    output_dir: Path | None = Field(
-        default=None, description="Output directory for task artifacts"
-    )
-
-    model_config = {"extra": "forbid", "arbitrary_types_allowed": True}
-
-    @abstractmethod
-    def run(self) -> dict[str, str | None]:
-        """Execute the task."""
-        pass
-
-    def __call__(self) -> dict[str, str | None]:
-        """Allow tasks to be called directly."""
-        logger.info(f"Running task: {self.name}")
-        return self.run()
 
 
 @register(group="task")
@@ -100,8 +71,6 @@ class TrainTask(BaseTask):
         Returns:
             Training results including metrics and checkpoint paths.
         """
-        import lightning as L
-
         from object_detection_training.utils.seed import seed_everything
 
         # Set seed for reproducibility

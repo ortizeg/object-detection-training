@@ -1,0 +1,26 @@
+# Specialized Export Task for Basketball RF-DETR Small
+
+defaults:
+  - /models@model: RFDETRSmall
+
+_target_: object_detection_training.tasks.ONNXExportTask
+name: basketball_export_onnx
+output_path: model.onnx  # Will be relative to Hydra output dir
+
+# Checkpoint path must be provided by user via CLI:
+# task.checkpoint_path=/path/to/checkpoint.ckpt
+checkpoint_path: ???
+
+# Export settings
+opset_version: 17
+simplify: true
+
+# Dimensions are inferred from checkpoint if None
+input_height: null
+input_width: null
+
+# Num classes inferred from checkpoint if None (e.g. 10 foreground -> 11 total)
+num_classes: null
+
+# Enable dynamic batch size (axis 0)
+dynamic_batch: true
