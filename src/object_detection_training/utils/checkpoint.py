@@ -5,7 +5,7 @@ Utilities for loading and inspecting checkpoints.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import omegaconf
 import torch
@@ -45,4 +45,4 @@ def get_checkpoint_hparams(checkpoint_path: str | Path) -> dict[str, Any]:
     # Load on CPU to avoid CUDA errors if just peeking metadata
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
 
-    return checkpoint.get("hyper_parameters", {})
+    return cast(dict[str, Any], checkpoint.get("hyper_parameters", {}))
