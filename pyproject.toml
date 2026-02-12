@@ -38,6 +38,7 @@ dependencies = [
     "tensorboard",
     "supervision",
     "peft",
+    "onnxruntime",
 ]
 
 [project.scripts]

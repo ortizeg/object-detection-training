@@ -72,3 +72,4 @@ orjson = "*"  # Fast JSON parsing for dataset loading
 supervision = "*"
 peft = "*"
 mkdocstrings = { version = "*", extras = ["python"] }
+onnxruntime = ">=1.23.2, <2"
