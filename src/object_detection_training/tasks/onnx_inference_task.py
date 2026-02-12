@@ -92,6 +92,7 @@ class ONNXInferenceTask(BaseTask):
         )
         from object_detection_training.io.image import ImageLoader
         from object_detection_training.schemas.annotation import (
+            AnnotationInfo,
             DetectionAnnotation,
         )
         from object_detection_training.schemas.label_mapping import (
@@ -179,6 +180,11 @@ class ONNXInferenceTask(BaseTask):
             annotation = DetectionAnnotation(
                 filename=loader.filename,
                 categories=self.label_map,
+                info=AnnotationInfo(
+                    annotations_source=self.post_processor_type,
+                    image_width=loader.width,
+                    image_height=loader.height,
+                ),
                 annotations=detections,
             )
             writer.write(annotation)

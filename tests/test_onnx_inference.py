@@ -15,18 +15,21 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 
-from object_detection_training.inference.annotation import (
-    DetectionAnnotationWriter,
-)
-from object_detection_training.inference.image import ImageLoader
-from object_detection_training.inference.models import (
-    BoundingBox,
-    Detection,
-    DetectionAnnotation,
-)
 from object_detection_training.inference.postprocess import (
     RFDETRPostProcessor,
     YOLOXPostProcessor,
+)
+from object_detection_training.io.annotation import (
+    DetectionAnnotationWriter,
+)
+from object_detection_training.io.image import ImageLoader
+from object_detection_training.schemas.annotation import (
+    AnnotationInfo,
+    DetectionAnnotation,
+)
+from object_detection_training.schemas.detection import (
+    BoundingBox,
+    Detection,
 )
 
 # =========================================================================
@@ -55,27 +58,27 @@ class TestDetection:
         det = Detection(
             bbox=BoundingBox(x=0.1, y=0.2, w=0.3, h=0.4),
             confidence=0.95,
-            label="person",
+            class_id=0,
         )
         assert det.confidence == pytest.approx(0.95)
-        assert det.label == "person"
+        assert det.class_id == 0
 
     def test_confidence_bounds(self) -> None:
         with pytest.raises(Exception):  # noqa: B017
             Detection(
                 bbox=BoundingBox(x=0.0, y=0.0, w=0.1, h=0.1),
                 confidence=1.5,
-                label="x",
+                class_id=0,
             )
 
     def test_frozen(self) -> None:
         det = Detection(
             bbox=BoundingBox(x=0.0, y=0.0, w=0.1, h=0.1),
             confidence=0.5,
-            label="a",
+            class_id=0,
         )
         with pytest.raises(Exception):  # noqa: B017
-            det.label = "b"  # type: ignore[misc]
+            det.class_id = 1  # type: ignore[misc]
 
 
 class TestDetectionAnnotation:
@@ -83,37 +86,37 @@ class TestDetectionAnnotation:
 
     def test_creation(self) -> None:
         ann = DetectionAnnotation(
-            image_filename="test.jpg",
-            image_width=640,
-            image_height=480,
-            label_map={0: "person"},
+            filename="test.jpg",
+            categories={0: "person"},
+            info=AnnotationInfo(annotations_source="manual"),
         )
-        assert ann.image_filename == "test.jpg"
-        assert ann.detections == []
+        assert ann.filename == "test.jpg"
+        assert ann.annotations == []
 
     def test_with_detections(self) -> None:
         det = Detection(
             bbox=BoundingBox(x=0.1, y=0.2, w=0.3, h=0.4),
             confidence=0.9,
-            label="ball",
+            class_id=0,
         )
         ann = DetectionAnnotation(
-            image_filename="frame.png",
-            image_width=1920,
-            image_height=1080,
-            label_map={0: "ball"},
-            detections=[det],
+            filename="frame.png",
+            categories={0: "ball"},
+            info=AnnotationInfo(annotations_source="manual"),
+            annotations=[det],
         )
-        assert len(ann.detections) == 1
+        assert len(ann.annotations) == 1
 
-    def test_invalid_dimensions(self) -> None:
-        with pytest.raises(Exception):  # noqa: B017
-            DetectionAnnotation(
-                image_filename="x.jpg",
-                image_width=0,
-                image_height=480,
-                label_map={},
-            )
+    def test_info_field(self) -> None:
+        info = AnnotationInfo(annotations_source="test")
+        ann = DetectionAnnotation(
+            filename="test.jpg",
+            categories={},
+            info=info,
+        )
+        assert ann.info == info
+        assert ann.info.annotations_source == "test"
+        assert ann.info.created_at is not None
 
 
 # =========================================================================
@@ -128,7 +131,7 @@ class TestImageLoader:
         with pytest.raises(FileNotFoundError):
             ImageLoader(tmp_path / "nonexistent.jpg")
 
-    @patch("object_detection_training.inference.image.cv2")
+    @patch("object_detection_training.io.image.cv2")
     def test_read_returns_image(self, mock_cv2: MagicMock, tmp_path: Path) -> None:
         img_path = tmp_path / "test.jpg"
         img_path.touch()
@@ -142,7 +145,7 @@ class TestImageLoader:
         mock_cv2.imread.assert_called_once_with(str(img_path))
         assert result.shape == (480, 640, 3)
 
-    @patch("object_detection_training.inference.image.cv2")
+    @patch("object_detection_training.io.image.cv2")
     def test_properties(self, mock_cv2: MagicMock, tmp_path: Path) -> None:
         img_path = tmp_path / "frame.png"
         img_path.touch()
@@ -154,7 +157,7 @@ class TestImageLoader:
         assert loader.height == 720
         assert loader.filename == "frame.png"
 
-    @patch("object_detection_training.inference.image.cv2")
+    @patch("object_detection_training.io.image.cv2")
     def test_read_failure(self, mock_cv2: MagicMock, tmp_path: Path) -> None:
         img_path = tmp_path / "bad.jpg"
         img_path.touch()
@@ -196,8 +199,8 @@ class TestYOLOXPostProcessor:
 
         assert len(dets) >= 1
         assert all(isinstance(d, Detection) for d in dets)
-        # First detection should be "person"
-        assert dets[0].label == "person"
+        # First detection should be "person" (class 0)
+        assert dets[0].class_id == 0
 
     def test_threshold_filters(self) -> None:
         pp = YOLOXPostProcessor(LABEL_MAP, confidence_threshold=0.99)
@@ -247,7 +250,7 @@ class TestRFDETRPostProcessor:
         dets = pp(outputs, image_width=640, image_height=480)
 
         assert len(dets) == 1
-        assert dets[0].label == "person"
+        assert dets[0].class_id == 0
         assert dets[0].confidence > 0.9
 
     def test_threshold_filters(self) -> None:
@@ -275,7 +278,7 @@ class TestRFDETRPostProcessor:
         dets = pp(swapped, image_width=640, image_height=480)
 
         assert len(dets) == 1
-        assert dets[0].label == "person"
+        assert dets[0].class_id == 0
 
 
 # =========================================================================
@@ -289,15 +292,14 @@ class TestDetectionAnnotationWriter:
     def test_write_creates_json(self, tmp_path: Path) -> None:
         writer = DetectionAnnotationWriter(tmp_path / "annotations")
         ann = DetectionAnnotation(
-            image_filename="frame_001.jpg",
-            image_width=640,
-            image_height=480,
-            label_map={0: "person"},
-            detections=[
+            filename="frame_001.jpg",
+            categories={0: "person"},
+            info=AnnotationInfo(annotations_source="test_model"),
+            annotations=[
                 Detection(
                     bbox=BoundingBox(x=0.1, y=0.2, w=0.3, h=0.4),
                     confidence=0.9,
-                    label="person",
+                    class_id=0,
                 )
             ],
         )
@@ -308,18 +310,17 @@ class TestDetectionAnnotationWriter:
         assert out_path.stem == "frame_001"
 
         data = json.loads(out_path.read_text())
-        assert data["image_filename"] == "frame_001.jpg"
-        assert len(data["detections"]) == 1
-        assert data["detections"][0]["bbox"]["x"] == pytest.approx(0.1)
+        assert data["filename"] == "frame_001.jpg"
+        assert len(data["annotations"]) == 1
+        assert data["annotations"][0]["bbox"]["x"] == pytest.approx(0.1)
 
     def test_write_creates_output_dir(self, tmp_path: Path) -> None:
         out_dir = tmp_path / "nested" / "output"
         writer = DetectionAnnotationWriter(out_dir)
         ann = DetectionAnnotation(
-            image_filename="test.jpg",
-            image_width=100,
-            image_height=100,
-            label_map={},
+            filename="test.jpg",
+            categories={},
+            info=AnnotationInfo(annotations_source="test"),
         )
         writer.write(ann)
         assert out_dir.exists()
@@ -328,15 +329,18 @@ class TestDetectionAnnotationWriter:
         """Write and read back, verify data integrity."""
         writer = DetectionAnnotationWriter(tmp_path)
         original = DetectionAnnotation(
-            image_filename="img.png",
-            image_width=1920,
-            image_height=1080,
-            label_map={0: "person", 1: "ball"},
-            detections=[
+            filename="img.png",
+            categories={0: "person", 1: "ball"},
+            info=AnnotationInfo(
+                annotations_source="test_roundtrip",
+                image_width=1920,
+                image_height=1080,
+            ),
+            annotations=[
                 Detection(
                     bbox=BoundingBox(x=0.5, y=0.5, w=0.1, h=0.1),
                     confidence=0.75,
-                    label="ball",
+                    class_id=1,
                 ),
             ],
         )
@@ -385,7 +389,7 @@ class TestONNXInferencer:
 
         session_mock.run.assert_called_once()
         assert len(dets) == 1
-        assert dets[0].label == "person"
+        assert dets[0].class_id == 0
 
     @patch("object_detection_training.inference.inferencer.ort")
     def test_predict_batch(self, mock_ort: MagicMock) -> None:
