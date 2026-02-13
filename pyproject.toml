@@ -110,7 +110,7 @@ disable_error_code = ["misc"]
 
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
-build_command = "pip install flit && flit build"
+build_command = "pip install build && python -m build"
 
 [tool.semantic_release.branches.main]
 match = "main"
