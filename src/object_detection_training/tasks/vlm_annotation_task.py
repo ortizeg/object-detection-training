@@ -7,6 +7,13 @@ from pathlib import Path
 from loguru import logger
 from pydantic import Field
 
+from object_detection_training.inference.gemini_inferencer import GeminiInferencer
+from object_detection_training.io.annotation import DetectionAnnotationWriter
+from object_detection_training.io.image import ImageLoader
+from object_detection_training.schemas.annotation import (
+    AnnotationInfo,
+    DetectionAnnotation,
+)
 from object_detection_training.tasks.base_task import BaseTask
 from object_detection_training.utils.hydra import register
 
@@ -41,18 +48,6 @@ class VLMAnnotationTask(BaseTask):
         Returns:
             Dict with ``output_dir`` and ``num_images`` processed.
         """
-        from object_detection_training.inference.gemini_inferencer import (
-            GeminiInferencer,
-        )
-        from object_detection_training.io.annotation import (
-            DetectionAnnotationWriter,
-        )
-        from object_detection_training.io.image import ImageLoader
-        from object_detection_training.schemas.annotation import (
-            AnnotationInfo,
-            DetectionAnnotation,
-        )
-
         # Resolve output directory
         if self.output_dir is None:
             self.output_dir = Path("vlm_annotations")

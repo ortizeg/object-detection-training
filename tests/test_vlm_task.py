@@ -17,9 +17,9 @@ def test_vlm_task_initialization(tmp_path):
 
 
 @patch(
-    "object_detection_training.inference.gemini_inferencer.GeminiInferencer",
+    "object_detection_training.tasks.vlm_annotation_task.GeminiInferencer",
 )
-@patch("object_detection_training.io.image.ImageLoader")
+@patch("object_detection_training.tasks.vlm_annotation_task.ImageLoader")
 def test_vlm_task_run(mock_loader_cls, mock_inferencer_cls, tmp_path):
     """Full task run with mocked inferencer and image loader."""
     # Mock image path
