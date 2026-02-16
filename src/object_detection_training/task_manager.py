@@ -48,7 +48,7 @@ if not hasattr(onnx.helper, "float32_to_bfloat16"):
         y = np.ascontiguousarray(x).view(np.uint32)
         return (y >> 16).astype(np.uint16)
 
-    onnx.helper.float32_to_bfloat16 = float32_to_bfloat16  # type: ignore[attr-defined]
+    onnx.helper.float32_to_bfloat16 = float32_to_bfloat16  # type: ignore[assignment]
 
 
 # Configure loguru to show logs based on level

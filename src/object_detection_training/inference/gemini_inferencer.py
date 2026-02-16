@@ -9,6 +9,7 @@ import time
 import numpy as np
 import numpy.typing as npt
 from google import genai
+from google.genai.types import GenerateContentConfig
 from loguru import logger
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -74,10 +75,10 @@ class GeminiInferencer(BaseInferencer):
             raise RuntimeError(msg)
 
         self._client = genai.Client(api_key=api_key)
-        self._config = {
-            "response_mime_type": "application/json",
-            "response_schema": list[GeminiDetection],
-        }
+        self._config = GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=list[GeminiDetection],
+        )
 
         self._prompt = prompt_template or (
             f"Detect all instances of: {', '.join(classes)}. "
@@ -111,14 +112,16 @@ class GeminiInferencer(BaseInferencer):
         backoff = self._INITIAL_BACKOFF
         for attempt in range(1, self._MAX_RETRIES + 1):
             try:
+                contents: list[str | Image.Image] = [self._prompt, rgb_image]
                 response = self._client.models.generate_content(
                     model=self.model_name,
-                    contents=[self._prompt, rgb_image],
+                    contents=contents,  # type: ignore[arg-type]
                     config=self._config,
                 )
 
                 if response.parsed:
-                    return self._map_detections(response.parsed)
+                    parsed: list[GeminiDetection] = response.parsed  # type: ignore[assignment]
+                    return self._map_detections(parsed)
 
                 if response.text:
                     return self._parse_text_fallback(response.text)
