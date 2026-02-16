@@ -18,19 +18,15 @@ from object_detection_training.inference.base_inferencer import BaseInferencer
 from object_detection_training.schemas.detection import BoundingBox, Detection
 
 
-class GeminiBBox(BaseModel):
-    """Bounding box in top-left x/y, width, height format normalized to [0, 1]."""
-
-    x: float = Field(description="Top-left x (normalised 0-1)")
-    y: float = Field(description="Top-left y (normalised 0-1)")
-    w: float = Field(description="Width (normalised 0-1)")
-    h: float = Field(description="Height (normalised 0-1)")
-
-
 class GeminiDetection(BaseModel):
-    """Single detection result from Gemini."""
+    """Gemini response schema for a single detection.
 
-    bbox: GeminiBBox
+    Unlike ``Detection`` (which uses ``class_id: int``), this model uses a
+    string ``label`` because Gemini returns text labels that are mapped to
+    integer IDs after parsing.
+    """
+
+    bbox: BoundingBox
     label: str
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
@@ -194,14 +190,8 @@ class GeminiInferencer(BaseInferencer):
                 )
                 continue
 
-            bbox = BoundingBox(
-                x=_clamp01(det.bbox.x),
-                y=_clamp01(det.bbox.y),
-                w=_clamp01(det.bbox.w),
-                h=_clamp01(det.bbox.h),
-            )
             results.append(
-                Detection(bbox=bbox, confidence=det.confidence, class_id=class_id)
+                Detection(bbox=det.bbox, confidence=det.confidence, class_id=class_id)
             )
         return results
 
@@ -225,8 +215,3 @@ class GeminiInferencer(BaseInferencer):
                 logger.debug("Skipping unparseable item: %s", item)
 
         return self._map_detections(gemini_dets)
-
-
-def _clamp01(value: float) -> float:
-    """Clamp *value* to [0, 1]."""
-    return max(0.0, min(1.0, value))
