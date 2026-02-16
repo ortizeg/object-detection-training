@@ -5,166 +5,78 @@
 
 # Object Detection Training
 
-Training framework for object detection models (RFDETR and YOLOX) built with PyTorch Lightning, Hydra, and Pixi.
+End-to-end object detection framework for training, exporting, and annotating with modern architectures and vision-language models.
 
-## Prerequisites
+**Train** detectors (RFDETR, YOLOX) with PyTorch Lightning and Hydra config management. **Export** to ONNX for production inference. **Annotate** datasets at scale using VLM-powered labeling with Google Gemini.
 
-- **Pixi**: A package management tool. Install it from [pixi.sh](https://pixi.sh).
-- **CUDA 12.1**: Required for GPU acceleration (linux/windows) or appropriate drivers for macOS (MPS).
+## Features
 
-## Installation
+- **Multi-architecture training** &mdash; RFDETR (transformer-based) and YOLOX (anchor-free) with a unified Lightning training loop
+- **Hydra configuration** &mdash; hierarchical YAML configs with full CLI override support for models, datasets, callbacks, and trainers
+- **ONNX export & inference** &mdash; one-command checkpoint-to-ONNX conversion with built-in inference pipeline and pluggable post-processors
+- **VLM annotation** &mdash; generate detection annotations from images using Gemini, with structured JSON output, retry logic, and configurable class taxonomies
+- **Experiment tracking** &mdash; Weights & Biases and TensorBoard integration
+- **Production-ready** &mdash; Docker builds for GCP Vertex AI, pre-commit hooks, strict MyPy typing, 280+ unit tests
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/ortizeg/object-detection-training.git
-    cd object-detection-training
-    ```
+## Quick Start
 
-2.  **Install dependencies:**
-    Pixi will automatically handle environment setup and dependency installation when you run any task.
-    ```bash
-    ./scripts/dev-install.sh
-    ```
+### Prerequisites
 
-## Usage
+- [Pixi](https://pixi.sh) for environment and dependency management
+- CUDA 12.1 (Linux/Windows) or MPS (macOS) for GPU acceleration
 
-This project uses `pixi` to manage tasks.
-
-### Training
-
-To start the training process:
+### Install & Run
 
 ```bash
+git clone https://github.com/ortizeg/object-detection-training.git
+cd object-detection-training
+./scripts/dev-install.sh
+
+# Train a detector
 pixi run train
-```
-This runs `src/object_detection_training/task_manager.py`.
-You can customize the training configuration by modifying `src/object_detection_training/conf/train.yaml` or passing overrides to Hydra:
-```bash
-pixi run train -- training.epochs=50
-```
 
-### Testing
+# Export to ONNX
+pixi run task_manager task=onnx_export task.checkpoint_path=model.ckpt
 
-To run the unit tests:
+# Run VLM annotation with Gemini
+export GOOGLE_API_KEY=<your-key>
+pixi run task_manager task=basketball_gemini task.image_dir=/path/to/images
 
-```bash
-pixi run test
+# Override any config from CLI
+pixi run train -- training.epochs=50 model.learning_rate=0.001
 ```
-This executes `pytest`.
 
 ### Code Quality
 
-To format the code using `ruff`:
 ```bash
-pixi run format
+pixi run format       # Ruff formatter
+pixi run lint         # Ruff linter
+pixi run typecheck    # MyPy strict mode
+pixi run test         # Pytest suite
 ```
 
-To lint the code using `ruff`:
-```bash
-pixi run lint
+## Architecture
+
+```
+src/object_detection_training/
+  models/          RFDETR and YOLOX with Lightning module wrappers
+  inference/       ONNX runtime and Gemini VLM inference engines
+  callbacks/       EMA, ONNX export, plotting, visualization
+  data/            COCO data modules with SQLite-cached datasets
+  tasks/           Training, ONNX export, ONNX inference, VLM annotation
+  conf/            Hydra YAML configs (models, data, callbacks, tasks)
+  schemas/         Pydantic models for detections and annotations
 ```
 
-To type-check using `mypy`:
-```bash
-pixi run typecheck
-```
-
-## Docker Build
-
-The project includes Docker support for running training jobs on GCP Vertex AI.
-
-### Cloud Build (Recommended)
-
-Cloud Build runs the Docker build on GCP infrastructure, which is much faster than building locally on ARM Macs (no cross-compilation, no large image upload over home internet).
-
-```bash
-# Submit build to Cloud Build
-./scripts/cloud-build.sh
-# or
-pixi run build
-
-# Preview the command without submitting
-./scripts/cloud-build.sh --dry-run
-```
-
-**What happens:**
-1. Your code is uploaded as a ~50MB tarball to Cloud Build
-2. Cloud Build pulls the previous `:latest` image for layer caching
-3. Builds the AMD64 image natively (2-5 min with cache)
-4. Pushes to Artifact Registry with both `:SHORT_SHA` and `:latest` tags
-
-**Prerequisites:**
-- `gcloud` CLI configured with your project: `gcloud config set project <PROJECT_ID>`
-- Cloud Build API enabled: `gcloud services enable cloudbuild.googleapis.com`
-- Artifact Registry repository exists (created separately)
-
-### Local Build
-
-For testing Docker builds locally without pushing:
+## Docker
 
 ```bash
-./scripts/build-docker.sh --local
-# or
-pixi run build-local
+pixi run build         # Cloud Build on GCP (fast, cached)
+pixi run build-local   # Local Docker build
 ```
 
-To build and push from your local machine (slower on ARM Macs):
-
-```bash
-./scripts/build-docker.sh
-```
-
-### Runtime Secrets
-
-The Docker image does not contain secrets. `WANDB_API_KEY` and other credentials must be injected at runtime via environment variables (e.g., in Vertex AI job specs).
-
-## Project Structure
-
-```
-.
-├── src/object_detection_training/    # Main source code
-│   ├── models/                       # Model implementations
-│   │   ├── yolox/                   # YOLOX model family
-│   │   ├── rfdetr/                  # RFDETR model family
-│   │   ├── yolox_lightning.py       # Lightning module for YOLOX
-│   │   └── rfdetr_lightning.py      # Lightning module for RFDETR
-│   ├── callbacks/                    # Lightning callbacks
-│   │   ├── ema.py                   # Exponential Moving Average
-│   │   ├── onnx_export.py          # ONNX export callback
-│   │   ├── plotting.py             # Training plots
-│   │   ├── visualization.py        # Visualizations
-│   │   ├── model_info.py          # Model information
-│   │   └── statistics.py          # Training statistics
-│   ├── data/                         # Data modules and datasets
-│   │   ├── detection_dataset.py    # Base detection dataset
-│   │   ├── dataset_stats.py        # Dataset statistics
-│   │   └── base.py                 # Base data module
-│   ├── metrics/                      # Custom metrics
-│   │   └── curves.py               # Precision-recall curves
-│   ├── utils/                        # Utility functions
-│   │   ├── boxes.py                # Bounding box utilities
-│   │   ├── plotting.py            # Plotting utilities
-│   │   ├── hydra.py              # Hydra configuration helpers
-│   │   ├── seed.py               # Random seed management
-│   │   └── json_utils.py         # JSON utilities
-│   ├── conf/                        # Hydra configuration files
-│   │   ├── train.yaml              # Main training config
-│   │   ├── models/                 # Model configurations
-│   │   ├── data/                   # Dataset configurations
-│   │   ├── callbacks/              # Callback configurations
-│   │   └── trainer/                # Trainer configurations
-│   ├── tasks.py                     # Task definitions
-│   ├── task_manager.py              # CLI entry point
-│   └── types.py                     # Shared type definitions
-├── tests/                           # Unit tests
-├── docs/                            # Documentation (MkDocs)
-├── scripts/                         # Helper scripts
-├── pixi.toml                       # Pixi project configuration
-├── pyproject.toml                  # Python project metadata
-├── Dockerfile                      # Docker configuration
-└── .pre-commit-config.yaml        # Pre-commit hooks
-```
+The image targets GCP Vertex AI. Secrets (`WANDB_API_KEY`, etc.) are injected at runtime via environment variables.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Apache License 2.0 &mdash; see [LICENSE](LICENSE).
