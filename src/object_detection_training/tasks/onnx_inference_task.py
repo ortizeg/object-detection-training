@@ -10,6 +10,20 @@ from typing import Any
 from loguru import logger
 from pydantic import Field
 
+from object_detection_training.inference.onnx_inferencer import (
+    ONNXInferencer,
+)
+from object_detection_training.io.annotation import (
+    DetectionAnnotationWriter,
+)
+from object_detection_training.io.image import ImageLoader
+from object_detection_training.schemas.annotation import (
+    AnnotationInfo,
+    DetectionAnnotation,
+)
+from object_detection_training.schemas.label_mapping import (
+    LabelMapping,
+)
 from object_detection_training.tasks.base_task import BaseTask
 from object_detection_training.utils.hydra import register
 
@@ -84,21 +98,6 @@ class ONNXInferenceTask(BaseTask):
         Returns:
             Dict with ``output_dir`` and ``num_images`` processed.
         """
-        from object_detection_training.inference.inferencer import (
-            ONNXInferencer,
-        )
-        from object_detection_training.io.annotation import (
-            DetectionAnnotationWriter,
-        )
-        from object_detection_training.io.image import ImageLoader
-        from object_detection_training.schemas.annotation import (
-            AnnotationInfo,
-            DetectionAnnotation,
-        )
-        from object_detection_training.schemas.label_mapping import (
-            LabelMapping,
-        )
-
         # Resolve output directory
         if self.output_dir is None:
             self.output_dir = Path("inference_output")

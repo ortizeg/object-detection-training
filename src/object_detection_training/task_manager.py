@@ -101,6 +101,11 @@ def main(cfg: DictConfig) -> None:
     log_level = cfg.get("log_level", "INFO")
     setup_loguru(log_level)
 
+    # Load environment variables from .env file
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     logger.info("=" * 60)
     logger.info("Object Detection Training Framework")
     logger.info("=" * 60)
@@ -152,8 +157,8 @@ def main(cfg: DictConfig) -> None:
             output_dir=output_dir,
             model=model,
         )
-    elif "ONNXInferenceTask" in task_target:
-        # ---- ONNX Inference: no model/data/trainer needed ----
+    elif "ONNXInferenceTask" in task_target or "VLMAnnotationTask" in task_target:
+        # ---- Inference/Annotation: no model/data/trainer needed ----
         logger.info("Instantiating task...")
         task = hydra.utils.instantiate(
             cfg.task,
