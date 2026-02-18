@@ -17,6 +17,7 @@ from object_detection_training.data.detection_dataset import (
     DetectionDataset,
     SizeThresholds,
 )
+from object_detection_training.data.sampler import SamplerConfig, build_weighted_sampler
 
 __all__ = [
     "BaseDataModule",
@@ -25,7 +26,9 @@ __all__ = [
     "CacheDataset",
     "DatasetStatistics",
     "DetectionDataset",
+    "SamplerConfig",
     "SizeThresholds",
+    "build_weighted_sampler",
     "collate_fn",
     "collate_fn_with_image_ids",
 ]
