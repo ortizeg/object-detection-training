@@ -28,6 +28,39 @@ def cxcywh_to_xyxy(boxes: torch.Tensor) -> torch.Tensor:
     return torch.stack([x1, y1, x2, y2], dim=-1)
 
 
+def box_iou_1_to_n(box: torch.Tensor, boxes: torch.Tensor) -> torch.Tensor:
+    """Compute IoU between one XYXY box and N XYXY boxes.
+
+    Args:
+        box: Tensor of shape (1, 4) or (4,) in XYXY format.
+        boxes: Tensor of shape (N, 4) in XYXY format.
+
+    Returns:
+        Tensor of shape (N,) with IoU values.
+    """
+    if boxes.numel() == 0:
+        return torch.zeros(0, dtype=box.dtype, device=box.device)
+
+    box = box.view(1, 4)
+
+    # Intersection
+    inter_x1 = torch.max(box[:, 0], boxes[:, 0])
+    inter_y1 = torch.max(box[:, 1], boxes[:, 1])
+    inter_x2 = torch.min(box[:, 2], boxes[:, 2])
+    inter_y2 = torch.min(box[:, 3], boxes[:, 3])
+
+    inter_w = (inter_x2 - inter_x1).clamp(min=0)
+    inter_h = (inter_y2 - inter_y1).clamp(min=0)
+    inter_area = inter_w * inter_h
+
+    # Areas
+    box_area = (box[:, 2] - box[:, 0]) * (box[:, 3] - box[:, 1])
+    boxes_area = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+
+    union = box_area + boxes_area - inter_area
+    return inter_area / union.clamp(min=1e-6)
+
+
 def xyxy_to_cxcywh(boxes: torch.Tensor) -> torch.Tensor:
     """
     Convert bounding boxes from [x1, y1, x2, y2] to [cx, cy, w, h].

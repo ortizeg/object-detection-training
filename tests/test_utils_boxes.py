@@ -4,7 +4,66 @@ from __future__ import annotations
 
 import torch
 
-from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
+from object_detection_training.utils.boxes import (
+    box_iou_1_to_n,
+    cxcywh_to_xyxy,
+    xyxy_to_cxcywh,
+)
+
+
+class TestBoxIou1ToN:
+    """Tests for box_iou_1_to_n."""
+
+    def test_identical_boxes(self) -> None:
+        """IoU of identical boxes should be 1.0."""
+        box = torch.tensor([[10.0, 10.0, 50.0, 50.0]])
+        boxes = torch.tensor([[10.0, 10.0, 50.0, 50.0]])
+        iou = box_iou_1_to_n(box, boxes)
+        torch.testing.assert_close(iou, torch.tensor([1.0]))
+
+    def test_no_overlap(self) -> None:
+        """Non-overlapping boxes should have IoU of 0."""
+        box = torch.tensor([[0.0, 0.0, 10.0, 10.0]])
+        boxes = torch.tensor([[20.0, 20.0, 30.0, 30.0]])
+        iou = box_iou_1_to_n(box, boxes)
+        torch.testing.assert_close(iou, torch.tensor([0.0]), atol=1e-5, rtol=1e-5)
+
+    def test_partial_overlap(self) -> None:
+        """Partially overlapping boxes should have 0 < IoU < 1."""
+        box = torch.tensor([[0.0, 0.0, 20.0, 20.0]])
+        boxes = torch.tensor([[10.0, 10.0, 30.0, 30.0]])
+        iou = box_iou_1_to_n(box, boxes)
+        # Intersection: 10x10=100, Union: 400+400-100=700
+        expected = torch.tensor([100.0 / 700.0])
+        torch.testing.assert_close(iou, expected, atol=1e-5, rtol=1e-5)
+
+    def test_multiple_boxes(self) -> None:
+        """Compute IoU against multiple boxes at once."""
+        box = torch.tensor([[0.0, 0.0, 20.0, 20.0]])
+        boxes = torch.tensor(
+            [
+                [0.0, 0.0, 20.0, 20.0],  # identical -> 1.0
+                [50.0, 50.0, 70.0, 70.0],  # no overlap -> 0.0
+            ]
+        )
+        iou = box_iou_1_to_n(box, boxes)
+        assert iou.shape == (2,)
+        torch.testing.assert_close(iou[0], torch.tensor(1.0))
+        torch.testing.assert_close(iou[1], torch.tensor(0.0), atol=1e-5, rtol=1e-5)
+
+    def test_empty_boxes(self) -> None:
+        """Empty target boxes should return empty tensor."""
+        box = torch.tensor([[10.0, 10.0, 50.0, 50.0]])
+        boxes = torch.zeros(0, 4)
+        iou = box_iou_1_to_n(box, boxes)
+        assert iou.shape == (0,)
+
+    def test_flat_box_input(self) -> None:
+        """Box as shape (4,) should also work."""
+        box = torch.tensor([0.0, 0.0, 20.0, 20.0])
+        boxes = torch.tensor([[0.0, 0.0, 20.0, 20.0]])
+        iou = box_iou_1_to_n(box, boxes)
+        torch.testing.assert_close(iou, torch.tensor([1.0]))
 
 
 class TestCxcywhToXyxy:
