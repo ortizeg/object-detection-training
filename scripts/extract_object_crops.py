@@ -15,7 +15,6 @@ inside a per-category subfolder.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +31,7 @@ from object_detection_training.schemas.crop_manifest import (
     RLEMask,
     encode_rle,
 )
+from object_detection_training.utils.boxes import pad_and_clamp_bbox
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -91,27 +91,6 @@ def _auto_device() -> str:
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return "mps"
     return "cpu"
-
-
-def _pad_and_clamp_bbox(
-    bbox_x: float,
-    bbox_y: float,
-    bbox_w: float,
-    bbox_h: float,
-    img_w: int,
-    img_h: int,
-    padding_ratio: float,
-) -> tuple[int, int, int, int]:
-    """Pad a bbox and clamp to image bounds. Returns (x1, y1, x2, y2)."""
-    pad_w = bbox_w * padding_ratio
-    pad_h = bbox_h * padding_ratio
-
-    x1 = max(0, int(bbox_x - pad_w))
-    y1 = max(0, int(bbox_y - pad_h))
-    x2 = min(img_w, int(bbox_x + bbox_w + pad_w))
-    y2 = min(img_h, int(bbox_y + bbox_h + pad_h))
-
-    return x1, y1, x2, y2
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -179,7 +158,7 @@ def main(argv: list[str] | None = None) -> None:
         # Padded crop
         bbox_x = float(row["bbox_x"])
         bbox_y = float(row["bbox_y"])
-        x1, y1, x2, y2 = _pad_and_clamp_bbox(
+        x1, y1, x2, y2 = pad_and_clamp_bbox(
             bbox_x, bbox_y, bbox_w, bbox_h, img_w, img_h, args.padding_ratio
         )
 

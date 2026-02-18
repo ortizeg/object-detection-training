@@ -34,6 +34,11 @@ class ObjectInserter(v2.Transform):
     randomly inserts them into training images while respecting existing
     detections.
 
+    Crops are loaded lazily — only the metadata index is built at init time.
+    The actual crop image and mask are read from disk on demand during
+    ``forward()``, keeping memory usage constant regardless of the number of
+    available crops.
+
     Args:
         crops_dir: Path to the root directory of extracted crops.
         category_to_label: Mapping from category name to contiguous label ID.
@@ -74,14 +79,12 @@ class ObjectInserter(v2.Transform):
         self.default_scale_range = default_scale_range
         self.category_configs = category_configs or {}
 
-        # Load all crops into memory
-        self._crop_pool: dict[
-            str, list[tuple[Image.Image, np.ndarray[Any, Any], CropMetadata]]
-        ] = {}
-        self._load_crops(Path(crops_dir), categories)
+        # Lazy index: category → list of (png_path, json_path) pairs
+        self._crop_index: dict[str, list[tuple[Path, Path]]] = {}
+        self._build_index(Path(crops_dir), categories)
 
-    def _load_crops(self, crops_dir: Path, categories: list[str] | None) -> None:
-        """Scan category directories and load all crop data."""
+    def _build_index(self, crops_dir: Path, categories: list[str] | None) -> None:
+        """Scan category directories and build a lightweight file index."""
         if not crops_dir.is_dir():
             logger.warning(f"Crops directory not found: {crops_dir}")
             return
@@ -95,25 +98,31 @@ class ObjectInserter(v2.Transform):
             if cat_name not in self.category_to_label:
                 continue
 
-            entries: list[tuple[Image.Image, np.ndarray[Any, Any], CropMetadata]] = []
+            pairs: list[tuple[Path, Path]] = []
             for json_path in sorted(cat_dir.glob("*.json")):
                 png_path = json_path.with_suffix(".png")
-                if not png_path.exists():
-                    continue
-                meta = CropMetadata.from_json(json_path)
-                crop_img = Image.open(png_path).convert("RGB")
-                mask = decode_rle(meta.mask)
-                entries.append((crop_img, mask, meta))
+                if png_path.exists():
+                    pairs.append((png_path, json_path))
 
-            if entries:
-                self._crop_pool[cat_name] = entries
-                logger.debug(f"Loaded {len(entries)} crops for '{cat_name}'")
+            if pairs:
+                self._crop_index[cat_name] = pairs
+                logger.debug(f"Indexed {len(pairs)} crops for '{cat_name}'")
 
-        total = sum(len(v) for v in self._crop_pool.values())
+        total = sum(len(v) for v in self._crop_index.values())
         logger.info(
-            f"ObjectInserter: loaded {total} crops across "
-            f"{len(self._crop_pool)} categories"
+            f"ObjectInserter: indexed {total} crops across "
+            f"{len(self._crop_index)} categories"
         )
+
+    @staticmethod
+    def _load_crop(
+        png_path: Path, json_path: Path
+    ) -> tuple[Image.Image, np.ndarray[Any, Any], CropMetadata]:
+        """Load a single crop image, decode its mask, and return metadata."""
+        meta = CropMetadata.from_json(json_path)
+        crop_img = Image.open(png_path).convert("RGB")
+        mask = decode_rle(meta.mask)
+        return crop_img, mask, meta
 
     def forward(self, *inputs: Any) -> Any:
         """Apply object insertion augmentation.
@@ -132,8 +141,8 @@ class ObjectInserter(v2.Transform):
         if not isinstance(image, Image.Image):
             return inputs if rest else (image, target)
 
-        # No crops loaded — passthrough
-        if not self._crop_pool:
+        # No crops indexed — passthrough
+        if not self._crop_index:
             return inputs if rest else (image, target)
 
         # Probabilistic gate
@@ -164,14 +173,17 @@ class ObjectInserter(v2.Transform):
         new_labels: list[int] = []
         new_areas: list[float] = []
 
-        available_cats = list(self._crop_pool.keys())
+        available_cats = list(self._crop_index.keys())
         n_insert = random.randint(1, self.max_objects_per_image)  # noqa: S311
 
         for _ in range(n_insert):
             cat_name = random.choice(available_cats)  # noqa: S311
-            crop_img, crop_mask, _meta = random.choice(  # noqa: S311
-                self._crop_pool[cat_name]
+            png_path, json_path = random.choice(  # noqa: S311
+                self._crop_index[cat_name]
             )
+
+            # Lazy load: read from disk only when needed
+            crop_img, crop_mask, _meta = self._load_crop(png_path, json_path)
 
             # Get per-category config
             cat_cfg = self.category_configs.get(cat_name, {})
