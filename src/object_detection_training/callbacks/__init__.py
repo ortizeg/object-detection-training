@@ -7,11 +7,15 @@ from object_detection_training.callbacks.label_mapping import LabelMappingCallba
 from object_detection_training.callbacks.model_info import ModelInfoCallback
 from object_detection_training.callbacks.onnx_export import ONNXExportCallback
 from object_detection_training.callbacks.plotting import TrainingHistoryPlotter
+from object_detection_training.callbacks.sampler_distribution import (
+    SamplerDistributionCallback,
+)
 
 __all__ = [
     "EMACallback",
     "LabelMappingCallback",
     "ModelInfoCallback",
     "ONNXExportCallback",
+    "SamplerDistributionCallback",
     "TrainingHistoryPlotter",
 ]

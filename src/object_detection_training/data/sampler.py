@@ -7,12 +7,37 @@ at the image level. Each image's weight is determined by its rarest
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Literal
 
 import pandas as pd
 from loguru import logger
 from pydantic import BaseModel, model_validator
 from torch.utils.data import WeightedRandomSampler
+
+
+class TrackingWeightedRandomSampler(WeightedRandomSampler):
+    """WeightedRandomSampler that records the last epoch's drawn indices.
+
+    This allows downstream callbacks to inspect which images were actually
+    sampled each epoch, enabling class distribution analysis.
+    """
+
+    def __init__(
+        self,
+        weights: list[float],
+        num_samples: int,
+        replacement: bool = True,
+    ) -> None:
+        super().__init__(
+            weights=weights, num_samples=num_samples, replacement=replacement
+        )
+        self._last_indices: list[int] = []
+
+    def __iter__(self) -> Iterator[int]:
+        indices = list(super().__iter__())
+        self._last_indices = indices
+        return iter(indices)
 
 
 class SamplerConfig(BaseModel, frozen=True):
@@ -41,7 +66,7 @@ def build_weighted_sampler(
     annotations_df: pd.DataFrame,
     image_ids: list[int],
     class_names: list[str],
-) -> WeightedRandomSampler | None:
+) -> TrackingWeightedRandomSampler | None:
     """Build a WeightedRandomSampler based on class frequency.
 
     Args:
@@ -110,7 +135,7 @@ def build_weighted_sampler(
         f"replacement={config.replacement}"
     )
 
-    return WeightedRandomSampler(
+    return TrackingWeightedRandomSampler(
         weights=image_weights,
         num_samples=num_samples,
         replacement=config.replacement,

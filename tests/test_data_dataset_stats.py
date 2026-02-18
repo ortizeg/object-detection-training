@@ -124,6 +124,60 @@ class TestDatasetStatisticsClassDistribution:
         assert ball_count == 1
 
 
+class TestClassDistributionForImages:
+    """Tests for class_distribution_for_images() with subset/duplicate image IDs."""
+
+    def test_single_image(self) -> None:
+        ds = FakeDataset()
+        stats = DatasetStatistics(ds)
+        # Image 1 has: person (ann 1), ball (ann 2)
+        dist = stats.class_distribution_for_images([1])
+
+        assert isinstance(dist, pd.DataFrame)
+        assert set(dist.columns) == {"category_name", "count", "percentage"}
+        person_row = dist[dist["category_name"] == "person"]
+        ball_row = dist[dist["category_name"] == "ball"]
+        assert person_row["count"].values[0] == 1
+        assert ball_row["count"].values[0] == 1
+
+    def test_duplicate_image_ids(self) -> None:
+        ds = FakeDataset()
+        stats = DatasetStatistics(ds)
+        # Image 1 sampled 3 times: 3 * (1 person + 1 ball) = 3 person, 3 ball
+        dist = stats.class_distribution_for_images([1, 1, 1])
+
+        person_count = dist[dist["category_name"] == "person"]["count"].values[0]
+        ball_count = dist[dist["category_name"] == "ball"]["count"].values[0]
+        assert person_count == 3
+        assert ball_count == 3
+
+    def test_mixed_images(self) -> None:
+        ds = FakeDataset()
+        stats = DatasetStatistics(ds)
+        # Image 1: person, ball. Image 2: person.
+        # Sample: [1, 2, 2] -> person: 1+2=3, ball: 1+0=1
+        dist = stats.class_distribution_for_images([1, 2, 2])
+
+        person_count = dist[dist["category_name"] == "person"]["count"].values[0]
+        ball_count = dist[dist["category_name"] == "ball"]["count"].values[0]
+        assert person_count == 3
+        assert ball_count == 1
+
+    def test_percentages_sum_to_100(self) -> None:
+        ds = FakeDataset()
+        stats = DatasetStatistics(ds)
+        dist = stats.class_distribution_for_images([1, 2])
+
+        total_pct = dist["percentage"].sum()
+        assert abs(total_pct - 100.0) < 0.1
+
+    def test_empty_image_ids(self) -> None:
+        ds = FakeDataset()
+        stats = DatasetStatistics(ds)
+        dist = stats.class_distribution_for_images([])
+        assert len(dist) == 0
+
+
 class TestDatasetStatisticsPlots:
     """Tests for plot generation."""
 
