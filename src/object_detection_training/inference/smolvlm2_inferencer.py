@@ -9,16 +9,31 @@ import numpy.typing as npt
 import torch
 from loguru import logger
 from PIL import Image
+from pydantic import BaseModel, Field
 from transformers import (
     AutoModelForImageTextToText,
     AutoProcessor,
 )
 
 from object_detection_training.inference.base_inferencer import BaseInferencer
-from object_detection_training.inference.gemini_inferencer import (
-    GeminiDetection,
-)
 from object_detection_training.schemas.detection import BoundingBox, Detection
+
+
+class _SmolVLM2BBox(BaseModel):
+    """Bounding box in 0-1000 corner coordinates for VLM responses."""
+
+    x_min: int = Field(description="Left edge (0-1000)")
+    y_min: int = Field(description="Top edge (0-1000)")
+    x_max: int = Field(description="Right edge (0-1000)")
+    y_max: int = Field(description="Bottom edge (0-1000)")
+
+
+class _SmolVLM2Detection(BaseModel):
+    """VLM response schema for a single detection."""
+
+    bbox: _SmolVLM2BBox
+    label: str
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class SmolVLM2Inferencer(BaseInferencer):
@@ -177,13 +192,13 @@ class SmolVLM2Inferencer(BaseInferencer):
 
     def _map_detections(
         self,
-        gemini_dets: list[GeminiDetection],
+        raw_dets: list[_SmolVLM2Detection],
         image_width: int,
         image_height: int,
     ) -> list[Detection]:
         """Convert parsed detections to internal Detection format."""
         results: list[Detection] = []
-        for det in gemini_dets:
+        for det in raw_dets:
             class_id = self._resolve_label(det.label)
             if class_id is None:
                 logger.warning(
@@ -230,14 +245,14 @@ class SmolVLM2Inferencer(BaseInferencer):
             logger.error(f"Expected JSON list, got {type(data).__name__}")
             return []
 
-        gemini_dets: list[GeminiDetection] = []
+        raw_dets: list[_SmolVLM2Detection] = []
         for item in data:
             try:
-                gemini_dets.append(GeminiDetection.model_validate(item))
+                raw_dets.append(_SmolVLM2Detection.model_validate(item))
             except Exception:
                 logger.debug(f"Skipping unparseable item: {item}")
 
-        return self._map_detections(gemini_dets, image_width, image_height)
+        return self._map_detections(raw_dets, image_width, image_height)
 
     @staticmethod
     def _extract_json(text: str) -> str | None:
