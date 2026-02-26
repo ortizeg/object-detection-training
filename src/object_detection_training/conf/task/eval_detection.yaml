@@ -1,0 +1,32 @@
+# Evaluation Detection Task Configuration
+_target_: object_detection_training.tasks.eval_detection_task.EvalDetectionTask
+name: eval_detection
+
+# Data directories (COCO format with _annotations.coco.json)
+val_dir: ???               # Required: path to val directory
+test_dir: ???              # Required: path to test directory
+
+# Gemini config
+run_gemini: true
+gemini_model_name: "gemini-2.5-pro-preview-06-05"
+gemini_classes:
+  - "player"
+  - "referee"
+  - "ball"
+  - "rim"
+  - "number"
+gemini_prompt_template: null
+
+# SmolVLM2 config
+run_smolvlm2: true
+smolvlm2_model_name: "HuggingFaceTB/SmolVLM2-256M-Video-Instruct"
+
+# RF-DETR config
+run_rfdetr: true
+onnx_model_path: null      # Path to RF-DETR ONNX model
+label_mapping_path: null   # Path to labels_mapping.json
+rfdetr_input_size: 560
+rfdetr_confidence_threshold: 0.01
+
+# Evaluation config
+confidence_threshold_steps: 20

@@ -10,6 +10,7 @@ from object_detection_training.inference.postprocess import (
     RFDETRPostProcessor,
     YOLOXPostProcessor,
 )
+from object_detection_training.inference.smolvlm2_inferencer import SmolVLM2Inferencer
 from object_detection_training.io.annotation import (
     DetectionAnnotationWriter,
 )
@@ -31,5 +32,6 @@ __all__ = [
     "ImageLoader",
     "ONNXInferencer",
     "RFDETRPostProcessor",
+    "SmolVLM2Inferencer",
     "YOLOXPostProcessor",
 ]
