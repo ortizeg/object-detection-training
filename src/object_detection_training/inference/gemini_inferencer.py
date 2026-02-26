@@ -117,6 +117,9 @@ class GeminiInferencer(BaseInferencer):
         Returns:
             List of Detection objects with class IDs matching ``self.classes``.
         """
+        w = image_width if image_width is not None else int(image.shape[1])
+        h = image_height if image_height is not None else int(image.shape[0])
+
         # Convert BGR → RGB for PIL
         rgb_image = Image.fromarray(image[..., ::-1])
 
@@ -135,17 +138,14 @@ class GeminiInferencer(BaseInferencer):
                     for det in parsed:
                         logger.debug(
                             f"Raw Gemini detection: label={det.label!r} "
-                            f"bbox=({det.bbox.x_min}, {det.bbox.y_min}, "
-                            f"{det.bbox.x_max}, {det.bbox.y_max}) "
+                            f"bbox=({det.bbox}) "
                             f"conf={det.confidence:.2f}"
                         )
-                    return self._map_detections(parsed, image_width, image_height)
+                    return self._map_detections(parsed, w, h)
 
                 if response.text:
                     logger.debug("Gemini text fallback: %s", response.text[:500])
-                    return self._parse_text_fallback(
-                        response.text, image_width, image_height
-                    )
+                    return self._parse_text_fallback(response.text, w, h)
 
                 logger.warning("Gemini returned an empty response.")
                 return []
