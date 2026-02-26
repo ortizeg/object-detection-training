@@ -7,9 +7,10 @@ _target_: object_detection_training.tasks.ONNXExportTask
 name: basketball_export_onnx
 output_path: model.onnx  # Will be relative to Hydra output dir
 
-# Checkpoint path must be provided by user via CLI:
-# task.checkpoint_path=/path/to/checkpoint.ckpt
-checkpoint_path: ???
+# Checkpoint path can be set via CKPT_PATH env var or CLI override.
+# Use env var when the path contains '=' (e.g. epoch=80-val/mAP=0.4563.ckpt)
+# as Hydra's override grammar cannot parse '=' in values.
+checkpoint_path: ${oc.env:CKPT_PATH,???}
 
 # Export settings
 opset_version: 17
