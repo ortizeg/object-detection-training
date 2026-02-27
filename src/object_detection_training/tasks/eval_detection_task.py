@@ -319,7 +319,7 @@ class EvalDetectionTask(BaseTask):
     # Gemini config
     run_gemini: bool = Field(default=True, description="Run Gemini evaluation")
     gemini_model_name: str = Field(
-        default="gemini-2.5-pro-preview-06-05",
+        default="gemini-2.5-pro",
         description="Gemini model name",
     )
     gemini_classes: list[str] = Field(
