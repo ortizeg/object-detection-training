@@ -63,7 +63,7 @@ default = ["dev"]
 prod = []
 
 [pypi-dependencies]
-transformers = { version = "<4.49.0" }  # DINOv2 backbone needs find_pruneable_heads_and_indices
+transformers = { version = ">=4.49.0, <4.52.0" }  # SmolVLM2 needs >=4.49.0; DINOv2 constraint only affects training
 scipy = { version = "*" }  # Hungarian matching in matcher
 requests = { version = "*" }  # Checkpoint downloading
 tqdm = { version = "*" }  # Download progress bars

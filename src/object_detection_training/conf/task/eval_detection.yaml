@@ -11,8 +11,8 @@ run_gemini: true
 gemini_model_name: "gemini-2.5-pro"
 gemini_classes:
   - "player"
-  - "referee"
   - "ball"
+  - "referee"
   - "rim"
   - "number"
 gemini_prompt_template: null

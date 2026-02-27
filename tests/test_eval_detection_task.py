@@ -294,7 +294,7 @@ class TestEvalDetectionTask:
             onnx_model_path=tmp_path / "model.onnx",
         )
 
-        # Mock the RFDETR inferencer builder
+        # Mock the RFDETR inferencer builder (returns tuple)
         mock_inferencer = MagicMock()
         mock_inferencer.predict.return_value = [
             Detection(
@@ -303,9 +303,13 @@ class TestEvalDetectionTask:
                 class_id=0,
             ),
         ]
+        # label_map: class_id 0 -> "player" (matches eval ID 0)
+        mock_label_map = {0: "player"}
 
         with patch.object(
-            task, "_build_rfdetr_inferencer", return_value=mock_inferencer
+            task,
+            "_build_rfdetr_inferencer",
+            return_value=(mock_inferencer, mock_label_map),
         ):
             result = task.run()
 
@@ -362,3 +366,154 @@ class TestEvalDetectionTask:
 
         with pytest.raises(ValueError, match="onnx_model_path is required"):
             task.run()
+
+
+class TestRemapDetections:
+    """Tests for _remap_detections class ID remapping."""
+
+    def test_identity_remap_with_eval_label_map(self) -> None:
+        """When label_map matches _EVAL_LABEL_MAP, IDs stay the same."""
+        from object_detection_training.tasks.eval_detection_task import _EVAL_LABEL_MAP
+
+        dets = [
+            Detection(
+                bbox=BoundingBox(x=0.1, y=0.1, w=0.2, h=0.3), confidence=0.9, class_id=0
+            ),
+            Detection(
+                bbox=BoundingBox(x=0.5, y=0.5, w=0.1, h=0.1), confidence=0.8, class_id=1
+            ),
+        ]
+        remapped = EvalDetectionTask._remap_detections(dets, dict(_EVAL_LABEL_MAP))
+        assert len(remapped) == 2
+        assert remapped[0].class_id == 0  # player -> 0
+        assert remapped[1].class_id == 1  # ball -> 1
+
+    def test_rfdetr_training_class_remap(self) -> None:
+        """RF-DETR training class IDs remap correctly to eval IDs."""
+        # Simulated RF-DETR label map (10 training classes)
+        rfdetr_label_map = {
+            0: "ball",
+            1: "ball-in-basket",
+            2: "number",
+            3: "player",
+            4: "player-in-possession",
+            5: "player-jump-shot",
+            6: "player-layup-dunk",
+            7: "player-shot-block",
+            8: "referee",
+            9: "rim",
+        }
+        dets = [
+            Detection(
+                bbox=BoundingBox(x=0.1, y=0.1, w=0.2, h=0.3), confidence=0.9, class_id=0
+            ),  # ball
+            Detection(
+                bbox=BoundingBox(x=0.2, y=0.2, w=0.3, h=0.4), confidence=0.8, class_id=3
+            ),  # player
+            Detection(
+                bbox=BoundingBox(x=0.3, y=0.3, w=0.1, h=0.1), confidence=0.7, class_id=1
+            ),  # ball-in-basket -> ball
+            Detection(
+                bbox=BoundingBox(x=0.4, y=0.4, w=0.2, h=0.5), confidence=0.6, class_id=4
+            ),  # player-in-possession -> player
+            Detection(
+                bbox=BoundingBox(x=0.5, y=0.5, w=0.1, h=0.2), confidence=0.5, class_id=8
+            ),  # referee
+        ]
+        remapped = EvalDetectionTask._remap_detections(dets, rfdetr_label_map)
+        assert len(remapped) == 5
+        assert remapped[0].class_id == 1  # ball -> eval ID 1
+        assert remapped[1].class_id == 0  # player -> eval ID 0
+        assert remapped[2].class_id == 1  # ball-in-basket -> eval ID 1 (ball)
+        assert remapped[3].class_id == 0  # player-in-possession -> eval ID 0 (player)
+        assert remapped[4].class_id == 2  # referee -> eval ID 2
+
+    def test_unknown_class_dropped(self) -> None:
+        """Detections with unknown class IDs are dropped."""
+        label_map = {0: "player", 1: "unknown_class"}
+        dets = [
+            Detection(
+                bbox=BoundingBox(x=0.1, y=0.1, w=0.2, h=0.3), confidence=0.9, class_id=0
+            ),
+            Detection(
+                bbox=BoundingBox(x=0.2, y=0.2, w=0.2, h=0.3), confidence=0.8, class_id=1
+            ),
+            Detection(
+                bbox=BoundingBox(x=0.3, y=0.3, w=0.2, h=0.3),
+                confidence=0.7,
+                class_id=99,
+            ),
+        ]
+        remapped = EvalDetectionTask._remap_detections(dets, label_map)
+        assert len(remapped) == 1  # only player kept
+        assert remapped[0].class_id == 0
+
+    def test_gemini_class_remap(self) -> None:
+        """Gemini classes remap correctly even with different ordering."""
+        # Gemini classes: ["player", "ball", "referee", "rim", "number"]
+        gemini_label_map = {
+            0: "player",
+            1: "ball",
+            2: "referee",
+            3: "rim",
+            4: "number",
+        }
+        dets = [
+            Detection(
+                bbox=BoundingBox(x=0.1, y=0.1, w=0.2, h=0.3), confidence=0.9, class_id=2
+            ),  # referee
+        ]
+        remapped = EvalDetectionTask._remap_detections(dets, gemini_label_map)
+        assert len(remapped) == 1
+        assert remapped[0].class_id == 2  # referee -> eval ID 2
+
+
+class TestClassAwarePrf1:
+    """Tests for class-aware precision/recall/F1."""
+
+    def test_wrong_class_is_fp(self) -> None:
+        """A prediction with correct IoU but wrong class should be FP."""
+        import supervision as sv
+
+        gt = {
+            "img.jpg": sv.Detections(
+                xyxy=np.array([[100, 100, 300, 400]], dtype=np.float32),
+                class_id=np.array([0]),  # player
+            )
+        }
+        pred = {
+            "img.jpg": sv.Detections(
+                xyxy=np.array([[100, 100, 300, 400]], dtype=np.float32),
+                class_id=np.array([1]),  # ball (wrong class!)
+                confidence=np.array([0.9], dtype=np.float32),
+            )
+        }
+        metrics = _compute_prf1_at_threshold(gt, pred, threshold=0.5)
+        assert metrics["precision"] == pytest.approx(0.0)
+        assert metrics["recall"] == pytest.approx(0.0)
+
+    def test_correct_class_matches(self) -> None:
+        """A prediction with correct IoU and correct class should be TP."""
+        import supervision as sv
+
+        gt = {
+            "img.jpg": sv.Detections(
+                xyxy=np.array(
+                    [[100, 100, 300, 400], [50, 50, 80, 80]], dtype=np.float32
+                ),
+                class_id=np.array([0, 1]),  # player, ball
+            )
+        }
+        pred = {
+            "img.jpg": sv.Detections(
+                xyxy=np.array(
+                    [[100, 100, 300, 400], [50, 50, 80, 80]], dtype=np.float32
+                ),
+                class_id=np.array([0, 1]),  # player, ball (correct!)
+                confidence=np.array([0.9, 0.8], dtype=np.float32),
+            )
+        }
+        metrics = _compute_prf1_at_threshold(gt, pred, threshold=0.5)
+        assert metrics["precision"] == pytest.approx(1.0)
+        assert metrics["recall"] == pytest.approx(1.0)
+        assert metrics["f1"] == pytest.approx(1.0)

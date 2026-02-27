@@ -10,7 +10,7 @@ import torch
 from loguru import logger
 from PIL import Image
 from pydantic import BaseModel, Field
-from transformers import (
+from transformers import (  # type: ignore[attr-defined]
     AutoModelForImageTextToText,
     AutoProcessor,
 )

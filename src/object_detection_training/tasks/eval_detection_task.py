@@ -215,7 +215,13 @@ def _compute_prf1_at_threshold(
             best_gt_idx = int(np.argmax(iou_matrix[pred_idx]))
             best_iou = float(iou_matrix[pred_idx, best_gt_idx])
 
-            if best_iou >= iou_threshold and best_gt_idx not in matched_gt:
+            pred_cls = int(pred.class_id[pred_idx]) if pred.class_id is not None else -1
+            gt_cls = int(gt.class_id[best_gt_idx]) if gt.class_id is not None else -2
+            if (
+                best_iou >= iou_threshold
+                and best_gt_idx not in matched_gt
+                and pred_cls == gt_cls
+            ):
                 tp += 1
                 matched_gt.add(best_gt_idx)
             else:
@@ -323,7 +329,7 @@ class EvalDetectionTask(BaseTask):
         description="Gemini model name",
     )
     gemini_classes: list[str] = Field(
-        default=["player", "referee", "ball", "rim", "number"],
+        default=["player", "ball", "referee", "rim", "number"],
         description="Classes for Gemini detection",
     )
     gemini_prompt_template: str | None = Field(
@@ -372,9 +378,11 @@ class EvalDetectionTask(BaseTask):
         # --- Gemini ---
         if self.run_gemini:
             logger.info("=" * 40 + " Gemini " + "=" * 40)
+            inferencer, label_map = self._build_gemini_inferencer()
             all_results["Gemini"] = self._eval_method(
                 method_name="Gemini",
-                inferencer=self._build_gemini_inferencer(),
+                inferencer=inferencer,
+                label_map=label_map,
                 val_gt=val_gt,
                 test_gt=test_gt,
                 val_image_dir=self.val_dir,
@@ -384,10 +392,11 @@ class EvalDetectionTask(BaseTask):
         # --- SmolVLM2 ---
         if self.run_smolvlm2:
             logger.info("=" * 40 + " SmolVLM2 " + "=" * 40)
-            inferencer = self._build_smolvlm2_inferencer()
+            inferencer, label_map = self._build_smolvlm2_inferencer()
             all_results["SmolVLM2"] = self._eval_method(
                 method_name="SmolVLM2",
                 inferencer=inferencer,
+                label_map=label_map,
                 val_gt=val_gt,
                 test_gt=test_gt,
                 val_image_dir=self.val_dir,
@@ -400,9 +409,11 @@ class EvalDetectionTask(BaseTask):
         # --- RF-DETR ---
         if self.run_rfdetr:
             logger.info("=" * 40 + " RF-DETR " + "=" * 40)
+            inferencer, label_map = self._build_rfdetr_inferencer()
             all_results["RF-DETR"] = self._eval_method(
                 method_name="RF-DETR",
-                inferencer=self._build_rfdetr_inferencer(),
+                inferencer=inferencer,
+                label_map=label_map,
                 val_gt=val_gt,
                 test_gt=test_gt,
                 val_image_dir=self.val_dir,
@@ -431,6 +442,7 @@ class EvalDetectionTask(BaseTask):
         self,
         method_name: str,
         inferencer: BaseInferencer,
+        label_map: dict[int, str],
         val_gt: dict[str, sv.Detections],
         test_gt: dict[str, sv.Detections],
         val_image_dir: Path,
@@ -444,13 +456,13 @@ class EvalDetectionTask(BaseTask):
         # Run predictions on val
         logger.info(f"[{method_name}] Running predictions on val...")
         val_preds = self._run_predictions(
-            inferencer, val_gt, val_image_dir, method_name, "val"
+            inferencer, label_map, val_gt, val_image_dir, method_name, "val"
         )
 
         # Run predictions on test
         logger.info(f"[{method_name}] Running predictions on test...")
         test_preds = self._run_predictions(
-            inferencer, test_gt, test_image_dir, method_name, "test"
+            inferencer, label_map, test_gt, test_image_dir, method_name, "test"
         )
 
         # Compute mAP on val and test
@@ -501,6 +513,7 @@ class EvalDetectionTask(BaseTask):
     def _run_predictions(
         self,
         inferencer: BaseInferencer,
+        label_map: dict[int, str],
         gt_map: dict[str, sv.Detections],
         image_dir: Path,
         method_name: str,
@@ -529,7 +542,7 @@ class EvalDetectionTask(BaseTask):
             )
 
             # Remap detection class IDs to eval label map
-            remapped = self._remap_detections(detections)
+            remapped = self._remap_detections(detections, label_map)
 
             sv_dets = _detections_to_sv(remapped, loader.width, loader.height)
             pred_map[filename] = sv_dets
@@ -558,44 +571,84 @@ class EvalDetectionTask(BaseTask):
         return pred_map
 
     @staticmethod
-    def _remap_detections(detections: list[Detection]) -> list[Detection]:
+    def _remap_detections(
+        detections: list[Detection],
+        label_map: dict[int, str],
+    ) -> list[Detection]:
         """Remap inferencer class IDs to eval label map IDs.
 
-        The inferencer's class list may not match _EVAL_LABEL_MAP,
-        so we look up class names and remap through _NAME_TO_EVAL_ID.
-        For now, we trust the inferencer classes align with eval classes
-        (both use the same class list).
+        Each inferencer may use its own class numbering (e.g. RF-DETR
+        uses 10 training classes, Gemini uses whatever order its
+        ``classes`` list defines).  This method translates each
+        detection's ``class_id`` to the unified eval label map via:
+
+        1. Look up the class *name* from the inferencer's ``label_map``.
+        2. Map that name to the eval ID through ``_NAME_TO_EVAL_ID``.
+        3. Drop detections whose class has no eval mapping.
         """
-        # Detections already use class IDs that match the eval label map
-        # because the inferencers are configured with the eval class list.
-        return detections
+        remapped: list[Detection] = []
+        for det in detections:
+            class_name = label_map.get(det.class_id)
+            if class_name is None:
+                logger.debug(
+                    f"Skipping detection with unknown class_id={det.class_id} "
+                    f"(not in label_map)"
+                )
+                continue
+
+            eval_id = _NAME_TO_EVAL_ID.get(class_name.lower())
+            if eval_id is None:
+                logger.debug(
+                    f"Skipping detection with class {class_name!r} (no eval mapping)"
+                )
+                continue
+
+            remapped.append(
+                Detection(
+                    bbox=det.bbox,
+                    confidence=det.confidence,
+                    class_id=eval_id,
+                )
+            )
+        return remapped
 
     # ------------------------------------------------------------------
     # Inferencer builders
     # ------------------------------------------------------------------
 
-    def _build_gemini_inferencer(self) -> BaseInferencer:
+    def _build_gemini_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
         from object_detection_training.inference.gemini_inferencer import (
             GeminiInferencer,
         )
 
-        return GeminiInferencer(
+        label_map = dict(enumerate(self.gemini_classes))
+        inferencer = GeminiInferencer(
             model_name=self.gemini_model_name,
             classes=self.gemini_classes,
             prompt_template=self.gemini_prompt_template,
         )
+        return inferencer, label_map
 
-    def _build_smolvlm2_inferencer(self) -> BaseInferencer:
+    def _build_smolvlm2_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
         from object_detection_training.inference.smolvlm2_inferencer import (
             SmolVLM2Inferencer,
         )
 
-        return SmolVLM2Inferencer(
+        classes = list(_EVAL_LABEL_MAP.values())
+        label_map = dict(enumerate(classes))
+        inferencer = SmolVLM2Inferencer(
             model_name=self.smolvlm2_model_name,
-            classes=list(_EVAL_LABEL_MAP.values()),
+            classes=classes,
         )
+        return inferencer, label_map
 
-    def _build_rfdetr_inferencer(self) -> BaseInferencer:
+    def _build_rfdetr_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
         if self.onnx_model_path is None:
             msg = "onnx_model_path is required when run_rfdetr=True"
             raise ValueError(msg)
@@ -616,12 +669,13 @@ class EvalDetectionTask(BaseTask):
             confidence_threshold=self.rfdetr_confidence_threshold,
         )
 
-        return ONNXInferencer(
+        inferencer = ONNXInferencer(
             model_path=self.onnx_model_path,
             post_processor=post_processor,
             input_height=self.rfdetr_input_size,
             input_width=self.rfdetr_input_size,
         )
+        return inferencer, label_map
 
     # ------------------------------------------------------------------
     # Output helpers
