@@ -325,11 +325,11 @@ class EvalDetectionTask(BaseTask):
     # Gemini config
     run_gemini: bool = Field(default=True, description="Run Gemini evaluation")
     gemini_model_name: str = Field(
-        default="gemini-2.5-pro",
+        default="gemini-3.1-pro-preview",
         description="Gemini model name",
     )
     gemini_classes: list[str] = Field(
-        default=["player", "ball", "referee", "rim", "number"],
+        default=["ball", "number", "player", "referee", "rim"],
         description="Classes for Gemini detection",
     )
     gemini_prompt_template: str | None = Field(

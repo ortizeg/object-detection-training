@@ -8,14 +8,25 @@ test_dir: ???              # Required: path to test directory
 
 # Gemini config
 run_gemini: true
-gemini_model_name: "gemini-2.5-pro"
+gemini_model_name: "gemini-3.1-pro-preview"
 gemini_classes:
-  - "player"
   - "ball"
+  - "number"
+  - "player"
   - "referee"
   - "rim"
-  - "number"
-gemini_prompt_template: null
+gemini_prompt_template: >
+  Detect all basketball players, referees, the rim, the basketball, and
+  visible jersey numbers in this basketball game image.
+  Constraints:
+  - At most 10 players, 3 referees, 1 rim, and 1 ball per image.
+  - Each person gets exactly ONE bounding box with the most specific label.
+  Use EXACTLY these labels:
+  - "player" for any basketball player on the court
+  - "referee" for game officials
+  - "ball" for the basketball (only when NOT going through the rim)
+  - "rim" for the basketball hoop rim
+  - "number" for visible jersey numbers (tight box around the digits only)
 
 # SmolVLM2 config
 run_smolvlm2: true
