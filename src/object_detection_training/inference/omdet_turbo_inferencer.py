@@ -64,6 +64,7 @@ class OmDetTurboInferencer(BaseInferencer):
         self._model = AutoModelForZeroShotObjectDetection.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
+            low_cpu_mem_usage=False,
         )
         self._model = self._model.to(self._device)
 
