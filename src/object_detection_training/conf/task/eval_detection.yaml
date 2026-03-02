@@ -60,7 +60,8 @@ grounding_dino_text_threshold: 0.01
 
 # Florence-2 config
 run_florence2: false
-florence2_model_name: "microsoft/Florence-2-large"
+florence2_model_name: "microsoft/Florence-2-large-ft"
+florence2_task: "<OD>"
 
 # Evaluation config
 confidence_threshold_steps: 20

@@ -58,6 +58,13 @@ for _pc in _PLAYER_CLASSES:
     _NAME_TO_EVAL_ID[_pc] = 0
 # ball-in-basket -> ball
 _NAME_TO_EVAL_ID["ball-in-basket"] = 1
+# COCO-vocabulary aliases (for zero-shot detectors pre-trained on COCO/O365)
+_NAME_TO_EVAL_ID["person"] = 0  # COCO "person" -> player
+_NAME_TO_EVAL_ID["sports ball"] = 1  # COCO "sports ball" -> ball
+_NAME_TO_EVAL_ID["basketball"] = 1  # alternate -> ball
+_NAME_TO_EVAL_ID["basketball hoop"] = 3  # -> rim
+_NAME_TO_EVAL_ID["hoop"] = 3
+_NAME_TO_EVAL_ID["jersey number"] = 4
 
 
 def _load_coco_gt(
@@ -404,6 +411,10 @@ class EvalDetectionTask(BaseTask):
     florence2_model_name: str = Field(
         default="microsoft/Florence-2-large",
         description="Florence-2 model name",
+    )
+    florence2_task: str = Field(
+        default="<OD>",
+        description="Florence-2 task prompt (<OD> or <CAPTION_TO_PHRASE_GROUNDING>)",
     )
 
     # Eval config
@@ -832,7 +843,13 @@ class EvalDetectionTask(BaseTask):
             OmDetTurboInferencer,
         )
 
-        classes = list(_EVAL_LABEL_MAP.values())
+        classes = [
+            "person",
+            "sports ball",
+            "referee",
+            "basketball hoop",
+            "jersey number",
+        ]
         label_map = dict(enumerate(classes))
         inferencer = OmDetTurboInferencer(
             model_name=self.omdet_turbo_model_name,
@@ -848,7 +865,13 @@ class EvalDetectionTask(BaseTask):
             GroundingDINOInferencer,
         )
 
-        classes = list(_EVAL_LABEL_MAP.values())
+        classes = [
+            "person",
+            "sports ball",
+            "referee",
+            "basketball hoop",
+            "jersey number",
+        ]
         label_map = dict(enumerate(classes))
         inferencer = GroundingDINOInferencer(
             model_name=self.grounding_dino_model_name,
@@ -865,13 +888,20 @@ class EvalDetectionTask(BaseTask):
             Florence2Inferencer,
         )
 
-        classes = list(_EVAL_LABEL_MAP.values())
+        classes = [
+            "person",
+            "sports ball",
+            "referee",
+            "basketball hoop",
+            "jersey number",
+        ]
         label_map = dict(enumerate(classes))
         caption = self.gemini_prompt_template or ""
         inferencer = Florence2Inferencer(
             model_name=self.florence2_model_name,
             classes=classes,
             caption=caption,
+            task=self.florence2_task,
         )
         return inferencer, label_map
 
