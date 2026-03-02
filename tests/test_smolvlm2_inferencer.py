@@ -29,6 +29,7 @@ def _mock_transformers():
         ) as mock_torch,
     ):
         mock_torch.cuda.is_available.return_value = False
+        mock_torch.backends.mps.is_available.return_value = False
         mock_torch.float32 = "float32"
         mock_torch.float16 = "float16"
         mock_torch.no_grad.return_value.__enter__ = MagicMock()
@@ -92,6 +93,37 @@ class TestSmolVLM2Inferencer:
         assert dets[0].class_id == 0
         assert dets[0].bbox.x == pytest.approx(0.1)
         assert dets[0].bbox.y == pytest.approx(0.2)
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_parse_response_array_bbox(self) -> None:
+        """Test parsing when bbox is an array [x_min, y_min, x_max, y_max]."""
+        inferencer = SmolVLM2Inferencer(classes=["player", "ball"], device="cpu")
+        text = '[{"bbox": [100, 200, 300, 400], "label": "player", "confidence": 0.9}]'
+        dets = inferencer._parse_response(text, 640, 480)
+        assert len(dets) == 1
+        assert isinstance(dets[0], Detection)
+        assert dets[0].class_id == 0
+        assert dets[0].bbox.x == pytest.approx(0.1)
+        assert dets[0].bbox.y == pytest.approx(0.2)
+        assert dets[0].bbox.w == pytest.approx(0.2)
+        assert dets[0].bbox.h == pytest.approx(0.2)
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_extract_json_truncated(self) -> None:
+        """Test that truncated JSON arrays are salvaged."""
+        # Simulates output cut off mid-generation
+        text = (
+            '[{"bbox": [100, 200, 300, 400], "label": "player", "confidence": 0.9},'
+            ' {"bbox": [500, 600, 700, 800], "label": "ball", "confidence": 0.8},'
+            ' {"bbox": [10, 20'  # truncated here
+        )
+        result = SmolVLM2Inferencer._extract_json(text)
+        assert result is not None
+        # Should contain the two complete objects
+        import json
+
+        parsed = json.loads(result)
+        assert len(parsed) == 2
 
     @pytest.mark.usefixtures("_mock_transformers")
     def test_parse_response_invalid_json(self) -> None:

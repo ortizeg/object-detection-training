@@ -82,9 +82,19 @@ class YOLOXPostProcessor(BasePostProcessor):
 
     Expected ONNX output: single tensor of shape
     ``[batch, num_anchors, 5 + num_classes]`` where columns are
-    ``[cx, cy, w, h, obj_conf, cls_0, cls_1, ...]`` in **pixel** coords.
+    ``[cx, cy, w, h, obj_conf, cls_0, cls_1, ...]`` in **pixel** coords
+    relative to the model input size.
 
     Applies objectness * class confidence scoring and greedy NMS.
+
+    Args:
+        label_map: Mapping from integer class index to label name.
+        confidence_threshold: Minimum confidence to keep a detection.
+        nms_iou_threshold: IoU threshold for NMS suppression.
+        model_input_size: Model input size (height, width) for coordinate
+            normalisation.  YOLOX outputs pixel coordinates relative to
+            the model input, not the original image, so we normalise by
+            model input size to get [0, 1] coordinates.
     """
 
     def __init__(
@@ -92,9 +102,11 @@ class YOLOXPostProcessor(BasePostProcessor):
         label_map: dict[int, str],
         confidence_threshold: float = 0.25,
         nms_iou_threshold: float = 0.45,
+        model_input_size: tuple[int, int] | None = None,
     ) -> None:
         super().__init__(label_map, confidence_threshold)
         self.nms_iou_threshold = nms_iou_threshold
+        self.model_input_size = model_input_size
 
     def __call__(
         self,
@@ -124,11 +136,18 @@ class YOLOXPostProcessor(BasePostProcessor):
         if len(scores) == 0:
             return []
 
+        # YOLOX outputs pixel coords relative to model input size, not
+        # original image. Use model_input_size for normalisation when set.
+        if self.model_input_size is not None:
+            norm_h, norm_w = self.model_input_size
+        else:
+            norm_w, norm_h = image_width, image_height
+
         # cxcywh (pixel) -> normalised xywh (top-left)
-        cx = pred[:, 0] / image_width
-        cy = pred[:, 1] / image_height
-        w = pred[:, 2] / image_width
-        h = pred[:, 3] / image_height
+        cx = pred[:, 0] / norm_w
+        cy = pred[:, 1] / norm_h
+        w = pred[:, 2] / norm_w
+        h = pred[:, 3] / norm_h
         x1 = cx - w / 2
         y1 = cy - h / 2
 

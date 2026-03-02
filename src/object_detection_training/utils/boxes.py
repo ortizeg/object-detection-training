@@ -98,6 +98,34 @@ def pad_and_clamp_bbox(
     return x1, y1, x2, y2
 
 
+def pixel_xyxy_to_normalized_xywh(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    image_width: int,
+    image_height: int,
+) -> tuple[float, float, float, float]:
+    """Convert pixel xyxy coordinates to normalised xywh (top-left origin).
+
+    Args:
+        x1: Left edge in pixels.
+        y1: Top edge in pixels.
+        x2: Right edge in pixels.
+        y2: Bottom edge in pixels.
+        image_width: Image width in pixels.
+        image_height: Image height in pixels.
+
+    Returns:
+        Tuple of (x, y, w, h) normalised to [0, 1].
+    """
+    x = x1 / image_width
+    y = y1 / image_height
+    w = (x2 - x1) / image_width
+    h = (y2 - y1) / image_height
+    return x, y, w, h
+
+
 def xyxy_to_cxcywh(boxes: torch.Tensor) -> torch.Tensor:
     """
     Convert bounding boxes from [x1, y1, x2, y2] to [cx, cy, w, h].

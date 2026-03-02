@@ -30,7 +30,7 @@ gemini_prompt_template: >
 
 # SmolVLM2 config
 run_smolvlm2: true
-smolvlm2_model_name: "HuggingFaceTB/SmolVLM2-256M-Video-Instruct"
+smolvlm2_model_name: "HuggingFaceTB/SmolVLM2-2.2B-Instruct"
 
 # RF-DETR config
 run_rfdetr: true
@@ -38,6 +38,29 @@ onnx_model_path: null      # Path to RF-DETR ONNX model
 label_mapping_path: null   # Path to labels_mapping.json
 rfdetr_input_size: 560
 rfdetr_confidence_threshold: 0.01
+
+# YOLOX config
+run_yolox: false
+yolox_onnx_model_path: null      # Path to YOLOX ONNX model
+yolox_label_mapping_path: null   # Path to YOLOX labels_mapping.json
+yolox_input_size: 640
+yolox_confidence_threshold: 0.01
+yolox_nms_iou_threshold: 0.45
+
+# OmDet-Turbo config
+run_omdet_turbo: false
+omdet_turbo_model_name: "omlab/omdet-turbo-swin-tiny-hf"
+omdet_turbo_box_threshold: 0.01
+
+# Grounding DINO config
+run_grounding_dino: false
+grounding_dino_model_name: "IDEA-Research/grounding-dino-base"
+grounding_dino_box_threshold: 0.01
+grounding_dino_text_threshold: 0.01
+
+# Florence-2 config
+run_florence2: false
+florence2_model_name: "microsoft/Florence-2-large"
 
 # Evaluation config
 confidence_threshold_steps: 20

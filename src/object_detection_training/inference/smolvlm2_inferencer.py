@@ -51,12 +51,12 @@ class SmolVLM2Inferencer(BaseInferencer):
         model_name: HuggingFace model ID.
         classes: Full ordered list of class names (index = class ID).
         prompt_template: Optional custom prompt template.
-        device: Device string (``"cuda"``, ``"cpu"``, or ``"auto"``).
+        device: Device string (``"cuda"``, ``"cpu"``, ``"mps"``, or ``"auto"``).
     """
 
     def __init__(
         self,
-        model_name: str = "HuggingFaceTB/SmolVLM2-256M-Video-Instruct",
+        model_name: str = "HuggingFaceTB/SmolVLM2-2.2B-Instruct",
         classes: list[str] | None = None,
         prompt_template: str | None = None,
         device: str = "auto",
@@ -69,17 +69,23 @@ class SmolVLM2Inferencer(BaseInferencer):
             name.lower(): idx for idx, name in enumerate(self.classes)
         }
 
-        # Resolve device
+        # Resolve device: prefer CUDA > MPS > CPU
         if device == "auto":
-            self._device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                self._device = "cuda"
+            elif torch.backends.mps.is_available():
+                self._device = "mps"
+            else:
+                self._device = "cpu"
         else:
             self._device = device
 
         logger.info(f"Loading SmolVLM2 model {model_name} on {self._device}")
         self._processor = AutoProcessor.from_pretrained(model_name)
+        dtype = torch.float16 if self._device == "cuda" else torch.float32
         self._model = AutoModelForImageTextToText.from_pretrained(
             model_name,
-            torch_dtype=torch.float16 if self._device == "cuda" else torch.float32,
+            torch_dtype=dtype,
         ).to(self._device)
 
         class_list = ", ".join(self.classes) if self.classes else "all objects"
@@ -159,6 +165,8 @@ class SmolVLM2Inferencer(BaseInferencer):
         del self._processor
         if self._device == "cuda":
             torch.cuda.empty_cache()
+        elif self._device == "mps":
+            torch.mps.empty_cache()
         logger.info("SmolVLM2 model unloaded")
 
     # ------------------------------------------------------------------
@@ -248,6 +256,19 @@ class SmolVLM2Inferencer(BaseInferencer):
         raw_dets: list[_SmolVLM2Detection] = []
         for item in data:
             try:
+                # Handle bbox as array [x_min, y_min, x_max, y_max]
+                if isinstance(item, dict) and isinstance(item.get("bbox"), list):
+                    bbox_arr = item["bbox"]
+                    if len(bbox_arr) >= 4:
+                        item = {
+                            **item,
+                            "bbox": {
+                                "x_min": int(bbox_arr[0]),
+                                "y_min": int(bbox_arr[1]),
+                                "x_max": int(bbox_arr[2]),
+                                "y_max": int(bbox_arr[3]),
+                            },
+                        }
                 raw_dets.append(_SmolVLM2Detection.model_validate(item))
             except Exception:
                 logger.debug(f"Skipping unparseable item: {item}")
@@ -256,8 +277,11 @@ class SmolVLM2Inferencer(BaseInferencer):
 
     @staticmethod
     def _extract_json(text: str) -> str | None:
-        """Extract the first JSON array from text."""
-        # Find first '[' and matching ']'
+        """Extract the first JSON array from text.
+
+        Handles truncated output by attempting to close incomplete
+        JSON arrays when the model's response is cut off.
+        """
         start = text.find("[")
         if start == -1:
             return None
@@ -271,4 +295,13 @@ class SmolVLM2Inferencer(BaseInferencer):
                 if depth == 0:
                     return text[start : i + 1]
 
-        return None
+        # Output was truncated — try to salvage partial JSON.
+        # Find the last complete object (ends with '}') before truncation.
+        partial = text[start:]
+        last_brace = partial.rfind("}")
+        if last_brace == -1:
+            return None
+
+        # Trim to last complete object and close the array
+        trimmed = partial[: last_brace + 1].rstrip().rstrip(",") + "]"
+        return trimmed

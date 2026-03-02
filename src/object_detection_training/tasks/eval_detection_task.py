@@ -339,7 +339,7 @@ class EvalDetectionTask(BaseTask):
     # SmolVLM2 config
     run_smolvlm2: bool = Field(default=True, description="Run SmolVLM2 evaluation")
     smolvlm2_model_name: str = Field(
-        default="HuggingFaceTB/SmolVLM2-256M-Video-Instruct",
+        default="HuggingFaceTB/SmolVLM2-2.2B-Instruct",
         description="SmolVLM2 model name",
     )
 
@@ -354,6 +354,56 @@ class EvalDetectionTask(BaseTask):
     rfdetr_input_size: int = Field(default=560, description="RF-DETR input size")
     rfdetr_confidence_threshold: float = Field(
         default=0.01, description="RF-DETR confidence threshold for raw predictions"
+    )
+
+    # YOLOX config
+    run_yolox: bool = Field(default=False, description="Run YOLOX evaluation")
+    yolox_onnx_model_path: Path | None = Field(
+        default=None, description="Path to YOLOX ONNX model"
+    )
+    yolox_label_mapping_path: Path | None = Field(
+        default=None, description="Path to YOLOX labels_mapping.json"
+    )
+    yolox_input_size: int = Field(default=640, description="YOLOX input size")
+    yolox_confidence_threshold: float = Field(
+        default=0.01, description="YOLOX confidence threshold for raw predictions"
+    )
+    yolox_nms_iou_threshold: float = Field(
+        default=0.45, description="YOLOX NMS IoU threshold"
+    )
+
+    # OmDet-Turbo config
+    run_omdet_turbo: bool = Field(
+        default=False, description="Run OmDet-Turbo evaluation"
+    )
+    omdet_turbo_model_name: str = Field(
+        default="omlab/omdet-turbo-swin-tiny-hf",
+        description="OmDet-Turbo model name",
+    )
+    omdet_turbo_box_threshold: float = Field(
+        default=0.01, description="OmDet-Turbo box confidence threshold"
+    )
+
+    # Grounding DINO config
+    run_grounding_dino: bool = Field(
+        default=False, description="Run Grounding DINO evaluation"
+    )
+    grounding_dino_model_name: str = Field(
+        default="IDEA-Research/grounding-dino-base",
+        description="Grounding DINO model name",
+    )
+    grounding_dino_box_threshold: float = Field(
+        default=0.01, description="Grounding DINO box confidence threshold"
+    )
+    grounding_dino_text_threshold: float = Field(
+        default=0.01, description="Grounding DINO text confidence threshold"
+    )
+
+    # Florence-2 config
+    run_florence2: bool = Field(default=False, description="Run Florence-2 evaluation")
+    florence2_model_name: str = Field(
+        default="microsoft/Florence-2-large",
+        description="Florence-2 model name",
     )
 
     # Eval config
@@ -419,6 +469,68 @@ class EvalDetectionTask(BaseTask):
                 val_image_dir=self.val_dir,
                 test_image_dir=self.test_dir,
             )
+
+        # --- YOLOX ---
+        if self.run_yolox:
+            logger.info("=" * 40 + " YOLOX " + "=" * 40)
+            inferencer, label_map = self._build_yolox_inferencer()
+            all_results["YOLOX"] = self._eval_method(
+                method_name="YOLOX",
+                inferencer=inferencer,
+                label_map=label_map,
+                val_gt=val_gt,
+                test_gt=test_gt,
+                val_image_dir=self.val_dir,
+                test_image_dir=self.test_dir,
+            )
+
+        # --- OmDet-Turbo ---
+        if self.run_omdet_turbo:
+            logger.info("=" * 40 + " OmDet-Turbo " + "=" * 40)
+            inferencer, label_map = self._build_omdet_turbo_inferencer()
+            all_results["OmDet-Turbo"] = self._eval_method(
+                method_name="OmDet-Turbo",
+                inferencer=inferencer,
+                label_map=label_map,
+                val_gt=val_gt,
+                test_gt=test_gt,
+                val_image_dir=self.val_dir,
+                test_image_dir=self.test_dir,
+            )
+            if hasattr(inferencer, "unload"):
+                inferencer.unload()
+
+        # --- Grounding DINO ---
+        if self.run_grounding_dino:
+            logger.info("=" * 40 + " Grounding DINO " + "=" * 40)
+            inferencer, label_map = self._build_grounding_dino_inferencer()
+            all_results["Grounding-DINO"] = self._eval_method(
+                method_name="Grounding-DINO",
+                inferencer=inferencer,
+                label_map=label_map,
+                val_gt=val_gt,
+                test_gt=test_gt,
+                val_image_dir=self.val_dir,
+                test_image_dir=self.test_dir,
+            )
+            if hasattr(inferencer, "unload"):
+                inferencer.unload()
+
+        # --- Florence-2 ---
+        if self.run_florence2:
+            logger.info("=" * 40 + " Florence-2 " + "=" * 40)
+            inferencer, label_map = self._build_florence2_inferencer()
+            all_results["Florence-2"] = self._eval_method(
+                method_name="Florence-2",
+                inferencer=inferencer,
+                label_map=label_map,
+                val_gt=val_gt,
+                test_gt=test_gt,
+                val_image_dir=self.val_dir,
+                test_image_dir=self.test_dir,
+            )
+            if hasattr(inferencer, "unload"):
+                inferencer.unload()
 
         # --- Write outputs ---
         self._write_summary_csv(all_results)
@@ -674,6 +786,92 @@ class EvalDetectionTask(BaseTask):
             post_processor=post_processor,
             input_height=self.rfdetr_input_size,
             input_width=self.rfdetr_input_size,
+        )
+        return inferencer, label_map
+
+    def _build_yolox_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
+        if self.yolox_onnx_model_path is None:
+            msg = "yolox_onnx_model_path is required when run_yolox=True"
+            raise ValueError(msg)
+
+        from object_detection_training.inference.onnx_inferencer import ONNXInferencer
+        from object_detection_training.inference.postprocess import YOLOXPostProcessor
+        from object_detection_training.schemas.label_mapping import LabelMapping
+
+        # Load label mapping
+        if self.yolox_label_mapping_path is not None:
+            mapping = LabelMapping.from_json(self.yolox_label_mapping_path)
+            label_map = {int(k): v for k, v in mapping.id_to_name.items()}
+        else:
+            label_map = dict(_EVAL_LABEL_MAP)
+
+        post_processor = YOLOXPostProcessor(
+            label_map=label_map,
+            confidence_threshold=self.yolox_confidence_threshold,
+            nms_iou_threshold=self.yolox_nms_iou_threshold,
+            model_input_size=(self.yolox_input_size, self.yolox_input_size),
+        )
+
+        # YOLOX uses raw 0-255 float input (no ImageNet normalization)
+        inferencer = ONNXInferencer(
+            model_path=self.yolox_onnx_model_path,
+            post_processor=post_processor,
+            input_height=self.yolox_input_size,
+            input_width=self.yolox_input_size,
+            image_mean=[0.0, 0.0, 0.0],
+            image_std=[1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0],
+        )
+        return inferencer, label_map
+
+    def _build_omdet_turbo_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
+        from object_detection_training.inference.omdet_turbo_inferencer import (
+            OmDetTurboInferencer,
+        )
+
+        classes = list(_EVAL_LABEL_MAP.values())
+        label_map = dict(enumerate(classes))
+        inferencer = OmDetTurboInferencer(
+            model_name=self.omdet_turbo_model_name,
+            classes=classes,
+            box_threshold=self.omdet_turbo_box_threshold,
+        )
+        return inferencer, label_map
+
+    def _build_grounding_dino_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
+        from object_detection_training.inference.grounding_dino_inferencer import (
+            GroundingDINOInferencer,
+        )
+
+        classes = list(_EVAL_LABEL_MAP.values())
+        label_map = dict(enumerate(classes))
+        inferencer = GroundingDINOInferencer(
+            model_name=self.grounding_dino_model_name,
+            classes=classes,
+            box_threshold=self.grounding_dino_box_threshold,
+            text_threshold=self.grounding_dino_text_threshold,
+        )
+        return inferencer, label_map
+
+    def _build_florence2_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
+        from object_detection_training.inference.florence2_inferencer import (
+            Florence2Inferencer,
+        )
+
+        classes = list(_EVAL_LABEL_MAP.values())
+        label_map = dict(enumerate(classes))
+        caption = self.gemini_prompt_template or ""
+        inferencer = Florence2Inferencer(
+            model_name=self.florence2_model_name,
+            classes=classes,
+            caption=caption,
         )
         return inferencer, label_map
 
