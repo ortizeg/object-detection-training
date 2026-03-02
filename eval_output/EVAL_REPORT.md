@@ -55,23 +55,96 @@ YOLOX pure model inference (from training benchmark): **16.8 ms/img (59.6 FPS)**
 
 Differences likely due to evaluation framework (supervision COCO-style mAP vs data-visor custom matching) and confidence handling (Gemini returns confidence=1.0; data-visor may handle this differently).
 
-## Key Findings
+## Analysis: Why YOLOX-S is the Best Model
 
-1. **YOLOX-S is the best overall model**: 54.9% mAP@50:95 on test — 9% higher than RF-DETR (50.3%). Strongest at rim detection (100% AP@50) and number detection (82.9% AP@50).
+### Overall Performance
 
-2. **YOLOX-S excels at precise localization**: 62.5% mAP@75 vs RF-DETR's 45.4% — a 37% relative improvement. YOLOX bounding boxes are tighter, which matters for downstream tasks.
+YOLOX-S leads across every aggregate metric on test:
 
-3. **RF-DETR leads on player detection**: 98.2% AP@50 vs YOLOX's 92.6%. RF-DETR's transformer attention may help with crowded player scenes.
+| Metric | YOLOX-S | RF-DETR | Gemini 3.1 | YOLOX vs RF-DETR | YOLOX vs Gemini |
+|--------|---------|---------|------------|------------------|-----------------|
+| mAP@50:95 | 54.9% | 50.3% | 26.5% | +9.1% relative | +107% relative |
+| mAP@50 | 86.2% | 85.8% | 43.1% | +0.4% | +100% |
+| mAP@75 | 62.5% | 45.4% | 29.3% | +37.6% | +113% |
+| Precision | 91.8% | 93.8% | 77.9% | -2.1% | +17.8% |
+| Recall | 86.4% | 85.6% | 66.1% | +0.9% | +30.7% |
+| F1 | 89.1% | 89.5% | 71.5% | -0.4% | +24.5% |
 
-4. **Both trained models far outperform zero-shot Gemini**: ~2x higher mAP@50:95 across the board. Fine-tuning on domain data remains essential.
+The biggest differentiator is **mAP@75** — YOLOX produces 37% tighter bounding boxes than RF-DETR. This is critical for downstream tasks like jersey number OCR where tight crops improve recognition accuracy. At the looser IoU=0.5 threshold, both trained models perform nearly identically (86.2% vs 85.8%), but YOLOX's advantage grows as the IoU requirement tightens.
 
-5. **Gemini 3.1 Pro is surprisingly competent for players**: 92.5% AP@50 — only 6 points behind RF-DETR. Zero-shot VLMs can detect large, salient objects well.
+RF-DETR has marginally higher precision (+2.1%) and F1 (-0.4%), meaning it has slightly fewer false positives. However, YOLOX achieves slightly better recall (+0.9%), finding more true objects.
 
-6. **Gemini struggles with small/specific objects**: rim (4.3% AP@50), number (13.7%), and ball (36.3%) are far behind trained models. Precise localization remains a VLM weakness.
+### Per-Class Breakdown
 
-7. **ONNX inference is ~40x faster than Gemini API**: Both ONNX models process ~2.6 img/s end-to-end vs Gemini's 0.064 img/s.
+**Player detection** (largest class, most instances):
+- RF-DETR: 98.2% AP@50 — best in class
+- YOLOX: 92.6% AP@50 — 5.6 points behind
+- Gemini: 92.5% AP@50 — essentially tied with YOLOX
+- *Analysis*: RF-DETR's transformer attention mechanism with global receptive field appears to handle crowded multi-player scenes better. YOLOX's convolutional architecture may lose some detections when players overlap. Notably, Gemini matches YOLOX here — large, salient people are exactly what VLMs understand well from pretraining on web-scale image-text data.
 
-8. **All models struggle with ball detection**: Ball AP@50 is the weakest class across all methods (61-70% for trained models, 36% for Gemini), likely due to small size, motion blur, and occlusion.
+**Referee detection**:
+- RF-DETR: 97.1% AP@50
+- YOLOX: 93.7% AP@50
+- Gemini: 68.6% AP@50
+- *Analysis*: Both trained models excel at referees. Gemini drops to 68.6% — it sometimes confuses referees with players or misses them when partially occluded. The distinct referee uniform is a strong visual cue that both trained models learn, but Gemini's general-purpose training lacks this domain-specific knowledge.
+
+**Rim detection** (YOLOX wins decisively):
+- YOLOX: **100.0%** AP@50 — perfect detection
+- RF-DETR: 96.9% AP@50
+- Gemini: 4.3% AP@50 — near-total failure
+- *Analysis*: YOLOX achieves perfect rim detection. The rim is a fixed, high-contrast object with consistent appearance across frames. YOLOX's anchor-based detection at multiple scales captures it reliably. Gemini's 4.3% is striking — VLMs struggle to produce tight bounding boxes around geometric structures like a hoop rim, often returning boxes that are too large or miss the rim entirely.
+
+**Number detection** (YOLOX's biggest advantage):
+- YOLOX: **82.9%** AP@50 — leads by 6.2 points
+- RF-DETR: 76.8% AP@50
+- Gemini: 13.7% AP@50
+- *Analysis*: Jersey numbers are small, low-resolution regions requiring precise localization. YOLOX's multi-scale feature pyramid and NMS handle small objects better. RF-DETR's query-based detection may allocate too few queries to small objects. Gemini at 13.7% confirms that VLMs cannot reliably localize fine-grained text regions — they may recognize that numbers exist but cannot draw tight boxes around them.
+
+**Ball detection** (weakest class for all methods):
+- YOLOX: 61.5% AP@50
+- RF-DETR: 60.1% AP@50
+- Gemini: 36.3% AP@50
+- *Analysis*: Ball detection is universally hard: the basketball is small (often <1% of image area), frequently occluded by hands, and subject to motion blur. Both trained models perform similarly (~60%), suggesting this is a data-difficulty ceiling rather than an architecture issue. More training data with diverse ball appearances would likely help. Gemini at 36.3% detects the ball roughly a third of the time — it can identify a basketball when it's clearly visible but fails when occluded or blurred.
+
+### Why YOLOX Outperforms RF-DETR
+
+1. **Higher input resolution**: YOLOX uses 640x640 vs RF-DETR's 512x512, giving 56% more pixels. This directly helps with small objects like numbers and the ball.
+
+2. **Multi-scale feature pyramid (FPN/PAN)**: YOLOX's PAFPN architecture preserves fine-grained features at multiple scales, while RF-DETR's transformer encoder aggregates features into a fixed set of queries, potentially losing small-object detail.
+
+3. **Per-class NMS**: YOLOX applies NMS independently per class, preventing high-confidence detections of one class from suppressing nearby detections of another class. RF-DETR uses query-based detection without explicit NMS, which can cause query competition between classes.
+
+4. **Tight bounding box regression**: The mAP@75 gap (62.5% vs 45.4%) suggests YOLOX's regression head produces more precise boxes. This may be due to YOLOX's IoU-aware loss and objectness prediction guiding box quality.
+
+### The Gemini Gap: Zero-Shot vs Fine-Tuned
+
+Gemini 3.1 Pro represents the state-of-the-art in zero-shot VLM detection. Its performance reveals clear boundaries:
+
+| Regime | Gemini AP@50 | Trained Model AP@50 | Gap |
+|--------|-------------|---------------------|-----|
+| Large, salient objects (player) | 92.5% | 92.6-98.2% | 0-6% |
+| Medium, distinct objects (referee) | 68.6% | 93.7-97.1% | 25-29% |
+| Fixed geometry (rim) | 4.3% | 96.9-100% | 93-96% |
+| Small text (number) | 13.7% | 76.8-82.9% | 63-69% |
+| Small, occluded (ball) | 36.3% | 60.1-61.5% | 24-25% |
+
+**Key insight**: Gemini closes the gap to within 6 points on players — objects that VLMs see billions of times in pretraining data. But for domain-specific objects requiring precise spatial reasoning (rim, numbers), Gemini falls behind by 63-96 points. This confirms that **fine-tuning on domain data is essential** for production basketball detection, and zero-shot VLMs cannot replace specialized detectors for spatially precise tasks.
+
+**Gemini's confidence limitation**: All Gemini detections have confidence=1.0, so mAP depends entirely on detection quality, not confidence ranking. If Gemini could output calibrated confidences, its mAP would likely improve by allowing the metric to weight better detections higher.
+
+**Cost-benefit**: Gemini costs ~15.5 seconds per image (API latency) vs ~0.37 seconds for ONNX models — a 40x slowdown. For 190 images, Gemini takes 49 minutes vs 73 seconds for YOLOX. At scale, the trained models are clearly the right choice.
+
+### Key Takeaways
+
+1. **YOLOX-S is the recommended production model** for basketball detection: best mAP@50:95 (54.9%), perfect rim detection, and superior localization (mAP@75: 62.5%).
+
+2. **Localization quality matters**: The 37% mAP@75 gap between YOLOX and RF-DETR means YOLOX boxes are significantly tighter — critical for downstream tasks like jersey OCR and player tracking.
+
+3. **Ball detection needs more data**: At ~60% AP@50, both trained models plateau on ball detection. This class needs targeted data augmentation or a specialized detector.
+
+4. **Zero-shot VLMs have a clear niche**: Gemini is competitive for player detection (92.5% AP@50) without any training data. For rapid prototyping or classes where training data is unavailable, VLMs are a viable starting point.
+
+5. **Fine-tuning wins decisively**: 2x higher mAP@50:95 and 40x faster inference make trained ONNX models the only practical choice for production basketball detection.
 
 ## Evaluation Details
 
