@@ -578,6 +578,7 @@ class EvalDetectionTask(BaseTask):
         test_image_dir: Path,
         *,
         filter_area_outliers: bool = False,
+        filter_single_best: bool = False,
     ) -> dict[str, Any]:
         """Run a single method on val and test, compute all metrics."""
         if self.output_dir is None:
@@ -594,6 +595,7 @@ class EvalDetectionTask(BaseTask):
             method_name,
             "val",
             filter_area_outliers=filter_area_outliers,
+            filter_single_best=filter_single_best,
         )
 
         # Run predictions on test
@@ -606,6 +608,7 @@ class EvalDetectionTask(BaseTask):
             method_name,
             "test",
             filter_area_outliers=filter_area_outliers,
+            filter_single_best=filter_single_best,
         )
 
         # Compute mAP on val and test
@@ -663,6 +666,7 @@ class EvalDetectionTask(BaseTask):
         split: str,
         *,
         filter_area_outliers: bool = False,
+        filter_single_best: bool = False,
     ) -> dict[str, sv.Detections]:
         """Run inferencer on all images in gt_map, return sv.Detections per image."""
         if self.output_dir is None:
@@ -692,6 +696,10 @@ class EvalDetectionTask(BaseTask):
             # Filter outlier boxes by area (removes large crowd/court boxes)
             if filter_area_outliers:
                 remapped = self._filter_area_outliers(remapped)
+
+            # Keep only the best detection per singleton class (ball, rim)
+            if filter_single_best:
+                remapped = self._filter_single_best_per_class(remapped)
 
             sv_dets = _detections_to_sv(remapped, loader.width, loader.height)
             pred_map[filename] = sv_dets
@@ -760,6 +768,43 @@ class EvalDetectionTask(BaseTask):
                 )
             )
         return remapped
+
+    @staticmethod
+    def _filter_single_best_per_class(
+        detections: list[Detection],
+        single_class_ids: frozenset[int] = frozenset({1, 3}),
+    ) -> list[Detection]:
+        """Keep only the highest-confidence detection for singleton classes.
+
+        For classes where at most one instance exists per image (e.g.
+        ball=1, rim=3), retain only the top-scoring detection.  All
+        other classes pass through unchanged.
+
+        Args:
+            detections: List of detections (already remapped to eval IDs).
+            single_class_ids: Class IDs to filter (default: ball, rim).
+        """
+        # Partition: pass-through vs singleton candidates
+        result: list[Detection] = []
+        best_per_class: dict[int, Detection] = {}
+
+        for det in detections:
+            if det.class_id not in single_class_ids:
+                result.append(det)
+            else:
+                current_best = best_per_class.get(det.class_id)
+                if current_best is None or det.confidence > current_best.confidence:
+                    best_per_class[det.class_id] = det
+
+        result.extend(best_per_class.values())
+
+        n_removed = len(detections) - len(result)
+        if n_removed > 0:
+            logger.debug(
+                f"Single-best filter removed {n_removed}/{len(detections)} "
+                f"duplicate detections for classes {single_class_ids}"
+            )
+        return result
 
     @staticmethod
     def _filter_area_outliers(

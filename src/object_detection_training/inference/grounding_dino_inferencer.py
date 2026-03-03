@@ -181,10 +181,12 @@ class GroundingDINOInferencer(BaseInferencer):
         """Convert HF post-processed results to Detection list."""
         boxes = results["boxes"]
         scores = results["scores"]
-        # transformers >=4.51: "text" removed, "text_labels" has string names,
+        # transformers >=4.51: "text" removed, "text_labels" may be None,
         # "labels" returns integer IDs.
-        labels = results.get(
-            "text", results.get("text_labels", results.get("labels", []))
+        labels = (
+            results.get("text")
+            or results.get("text_labels")
+            or results.get("labels", [])
         )
 
         detections: list[Detection] = []
