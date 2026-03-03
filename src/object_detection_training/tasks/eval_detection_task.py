@@ -405,6 +405,9 @@ class EvalDetectionTask(BaseTask):
     grounding_dino_text_threshold: float = Field(
         default=0.01, description="Grounding DINO text confidence threshold"
     )
+    grounding_dino_nms_iou_threshold: float = Field(
+        default=0.5, description="Grounding DINO NMS IoU threshold"
+    )
 
     # Florence-2 config
     run_florence2: bool = Field(default=False, description="Run Florence-2 evaluation")
@@ -507,6 +510,7 @@ class EvalDetectionTask(BaseTask):
                 test_gt=test_gt,
                 val_image_dir=self.val_dir,
                 test_image_dir=self.test_dir,
+                filter_area_outliers=True,
             )
             if hasattr(inferencer, "unload"):
                 inferencer.unload()
@@ -523,6 +527,7 @@ class EvalDetectionTask(BaseTask):
                 test_gt=test_gt,
                 val_image_dir=self.val_dir,
                 test_image_dir=self.test_dir,
+                filter_area_outliers=True,
             )
             if hasattr(inferencer, "unload"):
                 inferencer.unload()
@@ -539,6 +544,7 @@ class EvalDetectionTask(BaseTask):
                 test_gt=test_gt,
                 val_image_dir=self.val_dir,
                 test_image_dir=self.test_dir,
+                filter_area_outliers=True,
             )
             if hasattr(inferencer, "unload"):
                 inferencer.unload()
@@ -570,6 +576,8 @@ class EvalDetectionTask(BaseTask):
         test_gt: dict[str, sv.Detections],
         val_image_dir: Path,
         test_image_dir: Path,
+        *,
+        filter_area_outliers: bool = False,
     ) -> dict[str, Any]:
         """Run a single method on val and test, compute all metrics."""
         if self.output_dir is None:
@@ -579,13 +587,25 @@ class EvalDetectionTask(BaseTask):
         # Run predictions on val
         logger.info(f"[{method_name}] Running predictions on val...")
         val_preds = self._run_predictions(
-            inferencer, label_map, val_gt, val_image_dir, method_name, "val"
+            inferencer,
+            label_map,
+            val_gt,
+            val_image_dir,
+            method_name,
+            "val",
+            filter_area_outliers=filter_area_outliers,
         )
 
         # Run predictions on test
         logger.info(f"[{method_name}] Running predictions on test...")
         test_preds = self._run_predictions(
-            inferencer, label_map, test_gt, test_image_dir, method_name, "test"
+            inferencer,
+            label_map,
+            test_gt,
+            test_image_dir,
+            method_name,
+            "test",
+            filter_area_outliers=filter_area_outliers,
         )
 
         # Compute mAP on val and test
@@ -641,6 +661,8 @@ class EvalDetectionTask(BaseTask):
         image_dir: Path,
         method_name: str,
         split: str,
+        *,
+        filter_area_outliers: bool = False,
     ) -> dict[str, sv.Detections]:
         """Run inferencer on all images in gt_map, return sv.Detections per image."""
         if self.output_dir is None:
@@ -666,6 +688,10 @@ class EvalDetectionTask(BaseTask):
 
             # Remap detection class IDs to eval label map
             remapped = self._remap_detections(detections, label_map)
+
+            # Filter outlier boxes by area (removes large crowd/court boxes)
+            if filter_area_outliers:
+                remapped = self._filter_area_outliers(remapped)
 
             sv_dets = _detections_to_sv(remapped, loader.width, loader.height)
             pred_map[filename] = sv_dets
@@ -734,6 +760,31 @@ class EvalDetectionTask(BaseTask):
                 )
             )
         return remapped
+
+    @staticmethod
+    def _filter_area_outliers(
+        detections: list[Detection],
+        max_area_fraction: float = 0.05,
+    ) -> list[Detection]:
+        """Remove detections whose normalised area exceeds a fraction of the image.
+
+        Zero-shot detectors often produce large spurious boxes covering
+        crowd regions or the entire court.  Real player/object boxes are
+        typically <3% of the image area, while spurious boxes are >10%.
+
+        Args:
+            detections: List of detections with normalised bboxes.
+            max_area_fraction: Maximum allowed normalised area (w*h).
+                Boxes exceeding this are dropped.  Default 0.05 (5%).
+        """
+        filtered = [d for d in detections if d.bbox.w * d.bbox.h <= max_area_fraction]
+        n_removed = len(detections) - len(filtered)
+        if n_removed > 0:
+            logger.debug(
+                f"Area filter removed {n_removed}/{len(detections)} boxes "
+                f"exceeding {max_area_fraction:.0%} of image area"
+            )
+        return filtered
 
     # ------------------------------------------------------------------
     # Inferencer builders
@@ -878,6 +929,7 @@ class EvalDetectionTask(BaseTask):
             classes=classes,
             box_threshold=self.grounding_dino_box_threshold,
             text_threshold=self.grounding_dino_text_threshold,
+            nms_iou_threshold=self.grounding_dino_nms_iou_threshold,
         )
         return inferencer, label_map
 

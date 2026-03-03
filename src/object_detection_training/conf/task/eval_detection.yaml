@@ -57,6 +57,7 @@ run_grounding_dino: false
 grounding_dino_model_name: "IDEA-Research/grounding-dino-base"
 grounding_dino_box_threshold: 0.01
 grounding_dino_text_threshold: 0.01
+grounding_dino_nms_iou_threshold: 0.5
 
 # Florence-2 config
 run_florence2: false

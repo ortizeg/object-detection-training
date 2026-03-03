@@ -39,12 +39,14 @@ class GroundingDINOInferencer(BaseInferencer):
         classes: list[str] | None = None,
         box_threshold: float = 0.01,
         text_threshold: float = 0.01,
+        nms_iou_threshold: float = 0.5,
         device: str = "auto",
     ) -> None:
         self.model_name = model_name
         self.classes = classes or []
         self.box_threshold = box_threshold
         self.text_threshold = text_threshold
+        self.nms_iou_threshold = nms_iou_threshold
 
         # Build normalised lookup: lower-cased class name -> class index
         self._name_to_id: dict[str, int] = {
@@ -104,7 +106,8 @@ class GroundingDINOInferencer(BaseInferencer):
                 target_sizes=[(h, w)],
             )[0]
 
-            return self._convert_results(results, w, h)
+            detections = self._convert_results(results, w, h)
+            return self._nms(detections)
 
         except Exception:
             logger.exception("Grounding DINO inference failed")
@@ -119,6 +122,55 @@ class GroundingDINOInferencer(BaseInferencer):
         elif self._device == "mps":
             torch.mps.empty_cache()
         logger.info("Grounding DINO model unloaded")
+
+    # Classes that should only appear on small boxes (fraction of image area).
+    # If a box exceeds this threshold, fall back to the next matching class.
+    _SMALL_OBJECT_CLASSES: frozenset[str] = frozenset({"jersey number"})
+    _SMALL_OBJECT_MAX_AREA: float = 0.01  # 1% of image area
+
+    def _resolve_label(
+        self,
+        label: str,
+        box_area_fraction: float = 0.0,
+    ) -> int | None:
+        """Resolve a Grounding DINO label string to a class ID.
+
+        The HuggingFace processor can return concatenated labels like
+        ``"person referee jersey number"`` when multiple phrase tokens
+        activate for the same box.  We pick the class whose name appears
+        *earliest* in the label string (the primary class), with a
+        size-based sanity check for small-object classes.
+        """
+        normalized = label.lower().strip()
+
+        # Fast path: exact match
+        exact = self._name_to_id.get(normalized)
+        if exact is not None:
+            # Check size sanity for small-object classes
+            if (
+                normalized in self._SMALL_OBJECT_CLASSES
+                and box_area_fraction > self._SMALL_OBJECT_MAX_AREA
+            ):
+                return None
+            return exact
+
+        # Find all class names contained in the label, sorted by position
+        matches: list[tuple[int, str, int]] = []  # (position, name, class_id)
+        for name, class_id in self._name_to_id.items():
+            pos = normalized.find(name)
+            if pos != -1:
+                matches.append((pos, name, class_id))
+        matches.sort()
+
+        # Return the first match that passes the size sanity check
+        for _pos, name, class_id in matches:
+            if (
+                name in self._SMALL_OBJECT_CLASSES
+                and box_area_fraction > self._SMALL_OBJECT_MAX_AREA
+            ):
+                continue
+            return class_id
+        return None
 
     def _convert_results(
         self,
@@ -136,10 +188,23 @@ class GroundingDINOInferencer(BaseInferencer):
         )
 
         detections: list[Detection] = []
+        img_area = float(image_width * image_height)
         for box, score, label in zip(boxes, scores, labels, strict=False):
+            # Compute normalized box area for size-based label sanity checks
+            if isinstance(box, torch.Tensor):
+                bx1, by1, bx2, by2 = box.tolist()
+            else:
+                bx1, by1, bx2, by2 = (
+                    float(box[0]),
+                    float(box[1]),
+                    float(box[2]),
+                    float(box[3]),
+                )
+            box_area_frac = (bx2 - bx1) * (by2 - by1) / img_area if img_area else 0.0
+
             # Handle both string labels and integer IDs
             if isinstance(label, str):
-                class_id = self._name_to_id.get(label.lower().strip())
+                class_id = self._resolve_label(label, box_area_frac)
             else:
                 # Integer label ID — map through classes list if in range
                 label_idx = int(label)
@@ -148,18 +213,8 @@ class GroundingDINOInferencer(BaseInferencer):
                 logger.debug(f"Label {label!r} not in class map - skipping")
                 continue
 
-            if isinstance(box, torch.Tensor):
-                x1, y1, x2, y2 = box.tolist()
-            else:
-                x1, y1, x2, y2 = (
-                    float(box[0]),
-                    float(box[1]),
-                    float(box[2]),
-                    float(box[3]),
-                )
-
             nx, ny, nw, nh = pixel_xyxy_to_normalized_xywh(
-                x1, y1, x2, y2, image_width, image_height
+                bx1, by1, bx2, by2, image_width, image_height
             )
 
             conf = float(score) if not isinstance(score, float) else score
@@ -172,3 +227,51 @@ class GroundingDINOInferencer(BaseInferencer):
             )
 
         return detections
+
+    # ------------------------------------------------------------------
+    # Per-class greedy NMS on normalized xywh boxes
+    # ------------------------------------------------------------------
+
+    def _nms(self, detections: list[Detection]) -> list[Detection]:
+        """Apply per-class greedy NMS to remove duplicate boxes."""
+        if len(detections) <= 1:
+            return detections
+
+        # Sort by confidence descending
+        dets = sorted(detections, key=lambda d: d.confidence, reverse=True)
+
+        keep: list[Detection] = []
+        suppressed = [False] * len(dets)
+
+        for i, det_i in enumerate(dets):
+            if suppressed[i]:
+                continue
+            keep.append(det_i)
+            for j in range(i + 1, len(dets)):
+                if suppressed[j]:
+                    continue
+                if dets[j].class_id != det_i.class_id:
+                    continue
+                if self._iou(det_i, dets[j]) > self.nms_iou_threshold:
+                    suppressed[j] = True
+
+        return keep
+
+    @staticmethod
+    def _iou(a: Detection, b: Detection) -> float:
+        """Compute IoU between two detections (normalized xywh boxes)."""
+        ax1, ay1 = a.bbox.x, a.bbox.y
+        ax2, ay2 = a.bbox.x + a.bbox.w, a.bbox.y + a.bbox.h
+        bx1, by1 = b.bbox.x, b.bbox.y
+        bx2, by2 = b.bbox.x + b.bbox.w, b.bbox.y + b.bbox.h
+
+        ix1 = max(ax1, bx1)
+        iy1 = max(ay1, by1)
+        ix2 = min(ax2, bx2)
+        iy2 = min(ay2, by2)
+
+        inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+        area_a = a.bbox.w * a.bbox.h
+        area_b = b.bbox.w * b.bbox.h
+        union = area_a + area_b - inter
+        return inter / max(union, 1e-9)

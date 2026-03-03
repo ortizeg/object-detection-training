@@ -11,7 +11,7 @@ import torch
 from object_detection_training.inference.grounding_dino_inferencer import (
     GroundingDINOInferencer,
 )
-from object_detection_training.schemas.detection import Detection
+from object_detection_training.schemas.detection import BoundingBox, Detection
 
 
 @pytest.fixture()
@@ -227,3 +227,235 @@ class TestGroundingDINOInferencer:
         fake_image = np.zeros((480, 640, 3), dtype=np.uint8)
         dets = inferencer.predict(fake_image, 640, 480)
         assert dets == []
+
+
+class TestResolveLabelConcatenated:
+    """Tests for _resolve_label handling concatenated multi-class labels."""
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_exact_match(self) -> None:
+        inferencer = GroundingDINOInferencer(
+            classes=[
+                "person",
+                "sports ball",
+                "referee",
+                "basketball hoop",
+                "jersey number",
+            ],
+            device="cpu",
+        )
+        assert inferencer._resolve_label("person") == 0
+        assert inferencer._resolve_label("sports ball") == 1
+        assert inferencer._resolve_label("jersey number") == 4
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_concatenated_label_picks_first_match(self) -> None:
+        """'person referee jersey number' should resolve to person (first)."""
+        inferencer = GroundingDINOInferencer(
+            classes=[
+                "person",
+                "sports ball",
+                "referee",
+                "basketball hoop",
+                "jersey number",
+            ],
+            device="cpu",
+        )
+        assert inferencer._resolve_label("person referee jersey number") == 0
+        assert inferencer._resolve_label("person referee basketball hoop") == 0
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_concatenated_label_without_person(self) -> None:
+        """'basketball hoop jersey number' should resolve to basketball hoop."""
+        inferencer = GroundingDINOInferencer(
+            classes=[
+                "person",
+                "sports ball",
+                "referee",
+                "basketball hoop",
+                "jersey number",
+            ],
+            device="cpu",
+        )
+        # basketball hoop appears at position 0, jersey number at position 16
+        assert inferencer._resolve_label("basketball hoop jersey number") == 3
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_no_match_returns_none(self) -> None:
+        inferencer = GroundingDINOInferencer(
+            classes=["person", "ball"],
+            device="cpu",
+        )
+        assert inferencer._resolve_label("alien spaceship") is None
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_case_insensitive(self) -> None:
+        inferencer = GroundingDINOInferencer(
+            classes=["person", "ball"],
+            device="cpu",
+        )
+        assert inferencer._resolve_label("Person") == 0
+        assert inferencer._resolve_label("  BALL  ") == 1
+
+
+class TestResolveLabelSizeCheck:
+    """Tests for size-based sanity check on small-object classes."""
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_small_box_keeps_jersey_number(self) -> None:
+        """A small box labeled 'jersey number' is kept."""
+        inferencer = GroundingDINOInferencer(
+            classes=[
+                "person",
+                "sports ball",
+                "referee",
+                "basketball hoop",
+                "jersey number",
+            ],
+            device="cpu",
+        )
+        # 0.5% of image area — under the 1% threshold
+        assert inferencer._resolve_label("jersey number", box_area_fraction=0.005) == 4
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_large_box_rejects_jersey_number(self) -> None:
+        """A large box labeled only 'jersey number' is rejected (returns None)."""
+        inferencer = GroundingDINOInferencer(
+            classes=[
+                "person",
+                "sports ball",
+                "referee",
+                "basketball hoop",
+                "jersey number",
+            ],
+            device="cpu",
+        )
+        # 2% of image area — over the 1% threshold
+        assert (
+            inferencer._resolve_label("jersey number", box_area_fraction=0.02) is None
+        )
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_large_box_concatenated_falls_through_to_person(self) -> None:
+        """A large box with 'person referee jersey number' skips jersey number."""
+        inferencer = GroundingDINOInferencer(
+            classes=[
+                "person",
+                "sports ball",
+                "referee",
+                "basketball hoop",
+                "jersey number",
+            ],
+            device="cpu",
+        )
+        # Large box: jersey number is skipped, falls through to person
+        result = inferencer._resolve_label(
+            "jersey number person", box_area_fraction=0.02
+        )
+        assert result == 0  # person
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_person_not_affected_by_size_check(self) -> None:
+        """Person class is never rejected by size check."""
+        inferencer = GroundingDINOInferencer(
+            classes=["person", "ball"],
+            device="cpu",
+        )
+        assert inferencer._resolve_label("person", box_area_fraction=0.5) == 0
+
+
+class TestNMS:
+    """Tests for per-class greedy NMS."""
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_nms_removes_overlapping_same_class(self) -> None:
+        """Overlapping boxes of same class: lower confidence is suppressed."""
+        inferencer = GroundingDINOInferencer(
+            classes=["person"],
+            nms_iou_threshold=0.5,
+            device="cpu",
+        )
+        dets = [
+            Detection(
+                bbox=BoundingBox(x=0.1, y=0.1, w=0.2, h=0.3),
+                confidence=0.9,
+                class_id=0,
+            ),
+            Detection(
+                bbox=BoundingBox(x=0.12, y=0.12, w=0.2, h=0.3),
+                confidence=0.7,
+                class_id=0,
+            ),
+        ]
+        result = inferencer._nms(dets)
+        assert len(result) == 1
+        assert result[0].confidence == 0.9
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_nms_keeps_different_classes(self) -> None:
+        """Overlapping boxes of different classes are both kept."""
+        inferencer = GroundingDINOInferencer(
+            classes=["person", "ball"],
+            nms_iou_threshold=0.5,
+            device="cpu",
+        )
+        dets = [
+            Detection(
+                bbox=BoundingBox(x=0.1, y=0.1, w=0.2, h=0.3),
+                confidence=0.9,
+                class_id=0,
+            ),
+            Detection(
+                bbox=BoundingBox(x=0.1, y=0.1, w=0.2, h=0.3),
+                confidence=0.7,
+                class_id=1,
+            ),
+        ]
+        result = inferencer._nms(dets)
+        assert len(result) == 2
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_nms_keeps_non_overlapping(self) -> None:
+        """Non-overlapping boxes of same class are both kept."""
+        inferencer = GroundingDINOInferencer(
+            classes=["person"],
+            nms_iou_threshold=0.5,
+            device="cpu",
+        )
+        dets = [
+            Detection(
+                bbox=BoundingBox(x=0.0, y=0.0, w=0.1, h=0.1),
+                confidence=0.9,
+                class_id=0,
+            ),
+            Detection(
+                bbox=BoundingBox(x=0.5, y=0.5, w=0.1, h=0.1),
+                confidence=0.7,
+                class_id=0,
+            ),
+        ]
+        result = inferencer._nms(dets)
+        assert len(result) == 2
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_nms_empty_list(self) -> None:
+        inferencer = GroundingDINOInferencer(
+            classes=["person"],
+            device="cpu",
+        )
+        assert inferencer._nms([]) == []
+
+    @pytest.mark.usefixtures("_mock_transformers")
+    def test_nms_single_detection(self) -> None:
+        inferencer = GroundingDINOInferencer(
+            classes=["person"],
+            device="cpu",
+        )
+        det = Detection(
+            bbox=BoundingBox(x=0.1, y=0.1, w=0.2, h=0.3),
+            confidence=0.9,
+            class_id=0,
+        )
+        result = inferencer._nms([det])
+        assert len(result) == 1
+        assert result[0] is det
