@@ -64,5 +64,11 @@ run_florence2: false
 florence2_model_name: "microsoft/Florence-2-large-ft"
 florence2_task: "<OD>"
 
+# OWLv2 config
+run_owlv2: false
+owlv2_model_name: "google/owlv2-large-patch14-ensemble"
+owlv2_box_threshold: 0.01
+owlv2_nms_iou_threshold: 0.3
+
 # Evaluation config
 confidence_threshold_steps: 20
