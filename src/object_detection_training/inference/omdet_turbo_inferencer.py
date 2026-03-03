@@ -61,12 +61,15 @@ class OmDetTurboInferencer(BaseInferencer):
 
         logger.info(f"Loading OmDet-Turbo model {model_name} on {self._device}")
         self._processor = AutoProcessor.from_pretrained(model_name)
+        # Load to CPU first with device_map="cpu" to materialise meta tensors
+        # from the timm backbone, then move to the target device.
         self._model = AutoModelForZeroShotObjectDetection.from_pretrained(
             model_name,
             torch_dtype=torch.float32,
-            low_cpu_mem_usage=False,
+            device_map="cpu",
         )
-        self._model = self._model.to(self._device)
+        if self._device != "cpu":
+            self._model = self._model.to(self._device)
 
     def predict(
         self,
