@@ -69,6 +69,7 @@ def run_debug(image_path: str, output_path: str = "owlv2_debug.png") -> None:
         model_name="google/owlv2-large-patch14-ensemble",
         classes=CLASSES,
         box_threshold=0.20,
+        nms_iou_threshold=0.3,
         device="auto",
     )
 

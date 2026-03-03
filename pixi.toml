@@ -76,3 +76,5 @@ peft = "*"
 mkdocstrings = { version = "*", extras = ["python"] }
 onnxruntime = ">=1.23.2, <2"
 num2words = ">=0.5.14, <0.6"
+timm = "*"  # Required by OmDet-Turbo backbone (AutoBackbone)
+einops = "*"  # Required by Florence-2

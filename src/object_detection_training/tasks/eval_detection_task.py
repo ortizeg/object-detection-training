@@ -431,7 +431,7 @@ class EvalDetectionTask(BaseTask):
         default=0.01, description="OWLv2 box confidence threshold"
     )
     owlv2_nms_iou_threshold: float = Field(
-        default=0.5, description="OWLv2 NMS IoU threshold"
+        default=0.3, description="OWLv2 NMS IoU threshold"
     )
 
     # Eval config
