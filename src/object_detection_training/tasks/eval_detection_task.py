@@ -65,6 +65,7 @@ _NAME_TO_EVAL_ID["basketball"] = 1  # alternate -> ball
 _NAME_TO_EVAL_ID["basketball hoop"] = 3  # -> rim
 _NAME_TO_EVAL_ID["hoop"] = 3
 _NAME_TO_EVAL_ID["jersey number"] = 4
+_NAME_TO_EVAL_ID["basketball player"] = 0  # OWLv2 prompt -> player
 
 
 def _load_coco_gt(
@@ -420,6 +421,19 @@ class EvalDetectionTask(BaseTask):
         description="Florence-2 task prompt (<OD> or <CAPTION_TO_PHRASE_GROUNDING>)",
     )
 
+    # OWLv2 config
+    run_owlv2: bool = Field(default=False, description="Run OWLv2 evaluation")
+    owlv2_model_name: str = Field(
+        default="google/owlv2-large-patch14-ensemble",
+        description="OWLv2 model name",
+    )
+    owlv2_box_threshold: float = Field(
+        default=0.01, description="OWLv2 box confidence threshold"
+    )
+    owlv2_nms_iou_threshold: float = Field(
+        default=0.5, description="OWLv2 NMS IoU threshold"
+    )
+
     # Eval config
     confidence_threshold_steps: int = Field(
         default=20, description="Number of threshold steps for F1 sweep"
@@ -538,6 +552,23 @@ class EvalDetectionTask(BaseTask):
             inferencer, label_map = self._build_florence2_inferencer()
             all_results["Florence-2"] = self._eval_method(
                 method_name="Florence-2",
+                inferencer=inferencer,
+                label_map=label_map,
+                val_gt=val_gt,
+                test_gt=test_gt,
+                val_image_dir=self.val_dir,
+                test_image_dir=self.test_dir,
+                filter_area_outliers=True,
+            )
+            if hasattr(inferencer, "unload"):
+                inferencer.unload()
+
+        # --- OWLv2 ---
+        if self.run_owlv2:
+            logger.info("=" * 40 + " OWLv2 " + "=" * 40)
+            inferencer, label_map = self._build_owlv2_inferencer()
+            all_results["OWLv2"] = self._eval_method(
+                method_name="OWLv2",
                 inferencer=inferencer,
                 label_map=label_map,
                 val_gt=val_gt,
@@ -999,6 +1030,29 @@ class EvalDetectionTask(BaseTask):
             classes=classes,
             caption=caption,
             task=self.florence2_task,
+        )
+        return inferencer, label_map
+
+    def _build_owlv2_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
+        from object_detection_training.inference.owlv2_inferencer import (
+            OWLv2Inferencer,
+        )
+
+        classes = [
+            "basketball player",
+            "basketball",
+            "referee",
+            "basketball hoop",
+            "jersey number",
+        ]
+        label_map = dict(enumerate(classes))
+        inferencer = OWLv2Inferencer(
+            model_name=self.owlv2_model_name,
+            classes=classes,
+            box_threshold=self.owlv2_box_threshold,
+            nms_iou_threshold=self.owlv2_nms_iou_threshold,
         )
         return inferencer, label_map
 
