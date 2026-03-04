@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import csv
 import json
+import statistics
+import time
 from pathlib import Path
 from typing import Any
 
@@ -618,7 +620,7 @@ class EvalDetectionTask(BaseTask):
 
         # Run predictions on val
         logger.info(f"[{method_name}] Running predictions on val...")
-        val_preds = self._run_predictions(
+        val_preds, val_timing = self._run_predictions(
             inferencer,
             label_map,
             val_gt,
@@ -631,7 +633,7 @@ class EvalDetectionTask(BaseTask):
 
         # Run predictions on test
         logger.info(f"[{method_name}] Running predictions on test...")
-        test_preds = self._run_predictions(
+        test_preds, test_timing = self._run_predictions(
             inferencer,
             label_map,
             test_gt,
@@ -675,6 +677,9 @@ class EvalDetectionTask(BaseTask):
             "val_recall": val_prf1["recall"],
             "val_f1": val_prf1["f1"],
             "val_threshold": best_thresh,
+            "val_fps": val_timing["fps"],
+            "val_ms_per_image": val_timing["ms_per_image"],
+            "val_ms_per_image_median": val_timing["ms_per_image_median"],
             "test_mAP_50_95": test_metrics["mAP_50_95"],
             "test_mAP_50": test_metrics["mAP_50"],
             "test_mAP_75": test_metrics["mAP_75"],
@@ -683,6 +688,9 @@ class EvalDetectionTask(BaseTask):
             "test_recall": test_prf1["recall"],
             "test_f1": test_prf1["f1"],
             "test_threshold": best_thresh,
+            "test_fps": test_timing["fps"],
+            "test_ms_per_image": test_timing["ms_per_image"],
+            "test_ms_per_image_median": test_timing["ms_per_image_median"],
             "val_pr_data": val_pr,
             "test_pr_data": test_pr,
         }
@@ -698,20 +706,32 @@ class EvalDetectionTask(BaseTask):
         *,
         filter_area_outliers: bool = False,
         filter_single_best: bool = False,
-    ) -> dict[str, sv.Detections]:
-        """Run inferencer on all images in gt_map, return sv.Detections per image."""
+    ) -> tuple[dict[str, sv.Detections], dict[str, float]]:
+        """Run inferencer on all images in gt_map.
+
+        Returns:
+            Tuple of (predictions dict, timing stats dict).
+            Timing stats keys: total_seconds, num_images, fps,
+            ms_per_image, ms_per_image_median.
+        """
         if self.output_dir is None:
             msg = "output_dir must be set before running predictions"
             raise RuntimeError(msg)
         pred_map: dict[str, sv.Detections] = {}
         raw_preds: dict[str, list[dict[str, Any]]] = {}
+        per_image_times: list[float] = []
 
-        for filename in tqdm(gt_map, desc=f"{method_name} {split}", unit="img"):
+        filenames = list(gt_map.keys())
+        for idx, filename in enumerate(
+            tqdm(filenames, desc=f"{method_name} {split}", unit="img")
+        ):
             img_path = image_dir / filename
             if not img_path.exists():
                 logger.warning(f"Image not found: {img_path}")
                 pred_map[filename] = sv.Detections.empty()
                 continue
+
+            t0 = time.perf_counter()
 
             loader = ImageLoader(img_path)
             image = loader.read()
@@ -733,6 +753,13 @@ class EvalDetectionTask(BaseTask):
                 remapped = self._filter_single_best_per_class(remapped)
 
             sv_dets = _detections_to_sv(remapped, loader.width, loader.height)
+
+            elapsed = time.perf_counter() - t0
+
+            # Skip first image as warmup
+            if idx > 0:
+                per_image_times.append(elapsed)
+
             pred_map[filename] = sv_dets
 
             # Store raw predictions for JSON output
@@ -756,7 +783,31 @@ class EvalDetectionTask(BaseTask):
             json.dump(raw_preds, f, indent=2)
         logger.info(f"Saved predictions to {pred_path}")
 
-        return pred_map
+        # Compute timing stats
+        total_seconds = sum(per_image_times)
+        num_images = len(per_image_times)
+        mean_ms = (total_seconds / num_images * 1000.0) if num_images > 0 else 0.0
+        median_ms = (
+            statistics.median(t * 1000.0 for t in per_image_times)
+            if num_images > 0
+            else 0.0
+        )
+        fps = num_images / total_seconds if total_seconds > 0 else 0.0
+
+        timing_stats = {
+            "total_seconds": total_seconds,
+            "num_images": float(num_images),
+            "fps": fps,
+            "ms_per_image": mean_ms,
+            "ms_per_image_median": median_ms,
+        }
+        logger.info(
+            f"[{method_name}] {split} timing: {fps:.1f} FPS, "
+            f"{mean_ms:.1f} ms/img (median {median_ms:.1f} ms), "
+            f"{num_images} images (1 warmup skipped)"
+        )
+
+        return pred_map, timing_stats
 
     @staticmethod
     def _remap_detections(
@@ -1074,6 +1125,8 @@ class EvalDetectionTask(BaseTask):
             "Recall",
             "F1",
             "Threshold",
+            "FPS",
+            "ms/img",
         ]
 
         with open(csv_path, "w", newline="") as f:
@@ -1093,6 +1146,8 @@ class EvalDetectionTask(BaseTask):
                             "Recall": f"{res[f'{split}_recall']:.4f}",
                             "F1": f"{res[f'{split}_f1']:.4f}",
                             "Threshold": f"{res[f'{split}_threshold']:.2f}",
+                            "FPS": f"{res[f'{split}_fps']:.1f}",
+                            "ms/img": f"{res[f'{split}_ms_per_image']:.1f}",
                         }
                     )
 
@@ -1120,7 +1175,7 @@ class EvalDetectionTask(BaseTask):
             f"{'mAP@50:95':>9} | {'mAP@50':>6} | "
             f"{'mAP@75':>6} | {'Precision':>9} | "
             f"{'Recall':>6} | {'F1':>6} | "
-            f"{'Threshold':>9}"
+            f"{'Threshold':>9} | {'FPS':>6} | {'ms/img':>6}"
         )
         sep = "-" * len(header)
         logger.info(sep)
@@ -1137,7 +1192,9 @@ class EvalDetectionTask(BaseTask):
                     f"{res[f'{split}_precision']:>9.4f} | "
                     f"{res[f'{split}_recall']:>6.4f} | "
                     f"{res[f'{split}_f1']:>6.4f} | "
-                    f"{res[f'{split}_threshold']:>9.2f}"
+                    f"{res[f'{split}_threshold']:>9.2f} | "
+                    f"{res[f'{split}_fps']:>6.1f} | "
+                    f"{res[f'{split}_ms_per_image']:>6.1f}"
                 )
                 logger.info(row)
         logger.info(sep)
