@@ -4,7 +4,100 @@ from __future__ import annotations
 
 import torch
 
-from object_detection_training.utils.boxes import cxcywh_to_xyxy, xyxy_to_cxcywh
+from object_detection_training.utils.boxes import (
+    box_iou_1_to_n,
+    cxcywh_to_xyxy,
+    pad_and_clamp_bbox,
+    xyxy_to_cxcywh,
+)
+
+
+class TestBoxIou1ToN:
+    """Tests for box_iou_1_to_n."""
+
+    def test_identical_boxes(self) -> None:
+        """IoU of identical boxes should be 1.0."""
+        box = torch.tensor([[10.0, 10.0, 50.0, 50.0]])
+        boxes = torch.tensor([[10.0, 10.0, 50.0, 50.0]])
+        iou = box_iou_1_to_n(box, boxes)
+        torch.testing.assert_close(iou, torch.tensor([1.0]))
+
+    def test_no_overlap(self) -> None:
+        """Non-overlapping boxes should have IoU of 0."""
+        box = torch.tensor([[0.0, 0.0, 10.0, 10.0]])
+        boxes = torch.tensor([[20.0, 20.0, 30.0, 30.0]])
+        iou = box_iou_1_to_n(box, boxes)
+        torch.testing.assert_close(iou, torch.tensor([0.0]), atol=1e-5, rtol=1e-5)
+
+    def test_partial_overlap(self) -> None:
+        """Partially overlapping boxes should have 0 < IoU < 1."""
+        box = torch.tensor([[0.0, 0.0, 20.0, 20.0]])
+        boxes = torch.tensor([[10.0, 10.0, 30.0, 30.0]])
+        iou = box_iou_1_to_n(box, boxes)
+        # Intersection: 10x10=100, Union: 400+400-100=700
+        expected = torch.tensor([100.0 / 700.0])
+        torch.testing.assert_close(iou, expected, atol=1e-5, rtol=1e-5)
+
+    def test_multiple_boxes(self) -> None:
+        """Compute IoU against multiple boxes at once."""
+        box = torch.tensor([[0.0, 0.0, 20.0, 20.0]])
+        boxes = torch.tensor(
+            [
+                [0.0, 0.0, 20.0, 20.0],  # identical -> 1.0
+                [50.0, 50.0, 70.0, 70.0],  # no overlap -> 0.0
+            ]
+        )
+        iou = box_iou_1_to_n(box, boxes)
+        assert iou.shape == (2,)
+        torch.testing.assert_close(iou[0], torch.tensor(1.0))
+        torch.testing.assert_close(iou[1], torch.tensor(0.0), atol=1e-5, rtol=1e-5)
+
+    def test_empty_boxes(self) -> None:
+        """Empty target boxes should return empty tensor."""
+        box = torch.tensor([[10.0, 10.0, 50.0, 50.0]])
+        boxes = torch.zeros(0, 4)
+        iou = box_iou_1_to_n(box, boxes)
+        assert iou.shape == (0,)
+
+    def test_flat_box_input(self) -> None:
+        """Box as shape (4,) should also work."""
+        box = torch.tensor([0.0, 0.0, 20.0, 20.0])
+        boxes = torch.tensor([[0.0, 0.0, 20.0, 20.0]])
+        iou = box_iou_1_to_n(box, boxes)
+        torch.testing.assert_close(iou, torch.tensor([1.0]))
+
+
+class TestPadAndClampBbox:
+    """Tests for pad_and_clamp_bbox."""
+
+    def test_no_padding(self) -> None:
+        """Zero padding returns the original bbox as xyxy."""
+        x1, y1, x2, y2 = pad_and_clamp_bbox(10.0, 20.0, 100.0, 50.0, 640, 480, 0.0)
+        assert (x1, y1, x2, y2) == (10, 20, 110, 70)
+
+    def test_with_padding(self) -> None:
+        """Padding expands the box by the ratio on each side."""
+        x1, y1, x2, y2 = pad_and_clamp_bbox(100.0, 100.0, 100.0, 100.0, 640, 480, 0.1)
+        assert x1 == 90
+        assert y1 == 90
+        assert x2 == 210
+        assert y2 == 210
+
+    def test_clamps_to_image_bounds(self) -> None:
+        """Padding that exceeds image bounds is clamped."""
+        x1, y1, x2, y2 = pad_and_clamp_bbox(0.0, 0.0, 100.0, 100.0, 80, 80, 0.5)
+        assert x1 == 0
+        assert y1 == 0
+        assert x2 == 80  # clamped to img_w
+        assert y2 == 80  # clamped to img_h
+
+    def test_box_at_image_edge(self) -> None:
+        """Box at the far edge of the image."""
+        x1, y1, x2, y2 = pad_and_clamp_bbox(590.0, 430.0, 50.0, 50.0, 640, 480, 0.2)
+        assert x1 == 580
+        assert y1 == 420
+        assert x2 == 640  # clamped
+        assert y2 == 480  # clamped
 
 
 class TestCxcywhToXyxy:

@@ -49,6 +49,7 @@ nav:
       - Callbacks: api/callbacks.md
       - Data: api/data.md
       - Metrics: api/metrics.md
+      - Schemas: api/schemas.md
       - Transforms: api/transforms.md
       - Utils: api/utils.md
       - Tasks: api/tasks.md

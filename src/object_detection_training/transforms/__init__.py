@@ -17,12 +17,14 @@ from object_detection_training.transforms.multi_scale_resize import (
     MultiScaleResize,
     compute_multi_scale_scales,
 )
+from object_detection_training.transforms.object_inserter import ObjectInserter
 from object_detection_training.transforms.random_size_crop import RandomSizeCrop
 
 __all__ = [
     "MultiScaleRandomResize",
     "MultiScaleResize",
     "NormalizeBoxCoords",
+    "ObjectInserter",
     "RandomSizeCrop",
     "ToFloat32Tensor",
     "compute_multi_scale_scales",
