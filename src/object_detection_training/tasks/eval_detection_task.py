@@ -1067,14 +1067,15 @@ class EvalDetectionTask(BaseTask):
             model_input_size=(self.yolo26_input_size, self.yolo26_input_size),
         )
 
-        # YOLO26 uses RGB, /255.0 normalisation (no ImageNet mean/std)
+        # YOLO26 uses RGB, /255.0 normalisation (no ImageNet mean/std).
+        # ONNXInferencer already divides by 255, so use identity mean/std.
         inferencer = ONNXInferencer(
             model_path=self.yolo26_onnx_model_path,
             post_processor=post_processor,
             input_height=self.yolo26_input_size,
             input_width=self.yolo26_input_size,
             image_mean=[0.0, 0.0, 0.0],
-            image_std=[1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0],
+            image_std=[1.0, 1.0, 1.0],
         )
         return inferencer, label_map
 
