@@ -382,6 +382,19 @@ class EvalDetectionTask(BaseTask):
         default=0.45, description="YOLOX NMS IoU threshold"
     )
 
+    # YOLO26 config
+    run_yolo26: bool = Field(default=False, description="Run YOLO26 evaluation")
+    yolo26_onnx_model_path: Path | None = Field(
+        default=None, description="Path to YOLO26 ONNX model"
+    )
+    yolo26_label_mapping_path: Path | None = Field(
+        default=None, description="Path to YOLO26 labels_mapping.json"
+    )
+    yolo26_input_size: int = Field(default=640, description="YOLO26 input size")
+    yolo26_confidence_threshold: float = Field(
+        default=0.01, description="YOLO26 confidence threshold for raw predictions"
+    )
+
     # OmDet-Turbo config
     run_omdet_turbo: bool = Field(
         default=False, description="Run OmDet-Turbo evaluation"
@@ -506,6 +519,20 @@ class EvalDetectionTask(BaseTask):
             inferencer, label_map = self._build_yolox_inferencer()
             all_results["YOLOX"] = self._eval_method(
                 method_name="YOLOX",
+                inferencer=inferencer,
+                label_map=label_map,
+                val_gt=val_gt,
+                test_gt=test_gt,
+                val_image_dir=self.val_dir,
+                test_image_dir=self.test_dir,
+            )
+
+        # --- YOLO26 ---
+        if self.run_yolo26:
+            logger.info("=" * 40 + " YOLO26 " + "=" * 40)
+            inferencer, label_map = self._build_yolo26_inferencer()
+            all_results["YOLO26"] = self._eval_method(
+                method_name="YOLO26",
                 inferencer=inferencer,
                 label_map=label_map,
                 val_gt=val_gt,
@@ -1009,6 +1036,41 @@ class EvalDetectionTask(BaseTask):
             post_processor=post_processor,
             input_height=self.yolox_input_size,
             input_width=self.yolox_input_size,
+            image_mean=[0.0, 0.0, 0.0],
+            image_std=[1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0],
+        )
+        return inferencer, label_map
+
+    def _build_yolo26_inferencer(
+        self,
+    ) -> tuple[BaseInferencer, dict[int, str]]:
+        if self.yolo26_onnx_model_path is None:
+            msg = "yolo26_onnx_model_path is required when run_yolo26=True"
+            raise ValueError(msg)
+
+        from object_detection_training.inference.onnx_inferencer import ONNXInferencer
+        from object_detection_training.inference.postprocess import YOLO26PostProcessor
+        from object_detection_training.schemas.label_mapping import LabelMapping
+
+        # Load label mapping
+        if self.yolo26_label_mapping_path is not None:
+            mapping = LabelMapping.from_json(self.yolo26_label_mapping_path)
+            label_map = {int(k): v for k, v in mapping.id_to_name.items()}
+        else:
+            label_map = dict(_EVAL_LABEL_MAP)
+
+        post_processor = YOLO26PostProcessor(
+            label_map=label_map,
+            confidence_threshold=self.yolo26_confidence_threshold,
+            model_input_size=(self.yolo26_input_size, self.yolo26_input_size),
+        )
+
+        # YOLO26 uses RGB, /255.0 normalisation (no ImageNet mean/std)
+        inferencer = ONNXInferencer(
+            model_path=self.yolo26_onnx_model_path,
+            post_processor=post_processor,
+            input_height=self.yolo26_input_size,
+            input_width=self.yolo26_input_size,
             image_mean=[0.0, 0.0, 0.0],
             image_std=[1.0 / 255.0, 1.0 / 255.0, 1.0 / 255.0],
         )

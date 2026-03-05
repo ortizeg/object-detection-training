@@ -220,6 +220,82 @@ class YOLOXPostProcessor(BasePostProcessor):
         return keep
 
 
+class YOLO26PostProcessor(BasePostProcessor):
+    """YOLO26/Ultralytics post-processing (NMS-free).
+
+    Expected ONNX output: single tensor of shape
+    ``[batch, 300, 6]`` where columns are
+    ``[x1, y1, x2, y2, confidence, class_id]`` in **pixel** coordinates
+    relative to the model input size.
+
+    No NMS needed — YOLO26 uses a learned NMS-free head.
+
+    Args:
+        label_map: Mapping from integer class index to label name.
+        confidence_threshold: Minimum confidence to keep a detection.
+        model_input_size: Model input size (height, width) for coordinate
+            normalisation to [0, 1].
+    """
+
+    def __init__(
+        self,
+        label_map: dict[int, str],
+        confidence_threshold: float = 0.25,
+        model_input_size: tuple[int, int] = (640, 640),
+    ) -> None:
+        super().__init__(label_map, confidence_threshold)
+        self.model_input_size = model_input_size
+
+    def __call__(
+        self,
+        outputs: list[npt.NDArray[np.floating[Any]]],
+        image_width: int,
+        image_height: int,
+    ) -> list[Detection]:
+        """Decode YOLO26 predictions for a single image."""
+        # outputs[0] shape: [1, 300, 6]
+        pred = np.asarray(outputs[0], dtype=np.float32)
+        if pred.ndim == 3:
+            pred = pred[0]  # remove batch dim
+
+        # Columns: x1, y1, x2, y2, confidence, class_id
+        scores = pred[:, 4]
+        class_ids = pred[:, 5].astype(np.int32)
+
+        # Threshold
+        mask = scores > self.confidence_threshold
+        pred = pred[mask]
+        scores = scores[mask]
+        class_ids = class_ids[mask]
+
+        if len(scores) == 0:
+            return []
+
+        norm_h, norm_w = self.model_input_size
+
+        # xyxy (pixel) -> normalised xywh (top-left)
+        x1 = pred[:, 0] / norm_w
+        y1 = pred[:, 1] / norm_h
+        x2 = pred[:, 2] / norm_w
+        y2 = pred[:, 3] / norm_h
+        w = x2 - x1
+        h = y2 - y1
+
+        detections: list[Detection] = []
+        for i in range(len(scores)):
+            det = self._make_detection(
+                x=float(x1[i]),
+                y=float(y1[i]),
+                w=float(w[i]),
+                h=float(h[i]),
+                confidence=float(scores[i]),
+                class_id=int(class_ids[i]),
+            )
+            detections.append(det)
+
+        return detections
+
+
 class RFDETRPostProcessor(BasePostProcessor):
     """RFDETR-style post-processing.
 
