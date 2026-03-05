@@ -1050,12 +1050,14 @@ class EvalDetectionTask(BaseTask):
 
         from object_detection_training.inference.onnx_inferencer import ONNXInferencer
         from object_detection_training.inference.postprocess import YOLO26PostProcessor
-        from object_detection_training.schemas.label_mapping import LabelMapping
 
-        # Load label mapping
+        # Load label mapping (supports both full LabelMapping schema and
+        # simple {"id_to_name": {...}} format from YOLO26 export)
         if self.yolo26_label_mapping_path is not None:
-            mapping = LabelMapping.from_json(self.yolo26_label_mapping_path)
-            label_map = {int(k): v for k, v in mapping.id_to_name.items()}
+            with open(self.yolo26_label_mapping_path) as f:
+                raw = json.load(f)
+            id_to_name = raw.get("id_to_name", raw)
+            label_map = {int(k): v for k, v in id_to_name.items()}
         else:
             label_map = dict(_EVAL_LABEL_MAP)
 
