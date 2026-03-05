@@ -3,7 +3,8 @@ _target_: object_detection_training.tasks.ONNXInferenceTask
 name: inference_onnx
 model_path: ???        # Required: path to .onnx model file
 image_dir: ???         # Required: directory containing images
-label_map: ???         # Required: {0: "class_a", 1: "class_b", ...}
+label_map: null        # Optional: {0: "class_a", 1: "class_b", ...}
+label_mapping_path: null         # Optional: path to labels_mapping.json file
 post_processor_type: rfdetr
 confidence_threshold: 0.25
 nms_iou_threshold: 0.45

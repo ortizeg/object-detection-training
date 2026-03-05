@@ -39,6 +39,7 @@ dependencies = [
     "supervision",
     "peft",
     "onnxruntime",
+    "google-genai",
 ]
 
 [project.scripts]

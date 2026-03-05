@@ -1,0 +1,6 @@
+_target_: object_detection_training.tasks.vlm_annotation_task.VLMAnnotationTask
+name: vlm_annotation
+output_dir: ${hydra:runtime.cwd}/vlm_annotations
+model_name: "gemini-2.5-pro"
+classes: ???
+image_dir: ???

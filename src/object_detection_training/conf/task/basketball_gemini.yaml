@@ -1,0 +1,36 @@
+defaults:
+  - gemini_base
+  - _self_
+
+classes:
+  - "ball"
+  - "ball-in-basket"
+  - "number"
+  - "player"
+  - "player-in-possession"
+  - "player-jump-shot"
+  - "player-layup-dunk"
+  - "player-shot-block"
+  - "referee"
+  - "rim"
+
+prompt_template: >
+  As a super recognizer, detect all of the basketball players, referees,
+  the rim, the basketball, and the jersey numbers in this basketball game image.
+  There are at most 3 referees and 10 players on the court, one rim and one ball.
+
+  Use EXACTLY these labels for detections:
+  - "ball" for the basketball when it is NOT going through the basket
+  - "ball-in-basket" for the basketball when it IS going through the rim/net
+  - "number" for visible jersey numbers on players
+  - "player" for any standing/running/walking player NOT in a special action
+  - "player-in-possession" for the player who currently has/is dribbling the ball
+  - "player-jump-shot" for a player in the act of shooting a jump shot
+  - "player-layup-dunk" for a player attempting a layup or dunk
+  - "player-shot-block" for a player actively blocking a shot
+  - "referee" for game officials
+  - "rim" for the basketball hoop rim
+
+  Each player should have exactly ONE label (the most specific one that applies).
+  Return bounding boxes normalised to [0, 1] in (x, y, w, h) format where
+  x,y is the top-left corner.

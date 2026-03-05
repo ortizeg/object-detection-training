@@ -16,11 +16,12 @@ import numpy.typing as npt
 import onnxruntime as ort  # type: ignore[import-untyped]
 from loguru import logger
 
+from object_detection_training.inference.base_inferencer import BaseInferencer
 from object_detection_training.inference.postprocess import BasePostProcessor
 from object_detection_training.schemas.detection import Detection
 
 
-class ONNXInferencer:
+class ONNXInferencer(BaseInferencer):
     """Run inference on images using an ONNX model.
 
     Args:

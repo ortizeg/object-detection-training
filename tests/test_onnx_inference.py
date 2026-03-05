@@ -357,7 +357,7 @@ class TestDetectionAnnotationWriter:
 class TestONNXInferencer:
     """Tests for ONNXInferencer with mocked ONNX session."""
 
-    @patch("object_detection_training.inference.inferencer.ort")
+    @patch("object_detection_training.inference.onnx_inferencer.ort")
     def test_predict_pipeline(self, mock_ort: MagicMock) -> None:
         """predict() calls preprocess -> session.run -> postprocess."""
         # Setup mock session
@@ -377,7 +377,7 @@ class TestONNXInferencer:
         mock_ort.InferenceSession.return_value = session_mock
         mock_ort.get_available_providers.return_value = ["CPUExecutionProvider"]
 
-        from object_detection_training.inference.inferencer import (
+        from object_detection_training.inference.onnx_inferencer import (
             ONNXInferencer,
         )
 
@@ -391,7 +391,7 @@ class TestONNXInferencer:
         assert len(dets) == 1
         assert dets[0].class_id == 0
 
-    @patch("object_detection_training.inference.inferencer.ort")
+    @patch("object_detection_training.inference.onnx_inferencer.ort")
     def test_predict_batch(self, mock_ort: MagicMock) -> None:
         """predict_batch processes multiple images."""
         session_mock = MagicMock()
@@ -406,7 +406,7 @@ class TestONNXInferencer:
         mock_ort.InferenceSession.return_value = session_mock
         mock_ort.get_available_providers.return_value = ["CPUExecutionProvider"]
 
-        from object_detection_training.inference.inferencer import (
+        from object_detection_training.inference.onnx_inferencer import (
             ONNXInferencer,
         )
 

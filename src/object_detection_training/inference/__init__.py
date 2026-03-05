@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from object_detection_training.inference.inferencer import ONNXInferencer
+from object_detection_training.inference.base_inferencer import BaseInferencer
+from object_detection_training.inference.gemini_inferencer import GeminiInferencer
+from object_detection_training.inference.onnx_inferencer import ONNXInferencer
 from object_detection_training.inference.postprocess import (
     BasePostProcessor,
     RFDETRPostProcessor,
@@ -19,11 +21,13 @@ from object_detection_training.schemas.detection import (
 )
 
 __all__ = [
+    "BaseInferencer",
     "BasePostProcessor",
     "BoundingBox",
     "Detection",
     "DetectionAnnotation",
     "DetectionAnnotationWriter",
+    "GeminiInferencer",
     "ImageLoader",
     "ONNXInferencer",
     "RFDETRPostProcessor",
