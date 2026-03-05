@@ -61,3 +61,6 @@ history_plotter:
 dataset_statistics:
   _target_: object_detection_training.callbacks.statistics.DatasetStatisticsCallback
   output_dir: ${hydra:runtime.output_dir}/stats
+
+sampler_distribution:
+  _target_: object_detection_training.callbacks.sampler_distribution.SamplerDistributionCallback

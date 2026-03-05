@@ -9,6 +9,7 @@ from torch.utils.data import WeightedRandomSampler
 
 from object_detection_training.data.sampler import (
     SamplerConfig,
+    TrackingWeightedRandomSampler,
     build_weighted_sampler,
 )
 
@@ -95,7 +96,7 @@ class TestBuildWeightedSampler:
         result = build_weighted_sampler(config, annotations_df, image_ids, class_names)
         assert result is None
 
-    def test_auto_returns_sampler(
+    def test_auto_returns_tracking_sampler(
         self,
         annotations_df: pd.DataFrame,
         image_ids: list[int],
@@ -103,7 +104,7 @@ class TestBuildWeightedSampler:
     ) -> None:
         config = SamplerConfig(mode="auto")
         result = build_weighted_sampler(config, annotations_df, image_ids, class_names)
-        assert isinstance(result, WeightedRandomSampler)
+        assert isinstance(result, TrackingWeightedRandomSampler)
 
     def test_auto_rare_class_higher_weight(
         self,
@@ -194,3 +195,52 @@ class TestBuildWeightedSampler:
         annotated_weights = sorted([weights[0], weights[1]])
         expected_median = (annotated_weights[0] + annotated_weights[1]) / 2
         assert weights[2] == pytest.approx(expected_median)
+
+
+# ---------------------------------------------------------------------------
+# TestTrackingWeightedRandomSampler
+# ---------------------------------------------------------------------------
+
+
+class TestTrackingWeightedRandomSampler:
+    def test_records_indices(self) -> None:
+        sampler = TrackingWeightedRandomSampler(
+            weights=[1.0, 2.0, 3.0], num_samples=5, replacement=True
+        )
+        assert sampler._last_indices == []
+
+        indices = list(sampler)
+        assert len(indices) == 5
+        assert sampler._last_indices == indices
+        # All indices should be valid
+        assert all(0 <= i < 3 for i in indices)
+
+    def test_updates_each_iteration(self) -> None:
+        sampler = TrackingWeightedRandomSampler(
+            weights=[1.0, 1.0], num_samples=3, replacement=True
+        )
+        first = list(sampler)
+        assert sampler._last_indices == first
+
+        second = list(sampler)
+        assert sampler._last_indices == second
+
+    def test_is_subclass_of_weighted_random_sampler(self) -> None:
+        sampler = TrackingWeightedRandomSampler(
+            weights=[1.0], num_samples=1, replacement=True
+        )
+        assert isinstance(sampler, WeightedRandomSampler)
+
+    def test_build_returns_tracking_sampler(
+        self,
+        annotations_df: pd.DataFrame,
+        image_ids: list[int],
+        class_names: list[str],
+    ) -> None:
+        config = SamplerConfig(mode="auto")
+        sampler = build_weighted_sampler(config, annotations_df, image_ids, class_names)
+        assert isinstance(sampler, TrackingWeightedRandomSampler)
+        # Iterate to populate _last_indices
+        indices = list(sampler)  # type: ignore[arg-type]
+        assert len(indices) == len(image_ids)
+        assert sampler._last_indices == indices
