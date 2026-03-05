@@ -28,3 +28,7 @@ num_windows: 2
 
 pin_memory: true
 persistent_workers: true
+
+# Online class-balanced sampling
+sampler:
+  mode: disabled

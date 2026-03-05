@@ -55,3 +55,7 @@ persistent_workers: true
 # Cache settings
 cache_type: auto
 use_cache: true
+
+# Online class-balanced sampling
+sampler:
+  mode: disabled

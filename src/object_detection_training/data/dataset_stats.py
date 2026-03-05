@@ -12,6 +12,8 @@ Designed to be called from callbacks or standalone analysis scripts.
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +89,50 @@ class DatasetStatistics:
                 "category_name": counts.index,
                 "count": counts.values,
                 "percentage": (counts.values / total * 100).round(2),
+            }
+        )
+
+        return result.sort_values("count", ascending=False).reset_index(drop=True)
+
+    def class_distribution_for_images(
+        self,
+        image_ids: Sequence[int],
+    ) -> pd.DataFrame:
+        """Class distribution for a subset of images (with duplicate counting).
+
+        When an image_id appears multiple times (e.g. from replacement sampling),
+        its annotations are counted once per occurrence. This gives the effective
+        class distribution seen by the model during an epoch.
+
+        Args:
+            image_ids: Sequence of image IDs, may contain duplicates.
+
+        Returns:
+            DataFrame with columns: category_name, count, percentage.
+        """
+        df = self.dataset.annotations_df
+
+        # Count how many times each image was sampled
+        id_counts = Counter(image_ids)
+
+        # Filter annotations to sampled images
+        sampled_df = df[df["image_id"].isin(id_counts.keys())].copy()
+
+        # Multiply annotation counts by sampling frequency
+        sampled_df["sample_count"] = sampled_df["image_id"].map(id_counts)
+
+        # Weighted class counts
+        weighted = sampled_df.groupby("category_name")["sample_count"].sum()
+        total = weighted.sum()
+
+        if total == 0:
+            return pd.DataFrame(columns=["category_name", "count", "percentage"])
+
+        result = pd.DataFrame(
+            {
+                "category_name": weighted.index,
+                "count": weighted.values,
+                "percentage": (weighted.values / total * 100).round(2),
             }
         )
 

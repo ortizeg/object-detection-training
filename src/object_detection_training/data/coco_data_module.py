@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import lightning as L
 import torch
@@ -11,6 +11,7 @@ from torchvision.transforms import v2
 
 from object_detection_training.data.cache_dataset import CacheDataset
 from object_detection_training.data.coco_detection_dataset import COCODetectionDataset
+from object_detection_training.data.sampler import SamplerConfig, build_weighted_sampler
 from object_detection_training.models.rfdetr.collate import collate_fn
 from object_detection_training.types import DetectionTarget
 from object_detection_training.utils.hydra import register
@@ -52,6 +53,8 @@ class COCODataModule(L.LightningDataModule):
         post_mosaic_transforms: v2.Compose | None = None,
         # -- Mosaic / MixUp config (DataModule-level) --
         mosaic: dict[str, bool | float] | None = None,
+        # -- Online class-balanced sampling --
+        sampler: dict[str, Any] | None = None,
         # -- Multi-scale params kept for Hydra ${data.*} interpolation --
         multi_scale: bool = False,
         expanded_scales: bool = False,
@@ -80,6 +83,7 @@ class COCODataModule(L.LightningDataModule):
             test_transforms: v2.Compose pipeline for test preprocessing.
             post_mosaic_transforms: v2.Compose pipeline applied after mosaic/mixup.
             mosaic: Mosaic/MixUp config dict with ``enabled`` and ``mixup_prob``.
+            sampler: Online class-balanced sampler config dict.
             multi_scale: Enable multi-scale augmentation (used by transform YAML refs).
             expanded_scales: Use expanded scale range (used by transform YAML refs).
             skip_random_resize: Skip random resize (used by transform YAML refs).
@@ -120,6 +124,9 @@ class COCODataModule(L.LightningDataModule):
         mosaic = mosaic or {}
         self._mosaic_enabled: bool = bool(mosaic.get("enabled", False))
         self._mixup_prob: float = float(mosaic.get("mixup_prob", 0.3))
+
+        # Sampler config
+        self._sampler_config = SamplerConfig(**(sampler or {}))
 
         # Multi-scale params (stored for Hydra ${data.*} interpolation only)
         self.multi_scale = multi_scale
@@ -284,10 +291,19 @@ class COCODataModule(L.LightningDataModule):
             self._train_detection_dataset.transforms = self.train_transforms
             train_dataset = self._train_detection_dataset  # type: ignore[assignment]
 
+        # Build sampler (returns None when disabled)
+        train_sampler = build_weighted_sampler(
+            config=self._sampler_config,
+            annotations_df=self._train_detection_dataset.annotations_df,
+            image_ids=self._train_detection_dataset.image_ids,
+            class_names=list(self._train_detection_dataset.class_names),
+        )
+
         return torch.utils.data.DataLoader(
             train_dataset,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=train_sampler is None,
+            sampler=train_sampler,
             num_workers=self.num_workers,
             collate_fn=collate_fn,
             pin_memory=self.pin_memory,
