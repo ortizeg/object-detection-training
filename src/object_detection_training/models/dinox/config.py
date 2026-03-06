@@ -19,6 +19,7 @@ class DINOXConfig(BaseModel, frozen=True):
         dfl_loss_weight: Weight for DFL loss term.
         use_soft_labels: Enable soft label assignment targets.
         soft_label_gamma: Gamma for soft label quality weighting.
+        use_log_iou_cost: Enable -log(IoU) regression cost in SimOTA assignment.
         use_mal: Enable Mutual Assistance Learning between heads.
         mal_gamma: Gamma for MAL loss scaling.
         use_dual_head: Enable dual detection head architecture.
@@ -33,9 +34,10 @@ class DINOXConfig(BaseModel, frozen=True):
     reg_max: int = 16
     dfl_loss_weight: float = 0.25
 
-    # Future phases: soft labels
+    # Phase 2: soft labels
     use_soft_labels: bool = False
     soft_label_gamma: float = 2.0
+    use_log_iou_cost: bool = False
 
     # Future phases: MAL
     use_mal: bool = False

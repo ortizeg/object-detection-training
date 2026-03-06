@@ -248,6 +248,9 @@ class DINOXHead(nn.Module):
         reg_max: Max bin index for DFL distributions.
         dfl_loss_weight: Weight for DFL loss term.
         iou_loss_type: IoU loss variant ("iou" or "giou").
+        use_soft_labels: Enable soft label assignment targets (IoU^gamma weighting).
+        soft_label_gamma: Gamma exponent for soft label quality weighting.
+        use_log_iou_cost: Enable -log(IoU) regression cost in SimOTA assignment.
     """
 
     def __init__(
@@ -262,6 +265,9 @@ class DINOXHead(nn.Module):
         reg_max: int = 16,
         dfl_loss_weight: float = 0.25,
         iou_loss_type: str = "iou",
+        use_soft_labels: bool = False,
+        soft_label_gamma: float = 2.0,
+        use_log_iou_cost: bool = False,
     ) -> None:
         super().__init__()
 
@@ -272,6 +278,9 @@ class DINOXHead(nn.Module):
 
         self.num_classes = num_classes
         self.use_dfl = use_dfl
+        self.use_soft_labels = use_soft_labels
+        self.soft_label_gamma = soft_label_gamma
+        self.use_log_iou_cost = use_log_iou_cost
         self.reg_max = reg_max
         self.dfl_loss_weight = dfl_loss_weight
         self.strides = strides
@@ -745,9 +754,13 @@ class DINOXHead(nn.Module):
 
             if num_fg_img > 0:
                 # Classification loss
+                if self.use_soft_labels:
+                    iou_weight = pred_ious_this_matching.pow(self.soft_label_gamma)
+                else:
+                    iou_weight = pred_ious_this_matching
                 cls_target = F.one_hot(
                     gt_matched_classes.to(torch.int64), self.num_classes
-                ) * pred_ious_this_matching.unsqueeze(-1)
+                ) * iou_weight.unsqueeze(-1)
                 cls_loss += self.bcewithlog_loss(
                     cls_preds[batch_idx][fg_mask], cls_target
                 ).sum()
@@ -880,7 +893,13 @@ class DINOXHead(nn.Module):
 
         # Pairwise IoU
         pair_wise_ious = _bboxes_iou(gt_bboxes_per_image, bbox_preds, xyxy=False)
-        pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
+        # Regression cost: -log(IoU) is the existing formulation.
+        # The use_log_iou_cost flag exists for ablation explicitness and
+        # future GIoU cost alternative; both branches are currently identical.
+        if self.use_log_iou_cost:
+            pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
+        else:
+            pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
 
         # Pairwise classification cost
         gt_cls_per_image = (
@@ -890,16 +909,33 @@ class DINOXHead(nn.Module):
             .repeat(1, num_in_boxes_anchor, 1)
         )
 
-        with torch.cuda.amp.autocast(enabled=False):
-            cls_preds_ = (
-                cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
-                * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
-            )
-            pair_wise_cls_loss = F.binary_cross_entropy(
-                cls_preds_.sqrt_(), gt_cls_per_image, reduction="none"
-            ).sum(-1)
-
-        del cls_preds_
+        if self.use_soft_labels:
+            # RTMDet soft classification cost (SIMO-03)
+            # Y_soft = IoU * one_hot_gt
+            soft_label = gt_cls_per_image * pair_wise_ious.unsqueeze(-1)
+            # P = cls_sigmoid * obj_sigmoid (combined prediction score)
+            with torch.cuda.amp.autocast(enabled=False):
+                pred_scores = (
+                    cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid()
+                    * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid()
+                )
+                # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
+                scale_factor = (soft_label - pred_scores).abs().pow(2.0)
+                pair_wise_cls_loss = (
+                    F.binary_cross_entropy(pred_scores, soft_label, reduction="none")
+                    * scale_factor
+                ).sum(-1)
+        else:
+            # Original YOLOX formulation (unchanged)
+            with torch.cuda.amp.autocast(enabled=False):
+                cls_preds_ = (
+                    cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
+                    * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
+                )
+                pair_wise_cls_loss = F.binary_cross_entropy(
+                    cls_preds_.sqrt_(), gt_cls_per_image, reduction="none"
+                ).sum(-1)
+            del cls_preds_
 
         cost = (
             pair_wise_cls_loss
