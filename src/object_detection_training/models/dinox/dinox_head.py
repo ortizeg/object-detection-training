@@ -22,6 +22,7 @@ from loguru import logger
 from object_detection_training.models.yolox.network_blocks import BaseConv, DWConv
 
 from .dfl import DFLModule, distribution_focal_loss
+from .hungarian import HungarianAssigner
 from .mal import mal_weight, matchability_score
 from .tal import TaskAlignedAssigner
 
@@ -259,6 +260,8 @@ class DINOXHead(nn.Module):
         tal_topk: Top-k candidates per GT for TAL.
         tal_alpha: Classification exponent for TAL alignment metric.
         tal_beta: IoU exponent for TAL alignment metric.
+        use_dual_head: Enable O2O dual head for NMS-free inference.
+        lambda_o2o: Weight for O2O loss contribution to combined loss.
     """
 
     def __init__(
@@ -282,6 +285,8 @@ class DINOXHead(nn.Module):
         tal_topk: int = 13,
         tal_alpha: float = 1.0,
         tal_beta: float = 6.0,
+        use_dual_head: bool = False,
+        lambda_o2o: float = 1.0,
     ) -> None:
         super().__init__()
 
@@ -301,6 +306,8 @@ class DINOXHead(nn.Module):
         self.use_mal = use_mal
         self.mal_gamma = mal_gamma
         self.assigner_type = assigner_type
+        self.use_dual_head = use_dual_head
+        self.lambda_o2o = lambda_o2o
 
         # Number of regression output channels
         reg_channels = 4 * (reg_max + 1) if use_dfl else 4
@@ -351,6 +358,27 @@ class DINOXHead(nn.Module):
         if assigner_type == "tal":
             self._tal_assigner = TaskAlignedAssigner(
                 topk=tal_topk,
+                alpha=tal_alpha,
+                beta=tal_beta,
+                num_classes=num_classes,
+            )
+
+        # O2O dual head: separate prediction layers, shared conv stacks
+        if use_dual_head:
+            self.cls_preds_o2o = nn.ModuleList()
+            self.reg_preds_o2o = nn.ModuleList()
+            for _i in range(len(in_channels)):
+                self.cls_preds_o2o.append(
+                    nn.Conv2d(int(256 * width), self.num_classes, 1, 1, 0)
+                )
+                self.reg_preds_o2o.append(
+                    nn.Conv2d(int(256 * width), reg_channels, 1, 1, 0)
+                )
+            # Initialize O2O weights by copying from O2M for better convergence
+            for i in range(len(in_channels)):
+                self.cls_preds_o2o[i].load_state_dict(self.cls_preds[i].state_dict())
+                self.reg_preds_o2o[i].load_state_dict(self.reg_preds[i].state_dict())
+            self._hungarian_assigner = HungarianAssigner(
                 alpha=tal_alpha,
                 beta=tal_beta,
                 num_classes=num_classes,
@@ -443,16 +471,27 @@ class DINOXHead(nn.Module):
         ):
             x = self.stems[k](x)
             cls_feat = cls_conv(x)
-            cls_output = self.cls_preds[k](cls_feat)
-
             reg_feat = reg_conv(x)
-            reg_output = self.reg_preds[k](reg_feat)
-            obj_output = self.obj_preds[k](reg_feat)
 
-            # [B, C, H, W] -> concat [reg, obj_sigmoid, cls_sigmoid]
-            output = torch.cat(
-                [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
-            )
+            if self.use_dual_head:
+                # O2O inference: use O2O prediction layers, constant-1 objectness
+                cls_output = self.cls_preds_o2o[k](cls_feat)
+                reg_output = self.reg_preds_o2o[k](reg_feat)
+                obj_output = torch.ones(
+                    reg_output.shape[0],
+                    1,
+                    reg_output.shape[2],
+                    reg_output.shape[3],
+                    device=reg_output.device,
+                    dtype=reg_output.dtype,
+                )
+            else:
+                cls_output = self.cls_preds[k](cls_feat)
+                reg_output = self.reg_preds[k](reg_feat)
+                obj_output = self.obj_preds[k](reg_feat).sigmoid()
+
+            # [B, C, H, W] -> concat [reg, obj, cls_sigmoid]
+            output = torch.cat([reg_output, obj_output, cls_output.sigmoid()], 1)
             hw_sizes.append((output.shape[-2], output.shape[-1]))
             outputs.append(output)
 
@@ -558,6 +597,7 @@ class DINOXHead(nn.Module):
     ]:
         """Training forward: compute losses."""
         outputs: list[torch.Tensor] = []
+        o2o_outputs_list: list[torch.Tensor] = []
         origin_preds: list[torch.Tensor] = []
         x_shifts: list[torch.Tensor] = []
         y_shifts: list[torch.Tensor] = []
@@ -608,6 +648,22 @@ class DINOXHead(nn.Module):
 
             outputs.append(output)
 
+            # O2O predictions: use separate prediction layers on shared features
+            if self.use_dual_head:
+                o2o_cls = self.cls_preds_o2o[k](cls_feat)
+                o2o_reg = self.reg_preds_o2o[k](reg_feat)
+                # No objectness for O2O; use placeholder zeros for concat format
+                o2o_obj = torch.zeros_like(obj_output)
+                o2o_out = torch.cat([o2o_reg, o2o_obj, o2o_cls], 1)
+                o2o_out, _ = self._get_output_and_grid(
+                    o2o_out, k, stride_val, xin[0].dtype
+                )
+                o2o_outputs_list.append(o2o_out)
+
+        o2o_outputs: torch.Tensor | None = None
+        if self.use_dual_head and o2o_outputs_list:
+            o2o_outputs = torch.cat(o2o_outputs_list, 1)
+
         return self._get_losses(
             x_shifts,
             y_shifts,
@@ -616,6 +672,7 @@ class DINOXHead(nn.Module):
             torch.cat(outputs, 1),
             origin_preds,
             dtype=xin[0].dtype,
+            o2o_outputs=o2o_outputs,
         )
 
     def _get_output_and_grid(
@@ -691,6 +748,7 @@ class DINOXHead(nn.Module):
         outputs: torch.Tensor,
         origin_preds: list[torch.Tensor],
         dtype: torch.dtype,
+        o2o_outputs: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -699,7 +757,11 @@ class DINOXHead(nn.Module):
         torch.Tensor,
         float,
     ]:
-        """Compute all losses using SimOTA assignment."""
+        """Compute all losses using SimOTA/TAL assignment.
+
+        When ``o2o_outputs`` is provided (dual head), also computes O2O loss
+        using Hungarian matching and adds it to the total loss.
+        """
         # After _get_output_and_grid, bbox is always decoded to cxcywh pixels
         bbox_preds = outputs[:, :, :4]
         obj_preds = outputs[:, :, 4:5]
@@ -871,7 +933,89 @@ class DINOXHead(nn.Module):
                 tgt_obj[fg_mask] = 1.0
             obj_loss += self.bcewithlog_loss(obj_preds[batch_idx], tgt_obj).sum()
 
-        # Normalize
+        # --- O2O dual head loss ---
+        o2o_cls_loss = torch.zeros(1, device=outputs.device, dtype=dtype)
+        o2o_iou_loss = torch.zeros(1, device=outputs.device, dtype=dtype)
+        num_fg_o2o = 0.0
+
+        if self.use_dual_head and o2o_outputs is not None:
+            o2o_bbox_preds = o2o_outputs[:, :, :4]
+            o2o_cls_preds = o2o_outputs[:, :, 5:]
+            # o2o_outputs[:, :, 4:5] is placeholder zeros (no objectness)
+
+            for batch_idx in range(outputs.shape[0]):
+                num_gt = 0
+                if targets is not None and len(targets) > batch_idx:
+                    target = targets[batch_idx]
+                    if isinstance(target, dict):
+                        gt_bboxes = target.get(
+                            "boxes", torch.zeros(0, 4, device=outputs.device)
+                        )
+                        gt_classes = target.get(
+                            "labels", torch.zeros(0, device=outputs.device)
+                        )
+                    else:
+                        gt_bboxes = torch.zeros(0, 4, device=outputs.device)
+                        gt_classes = torch.zeros(0, device=outputs.device)
+
+                    num_gt = 0 if gt_bboxes.numel() == 0 else gt_bboxes.shape[0]
+                else:
+                    gt_bboxes = torch.zeros(0, 4, device=outputs.device)
+                    gt_classes = torch.zeros(0, device=outputs.device)
+
+                if num_gt == 0:
+                    continue
+
+                try:
+                    (
+                        o2o_gt_classes,
+                        o2o_fg_mask,
+                        o2o_pred_ious,
+                        o2o_matched_gt_inds,
+                        o2o_num_fg_img,
+                    ) = self._hungarian_assigner.assign(
+                        batch_idx,
+                        num_gt,
+                        total_num_anchors,
+                        gt_bboxes,
+                        gt_classes,
+                        o2o_bbox_preds[batch_idx],
+                        o2o_cls_preds[batch_idx],
+                        torch.zeros(
+                            total_num_anchors,
+                            1,
+                            device=outputs.device,
+                            dtype=dtype,
+                        ),
+                        expanded_strides_cat,
+                        x_shifts_cat,
+                        y_shifts_cat,
+                    )
+                except Exception:  # noqa: S112
+                    continue
+
+                num_fg_o2o += o2o_num_fg_img
+
+                if o2o_num_fg_img > 0:
+                    # O2O classification loss (same soft label pattern)
+                    if self.use_soft_labels:
+                        o2o_iou_w = o2o_pred_ious.pow(self.soft_label_gamma)
+                    else:
+                        o2o_iou_w = o2o_pred_ious
+                    o2o_cls_target = F.one_hot(
+                        o2o_gt_classes.to(torch.int64), self.num_classes
+                    ) * o2o_iou_w.unsqueeze(-1)
+                    o2o_cls_loss += self.bcewithlog_loss(
+                        o2o_cls_preds[batch_idx][o2o_fg_mask], o2o_cls_target
+                    ).sum()
+
+                    # O2O regression loss
+                    o2o_reg_target = gt_bboxes[o2o_matched_gt_inds]
+                    o2o_iou_loss += self.iou_loss(
+                        o2o_bbox_preds[batch_idx][o2o_fg_mask], o2o_reg_target
+                    ).sum()
+
+        # Normalize O2M
         num_fg = max(num_fg, 1)
         cls_loss = cls_loss / num_fg
         iou_loss = iou_loss / num_fg
@@ -883,6 +1027,13 @@ class DINOXHead(nn.Module):
         loss = reg_weight * iou_loss + obj_loss + cls_loss + l1_loss
         if self.use_dfl:
             loss = loss + self.dfl_loss_weight * dfl_loss
+
+        # Add O2O loss (normalized by O2O's own num_fg)
+        if self.use_dual_head and o2o_outputs is not None:
+            num_fg_o2o = max(num_fg_o2o, 1)
+            o2o_cls_loss = o2o_cls_loss / num_fg_o2o
+            o2o_iou_loss = o2o_iou_loss / num_fg_o2o
+            loss = loss + self.lambda_o2o * (reg_weight * o2o_iou_loss + o2o_cls_loss)
 
         return (
             loss,
