@@ -94,7 +94,7 @@
 | Feature | Reason |
 |---------|--------|
 | Backbone architecture changes | Thesis is "same architecture, better training" |
-| Any ultralytics/AGPL code | Licensing constraint — Apache 2.0 only |
+| Any ultralytics/AGPL code | Licensing constraint -- Apache 2.0 only |
 | DINOv3 weights | Custom Meta license, not Apache 2.0 |
 | Mobile/edge deployment optimization | Server-first deployment target |
 | torch.compile optimization | Dynamic shapes in SimOTA may cause issues, defer |
@@ -108,49 +108,49 @@
 | INFRA-02 | Phase 1 | Pending |
 | INFRA-03 | Phase 1 | Pending |
 | INFRA-04 | Phase 1 | Pending |
+| DFL-01 | Phase 1 | Pending |
+| DFL-02 | Phase 1 | Pending |
+| DFL-03 | Phase 1 | Pending |
+| DFL-04 | Phase 1 | Pending |
+| DFL-05 | Phase 1 | Pending |
+| TEST-02 | Phase 1 | Pending |
+| TEST-06 | Phase 1 | Pending |
 | SIMO-01 | Phase 2 | Pending |
 | SIMO-02 | Phase 2 | Pending |
 | SIMO-03 | Phase 2 | Pending |
 | SIMO-04 | Phase 2 | Pending |
-| DFL-01 | Phase 3 | Pending |
-| DFL-02 | Phase 3 | Pending |
-| DFL-03 | Phase 3 | Pending |
-| DFL-04 | Phase 3 | Pending |
-| DFL-05 | Phase 3 | Pending |
-| MAL-01 | Phase 4 | Pending |
-| MAL-02 | Phase 4 | Pending |
-| MAL-03 | Phase 4 | Pending |
-| TAL-01 | Phase 4 | Pending |
-| TAL-02 | Phase 4 | Pending |
+| TEST-01 | Phase 2 | Pending |
+| MAL-01 | Phase 3 | Pending |
+| MAL-02 | Phase 3 | Pending |
+| MAL-03 | Phase 3 | Pending |
+| TAL-01 | Phase 3 | Pending |
+| TAL-02 | Phase 3 | Pending |
+| TEST-03 | Phase 3 | Pending |
+| DUAL-01 | Phase 4 | Pending |
+| DUAL-02 | Phase 4 | Pending |
+| DUAL-03 | Phase 4 | Pending |
+| DUAL-04 | Phase 4 | Pending |
+| DUAL-05 | Phase 4 | Pending |
+| TEST-05 | Phase 4 | Pending |
 | DIST-01 | Phase 5 | Pending |
 | DIST-02 | Phase 5 | Pending |
 | DIST-03 | Phase 5 | Pending |
 | DIST-04 | Phase 5 | Pending |
 | DIST-05 | Phase 5 | Pending |
-| DUAL-01 | Phase 6 | Pending |
-| DUAL-02 | Phase 6 | Pending |
-| DUAL-03 | Phase 6 | Pending |
-| DUAL-04 | Phase 6 | Pending |
-| DUAL-05 | Phase 6 | Pending |
-| OPT-01 | Phase 7 | Pending |
-| OPT-02 | Phase 7 | Pending |
-| OPT-03 | Phase 7 | Pending |
-| TEST-01 | Phase 2 | Pending |
-| TEST-02 | Phase 3 | Pending |
-| TEST-03 | Phase 4 | Pending |
 | TEST-04 | Phase 5 | Pending |
-| TEST-05 | Phase 6 | Pending |
-| TEST-06 | Phase 1 | Pending |
+| DEPLOY-04 | Phase 5 | Pending |
+| OPT-01 | Phase 6 | Pending |
+| OPT-02 | Phase 6 | Pending |
+| OPT-03 | Phase 6 | Pending |
 | DEPLOY-01 | Phase 7 | Pending |
 | DEPLOY-02 | Phase 7 | Pending |
 | DEPLOY-03 | Phase 7 | Pending |
-| DEPLOY-04 | Phase 5 | Pending |
 
 **Coverage:**
-- v1 requirements: 39 total
-- Mapped to phases: 39
+- v1 requirements: 41 total
+- Mapped to phases: 41
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-05*
-*Last updated: 2026-03-05 after initial definition*
+*Last updated: 2026-03-05 after roadmap creation*
