@@ -13,7 +13,7 @@ Transform YOLOX-M from 46.9% to 53.0%+ COCO mAP through six training innovations
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: DFL Foundation and Infrastructure** - New detection head with DFL regression, config system, Lightning integration
-- [ ] **Phase 2: Soft Label Assignment** - Soft SimOTA with IoU-weighted targets and pluggable assigner protocol
+- [x] **Phase 2: Soft Label Assignment** - Soft SimOTA with IoU-weighted targets and pluggable assigner protocol
 - [ ] **Phase 3: Loss and Assignment Improvements** - MAL cross-branch learning and TAL alternative assigner
 - [ ] **Phase 4: NMS-Free Dual Head** - O2O branch with consistent matching for NMS-free inference
 - [ ] **Phase 5: DINOv2 Feature Distillation** - Frozen DINOv2-B/14 teacher with feature projection and A100 config
@@ -48,11 +48,11 @@ Plans:
   2. Each soft SimOTA toggle (use_soft_labels, use_log_iou_cost, soft_label_gamma) independently enables/disables its respective change without affecting the others
   3. Training with soft SimOTA enabled converges without zero-positive-assignment failures (num_fg > 0 every batch after warmup)
   4. Unit tests verify IoU-weighted target values and -log(IoU) cost matrix computation against hand-computed examples
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md -- Soft SimOTA implementation: config flag, DINOXHead modifications, flag propagation
+- [ ] 02-02-PLAN.md -- Unit tests: IoU-weighted targets, -log(IoU) cost, RTMDet cost, flag independence
 
 ### Phase 3: Loss and Assignment Improvements
 **Goal**: MAL amplifies gradient signal for low-quality matches and TAL provides an alternative assigner for ablation comparison, completing the label assignment and loss toolkit
@@ -63,11 +63,11 @@ Plans:
   2. TAL is swappable with SimOTA via a single config flag change, and ablation configs E3/E4 use TAL correctly
   3. MAL integrates with soft SimOTA targets (soft IoU targets provide cls target, MAL provides loss weighting) without circular gradient dependency
   4. Unit tests for MAL verify gradient amplification behavior and BCE equivalence at boundary conditions
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md -- MAL and TAL implementation: mal.py, tal.py modules, config/head/Lightning wiring
+- [ ] 03-02-PLAN.md -- Tests and configs: MAL/TAL unit tests (TEST-03), E3/E4 Hydra ablation configs (TAL-02)
 
 ### Phase 4: NMS-Free Dual Head
 **Goal**: A second O2O detection head trains alongside the O2M head with consistent matching, and ONNX export produces NMS-free inference using only the O2O branch
@@ -135,7 +135,7 @@ Note: Phases 4, 5, and 6 depend only on Phase 1 (and Phase 4 also on Phase 2), s
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. DFL Foundation and Infrastructure | 3/3 | Complete | 2026-03-06 |
-| 2. Soft Label Assignment | 0/2 | Not started | - |
+| 2. Soft Label Assignment | 2/2 | Complete | 2026-03-06 |
 | 3. Loss and Assignment Improvements | 0/2 | Not started | - |
 | 4. NMS-Free Dual Head | 0/2 | Not started | - |
 | 5. DINOv2 Feature Distillation | 0/2 | Not started | - |

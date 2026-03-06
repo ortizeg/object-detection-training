@@ -64,6 +64,9 @@ class DINOXLightningModel(BaseDetectionModel):
         use_dfl: bool = False,
         reg_max: int = 16,
         dfl_loss_weight: float = 0.25,
+        use_soft_labels: bool = False,
+        soft_label_gamma: float = 2.0,
+        use_log_iou_cost: bool = False,
     ):
         """Initialize DINO-X Lightning model.
 
@@ -90,6 +93,9 @@ class DINOXLightningModel(BaseDetectionModel):
             use_dfl: Enable Distribution Focal Loss regression.
             reg_max: Max bin index for DFL distributions.
             dfl_loss_weight: Weight for DFL loss term.
+            use_soft_labels: Enable soft label assignment targets.
+            soft_label_gamma: Gamma for soft label quality weighting.
+            use_log_iou_cost: Enable -log(IoU) regression cost in SimOTA.
         """
         super().__init__(
             num_classes=num_classes,
@@ -113,6 +119,9 @@ class DINOXLightningModel(BaseDetectionModel):
         self.use_dfl = use_dfl
         self.reg_max = reg_max
         self.dfl_loss_weight = dfl_loss_weight
+        self.use_soft_labels = use_soft_labels
+        self.soft_label_gamma = soft_label_gamma
+        self.use_log_iou_cost = use_log_iou_cost
 
         if in_channels is None:
             in_channels = [256, 512, 1024]
@@ -123,13 +132,19 @@ class DINOXLightningModel(BaseDetectionModel):
             reg_max=reg_max,
             dfl_loss_weight=dfl_loss_weight,
             iou_loss_type=iou_loss_type,  # type: ignore[arg-type]
+            use_soft_labels=use_soft_labels,
+            soft_label_gamma=soft_label_gamma,
+            use_log_iou_cost=use_log_iou_cost,
         )
 
         # Build DINO-X model
         logger.info(
             f"Initializing DINO-X model "
             f"(depth={depth}, width={width}, depthwise={depthwise}, "
-            f"use_dfl={use_dfl}, reg_max={reg_max})"
+            f"use_dfl={use_dfl}, reg_max={reg_max}, "
+            f"use_soft_labels={use_soft_labels}, "
+            f"soft_label_gamma={soft_label_gamma}, "
+            f"use_log_iou_cost={use_log_iou_cost})"
         )
 
         backbone = YOLOPAFPN(  # type: ignore[no-untyped-call]
@@ -147,6 +162,9 @@ class DINOXLightningModel(BaseDetectionModel):
             reg_max=reg_max,
             dfl_loss_weight=dfl_loss_weight,
             iou_loss_type=iou_loss_type,
+            use_soft_labels=use_soft_labels,
+            soft_label_gamma=soft_label_gamma,
+            use_log_iou_cost=use_log_iou_cost,
         )
 
         self.model = DINOX(backbone=backbone, head=head)

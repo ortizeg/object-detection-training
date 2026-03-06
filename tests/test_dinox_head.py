@@ -20,6 +20,9 @@ def _make_model(
     reg_max: int = 16,
     width: float = 0.75,
     depth: float = 0.67,
+    use_soft_labels: bool = False,
+    soft_label_gamma: float = 2.0,
+    use_log_iou_cost: bool = False,
 ) -> DINOX:
     """Create a small DINOX model for testing."""
     in_channels = [256, 512, 1024]
@@ -32,6 +35,9 @@ def _make_model(
         in_channels=in_channels,
         use_dfl=use_dfl,
         reg_max=reg_max,
+        use_soft_labels=use_soft_labels,
+        soft_label_gamma=soft_label_gamma,
+        use_log_iou_cost=use_log_iou_cost,
     )
     return DINOX(backbone=backbone, head=head)
 
