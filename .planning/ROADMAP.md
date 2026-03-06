@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Soft Label Assignment** - Soft SimOTA with IoU-weighted targets and pluggable assigner protocol
 - [ ] **Phase 3: Loss and Assignment Improvements** - MAL cross-branch learning and TAL alternative assigner
 - [ ] **Phase 4: NMS-Free Dual Head** - O2O branch with consistent matching for NMS-free inference
-- [ ] **Phase 5: DINOv2 Feature Distillation** - Frozen DINOv2-B/14 teacher with feature projection and A100 config
+- [x] **Phase 5: DINOv2 Feature Distillation** - Frozen DINOv2-B/14 teacher with feature projection and A100 config
 - [ ] **Phase 6: Scheduler-Free Optimizer** - Schedule-free AdamW integration with Lightning hooks
 - [ ] **Phase 7: Ablation Deployment** - GCP launcher scripts and full experiment matrix execution
 
@@ -94,11 +94,11 @@ Plans:
   3. Distillation loss is zero when student features exactly match teacher features (verified by unit test with identity projector)
   4. A100 trainer config (gpu_a100.yaml) sets appropriate batch size and precision for distillation training without OOM
   5. Unit tests verify teacher output shape, projector dimension alignment, and zero-loss identity condition
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [x] 05-01-PLAN.md -- DistillationModule, config fields, DINOX fpn_features, Lightning wiring, A100 trainer config
+- [x] 05-02-PLAN.md -- Distillation unit tests (TEST-04): teacher shape, projector alignment, zero-loss identity, ONNX exclusion
 
 ### Phase 6: Scheduler-Free Optimizer
 **Goal**: Scheduler-free AdamW is available as an optimizer option that eliminates learning rate schedule tuning while integrating correctly with Lightning training hooks
@@ -138,6 +138,6 @@ Note: Phases 4, 5, and 6 depend only on Phase 1 (and Phase 4 also on Phase 2), s
 | 2. Soft Label Assignment | 2/2 | Complete | 2026-03-06 |
 | 3. Loss and Assignment Improvements | 2/2 | Complete | 2026-03-06 |
 | 4. NMS-Free Dual Head | 0/2 | Not started | - |
-| 5. DINOv2 Feature Distillation | 0/2 | Not started | - |
+| 5. DINOv2 Feature Distillation | 2/2 | Complete | 2026-03-06 |
 | 6. Scheduler-Free Optimizer | 0/1 | Not started | - |
 | 7. Ablation Deployment | 0/1 | Not started | - |
