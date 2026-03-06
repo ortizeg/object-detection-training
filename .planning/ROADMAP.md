@@ -48,11 +48,11 @@ Plans:
   2. Each soft SimOTA toggle (use_soft_labels, use_log_iou_cost, soft_label_gamma) independently enables/disables its respective change without affecting the others
   3. Training with soft SimOTA enabled converges without zero-positive-assignment failures (num_fg > 0 every batch after warmup)
   4. Unit tests verify IoU-weighted target values and -log(IoU) cost matrix computation against hand-computed examples
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md -- Soft SimOTA implementation: config flag, DINOXHead modifications, flag propagation
+- [ ] 02-02-PLAN.md -- Unit tests: IoU-weighted targets, -log(IoU) cost, RTMDet cost, flag independence
 
 ### Phase 3: Loss and Assignment Improvements
 **Goal**: MAL amplifies gradient signal for low-quality matches and TAL provides an alternative assigner for ablation comparison, completing the label assignment and loss toolkit
