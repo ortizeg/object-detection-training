@@ -39,12 +39,20 @@ mal_gamma: 1.5
 use_dual_head: false
 lambda_o2o: 1.0
 
-
 # Assignment strategy (simota = standard YOLOX behavior)
 assigner: simota
 tal_topk: 13
 tal_alpha: 1.0
 tal_beta: 6.0
+
+# Distillation settings (off by default)
+enable_distillation: false
+distill_weight: 0.5
+distill_layer_indices:
+  - 3
+  - 7
+  - 11
+distill_teacher: dinov2_vitb14
 
 # YOLOX-style: raw 0-255 float values, no normalization
 image_mean: null
