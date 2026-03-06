@@ -41,6 +41,9 @@ tal_topk: 13
 tal_alpha: 1.0
 tal_beta: 6.0
 
+# Scheduler-free optimizer (off by default = SGD + cosine)
+use_scheduler_free: false
+
 # YOLOX-style: raw 0-255 float values, no normalization
 image_mean: null
 image_std: null
