@@ -63,11 +63,11 @@ Plans:
   2. TAL is swappable with SimOTA via a single config flag change, and ablation configs E3/E4 use TAL correctly
   3. MAL integrates with soft SimOTA targets (soft IoU targets provide cls target, MAL provides loss weighting) without circular gradient dependency
   4. Unit tests for MAL verify gradient amplification behavior and BCE equivalence at boundary conditions
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md -- MAL and TAL implementation: mal.py, tal.py modules, config/head/Lightning wiring
+- [ ] 03-02-PLAN.md -- Tests and configs: MAL/TAL unit tests (TEST-03), E3/E4 Hydra ablation configs (TAL-02)
 
 ### Phase 4: NMS-Free Dual Head
 **Goal**: A second O2O detection head trains alongside the O2M head with consistent matching, and ONNX export produces NMS-free inference using only the O2O branch
