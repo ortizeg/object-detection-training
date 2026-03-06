@@ -47,7 +47,8 @@ class DFLModule(nn.Module):
         shape = x.shape[:-1]
         x = x.reshape(*shape, 4, self.reg_max + 1)
         # softmax over bins, weighted sum with project buffer
-        x = F.softmax(x, dim=-1) @ self.project
+        project: torch.Tensor = self.project  # type: ignore[assignment]
+        x = (F.softmax(x, dim=-1) * project).sum(dim=-1)
         return x
 
 

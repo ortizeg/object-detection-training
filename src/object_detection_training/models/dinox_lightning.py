@@ -122,7 +122,7 @@ class DINOXLightningModel(BaseDetectionModel):
             use_dfl=use_dfl,
             reg_max=reg_max,
             dfl_loss_weight=dfl_loss_weight,
-            iou_loss_type=iou_loss_type,
+            iou_loss_type=iou_loss_type,  # type: ignore[arg-type]
         )
 
         # Build DINO-X model
@@ -333,7 +333,7 @@ class DINOXLightningModel(BaseDetectionModel):
         if targets is not None:
             outputs: ModelOutputs = self.model(images, targets)
             if "image_shape" not in outputs:
-                outputs["image_shape"] = images.shape[2:]
+                outputs["image_shape"] = torch.tensor(images.shape[2:])
             return outputs
         else:
             with torch.no_grad():

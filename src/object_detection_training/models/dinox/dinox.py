@@ -33,7 +33,7 @@ class DINOX(nn.Module):
     ) -> None:
         super().__init__()
         if backbone is None:
-            backbone = YOLOPAFPN()
+            backbone = YOLOPAFPN()  # type: ignore[no-untyped-call]
         if head is None:
             head = DINOXHead(num_classes=80)
         self.backbone = backbone
@@ -83,4 +83,5 @@ class DINOX(nn.Module):
 
             return outputs
         else:
-            return self.head(fpn_outs)
+            result: torch.Tensor = self.head(fpn_outs)
+            return result

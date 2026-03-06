@@ -130,7 +130,7 @@ class _IOULoss(nn.Module):
         elif self.reduction == "sum":
             loss = loss.sum()
 
-        return loss
+        return torch.as_tensor(loss)
 
 
 # ---------------------------------------------------------------------------
@@ -287,11 +287,11 @@ class DINOXHead(nn.Module):
         self.reg_preds = nn.ModuleList()
         self.obj_preds = nn.ModuleList()
 
-        conv_block = DWConv if depthwise else BaseConv
+        conv_block: type[DWConv] | type[BaseConv] = DWConv if depthwise else BaseConv
 
         for i in range(len(in_channels)):
             self.stems.append(
-                BaseConv(
+                BaseConv(  # type: ignore[no-untyped-call]
                     in_channels=int(in_channels[i] * width),
                     out_channels=int(256 * width),
                     ksize=1,
@@ -418,7 +418,7 @@ class DINOXHead(nn.Module):
             output = torch.cat(
                 [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
             )
-            hw_sizes.append(output.shape[-2:])
+            hw_sizes.append((output.shape[-2], output.shape[-1]))
             outputs.append(output)
 
         # Flatten spatial dims and concat across FPN levels
@@ -1027,7 +1027,7 @@ class DINOXHead(nn.Module):
 
         for gt_idx in range(num_gt):
             _, pos_idx = torch.topk(
-                cost[gt_idx], k=dynamic_ks[gt_idx].item(), largest=False
+                cost[gt_idx], k=int(dynamic_ks[gt_idx].item()), largest=False
             )
             matching_matrix[gt_idx][pos_idx] = 1
 
@@ -1040,7 +1040,7 @@ class DINOXHead(nn.Module):
             matching_matrix[cost_argmin, anchor_matching_gt > 1] = 1
 
         fg_mask_inboxes = matching_matrix.sum(0) > 0
-        num_fg_result = fg_mask_inboxes.sum().item()
+        num_fg_result = int(fg_mask_inboxes.sum().item())
 
         fg_mask_new = fg_mask.clone()
         fg_idxs = torch.nonzero(fg_mask, as_tuple=True)[0]
