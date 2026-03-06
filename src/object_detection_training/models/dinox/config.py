@@ -45,6 +45,7 @@ class DINOXConfig(BaseModel, frozen=True):
 
     # Future phases: dual head
     use_dual_head: bool = False
+    lambda_o2o: float = 1.0
 
     # Phase 5: distillation
     enable_distillation: bool = False

@@ -35,6 +35,10 @@ use_log_iou_cost: false
 use_mal: false
 mal_gamma: 1.5
 
+# Dual head settings (off by default)
+use_dual_head: false
+lambda_o2o: 1.0
+
 # Assignment strategy (simota = standard YOLOX behavior)
 assigner: simota
 tal_topk: 13

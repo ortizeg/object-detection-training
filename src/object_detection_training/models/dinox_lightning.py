@@ -73,6 +73,8 @@ class DINOXLightningModel(BaseDetectionModel):
         tal_topk: int = 13,
         tal_alpha: float = 1.0,
         tal_beta: float = 6.0,
+        use_dual_head: bool = False,
+        lambda_o2o: float = 1.0,
         enable_distillation: bool = False,
         distill_weight: float = 0.5,
         distill_layer_indices: list[int] | None = None,
@@ -112,6 +114,8 @@ class DINOXLightningModel(BaseDetectionModel):
             tal_topk: Top-k candidates per GT for TAL.
             tal_alpha: Classification exponent for TAL alignment metric.
             tal_beta: IoU exponent for TAL alignment metric.
+            use_dual_head: Enable O2O dual head for NMS-free inference.
+            lambda_o2o: Weight for O2O loss contribution.
             enable_distillation: Enable DINOv2 feature distillation.
             distill_weight: Weight for distillation loss term.
             distill_layer_indices: Teacher ViT block indices to extract.
@@ -148,6 +152,8 @@ class DINOXLightningModel(BaseDetectionModel):
         self.tal_topk = tal_topk
         self.tal_alpha = tal_alpha
         self.tal_beta = tal_beta
+        self.use_dual_head = use_dual_head
+        self.lambda_o2o = lambda_o2o
         self.enable_distillation = enable_distillation
         self.distill_weight = distill_weight
         self.distill_layer_indices = distill_layer_indices
@@ -171,6 +177,8 @@ class DINOXLightningModel(BaseDetectionModel):
             tal_topk=tal_topk,
             tal_alpha=tal_alpha,
             tal_beta=tal_beta,
+            use_dual_head=use_dual_head,
+            lambda_o2o=lambda_o2o,
             enable_distillation=enable_distillation,
         )
 
@@ -183,7 +191,7 @@ class DINOXLightningModel(BaseDetectionModel):
             f"soft_label_gamma={soft_label_gamma}, "
             f"use_log_iou_cost={use_log_iou_cost}, "
             f"use_mal={use_mal}, mal_gamma={mal_gamma}, "
-            f"assigner={assigner}, "
+            f"assigner={assigner}, use_dual_head={use_dual_head}, "
             f"enable_distillation={enable_distillation})"
         )
 
@@ -211,6 +219,8 @@ class DINOXLightningModel(BaseDetectionModel):
             tal_topk=tal_topk,
             tal_alpha=tal_alpha,
             tal_beta=tal_beta,
+            use_dual_head=use_dual_head,
+            lambda_o2o=lambda_o2o,
         )
 
         self.model = DINOX(backbone=backbone, head=head)
@@ -315,7 +325,15 @@ class DINOXLightningModel(BaseDetectionModel):
         for conv in self.model.head.cls_preds:
             nn.init.constant_(conv.bias, bias_init)
 
-        logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
+        if hasattr(self.model.head, "cls_preds_o2o"):
+            for conv in self.model.head.cls_preds_o2o:
+                nn.init.constant_(conv.bias, bias_init)
+            logger.info(
+                f"Reinitialized cls_preds and cls_preds_o2o biases "
+                f"with prior_prob={prior_prob}"
+            )
+        else:
+            logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
 
     def _download_and_load_weights(self) -> None:
         """Download and load pretrained weights.
