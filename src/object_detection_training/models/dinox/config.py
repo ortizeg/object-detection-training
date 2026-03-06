@@ -53,8 +53,13 @@ class DINOXConfig(BaseModel, frozen=True):
     use_scheduler_free: bool = False
 
     # Assignment and loss configuration
-    assigner: Literal["simota"] = "simota"
+    assigner: Literal["simota", "tal"] = "simota"
     iou_loss_type: Literal["iou", "giou"] = "iou"
+
+    # TAL hyperparameters
+    tal_topk: int = 13
+    tal_alpha: float = 1.0
+    tal_beta: float = 6.0
 
     @field_validator("reg_max")
     @classmethod

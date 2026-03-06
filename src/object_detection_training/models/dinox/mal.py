@@ -61,4 +61,5 @@ def mal_weight(
     Returns:
         Per-anchor loss weights, shape ``[num_fg]``, values in [1.0, 2.0].
     """
-    return (1.0 - matchability).pow(2) + 1.0
+    result: torch.Tensor = (1.0 - matchability).pow(2) + 1.0
+    return result

@@ -10,7 +10,39 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from .dinox_head import _bboxes_iou
+
+def _bboxes_iou(
+    bboxes_a: torch.Tensor,
+    bboxes_b: torch.Tensor,
+    xyxy: bool = True,
+) -> torch.Tensor:
+    """Compute pairwise IoU between two sets of boxes.
+
+    Duplicated from dinox_head to avoid circular import (dinox_head imports TAL).
+    """
+    if bboxes_a.shape[1] != 4 or bboxes_b.shape[1] != 4:
+        raise IndexError("Boxes must have 4 columns")
+
+    if xyxy:
+        tl = torch.max(bboxes_a[:, None, :2], bboxes_b[:, :2])
+        br = torch.min(bboxes_a[:, None, 2:], bboxes_b[:, 2:])
+        area_a = torch.prod(bboxes_a[:, 2:] - bboxes_a[:, :2], 1)
+        area_b = torch.prod(bboxes_b[:, 2:] - bboxes_b[:, :2], 1)
+    else:
+        tl = torch.max(
+            (bboxes_a[:, None, :2] - bboxes_a[:, None, 2:] / 2),
+            (bboxes_b[:, :2] - bboxes_b[:, 2:] / 2),
+        )
+        br = torch.min(
+            (bboxes_a[:, None, :2] + bboxes_a[:, None, 2:] / 2),
+            (bboxes_b[:, :2] + bboxes_b[:, 2:] / 2),
+        )
+        area_a = torch.prod(bboxes_a[:, 2:], 1)
+        area_b = torch.prod(bboxes_b[:, 2:], 1)
+
+    en = (tl < br).to(tl.dtype).prod(dim=2)
+    area_i = torch.prod(br - tl, 2) * en
+    return area_i / (area_a[:, None] + area_b - area_i)
 
 
 def _get_in_boxes_info(

@@ -22,6 +22,8 @@ from loguru import logger
 from object_detection_training.models.yolox.network_blocks import BaseConv, DWConv
 
 from .dfl import DFLModule, distribution_focal_loss
+from .mal import mal_weight, matchability_score
+from .tal import TaskAlignedAssigner
 
 # ---------------------------------------------------------------------------
 # Utility helpers (copied from yolo_head.py to keep self-contained)
@@ -251,6 +253,12 @@ class DINOXHead(nn.Module):
         use_soft_labels: Enable soft label assignment targets (IoU^gamma weighting).
         soft_label_gamma: Gamma exponent for soft label quality weighting.
         use_log_iou_cost: Enable -log(IoU) regression cost in SimOTA assignment.
+        use_mal: Enable Matchability-Aware Loss weighting on classification loss.
+        mal_gamma: Gamma for MAL matchability score balance.
+        assigner_type: Label assignment strategy ("simota" or "tal").
+        tal_topk: Top-k candidates per GT for TAL.
+        tal_alpha: Classification exponent for TAL alignment metric.
+        tal_beta: IoU exponent for TAL alignment metric.
     """
 
     def __init__(
@@ -268,6 +276,12 @@ class DINOXHead(nn.Module):
         use_soft_labels: bool = False,
         soft_label_gamma: float = 2.0,
         use_log_iou_cost: bool = False,
+        use_mal: bool = False,
+        mal_gamma: float = 1.5,
+        assigner_type: str = "simota",
+        tal_topk: int = 13,
+        tal_alpha: float = 1.0,
+        tal_beta: float = 6.0,
     ) -> None:
         super().__init__()
 
@@ -284,6 +298,9 @@ class DINOXHead(nn.Module):
         self.reg_max = reg_max
         self.dfl_loss_weight = dfl_loss_weight
         self.strides = strides
+        self.use_mal = use_mal
+        self.mal_gamma = mal_gamma
+        self.assigner_type = assigner_type
 
         # Number of regression output channels
         reg_channels = 4 * (reg_max + 1) if use_dfl else 4
@@ -329,6 +346,15 @@ class DINOXHead(nn.Module):
         # DFL module for distribution-to-point conversion
         if use_dfl:
             self.dfl = DFLModule(reg_max)
+
+        # TAL assigner (instantiated only when selected)
+        if assigner_type == "tal":
+            self._tal_assigner = TaskAlignedAssigner(
+                topk=tal_topk,
+                alpha=tal_alpha,
+                beta=tal_beta,
+                num_classes=num_classes,
+            )
 
         # Loss functions
         self.use_l1 = False
@@ -724,13 +750,7 @@ class DINOXHead(nn.Module):
                 continue
 
             try:
-                (
-                    gt_matched_classes,
-                    fg_mask,
-                    pred_ious_this_matching,
-                    matched_gt_inds,
-                    num_fg_img,
-                ) = self._get_assignments(
+                assigner_args = (
                     batch_idx,
                     num_gt,
                     total_num_anchors,
@@ -743,6 +763,22 @@ class DINOXHead(nn.Module):
                     x_shifts_cat,
                     y_shifts_cat,
                 )
+                if self.assigner_type == "tal":
+                    (
+                        gt_matched_classes,
+                        fg_mask,
+                        pred_ious_this_matching,
+                        matched_gt_inds,
+                        num_fg_img,
+                    ) = self._tal_assigner.assign(*assigner_args)
+                else:
+                    (
+                        gt_matched_classes,
+                        fg_mask,
+                        pred_ious_this_matching,
+                        matched_gt_inds,
+                        num_fg_img,
+                    ) = self._get_assignments(*assigner_args)
             except Exception:
                 tgt_obj = torch.zeros(
                     total_num_anchors, 1, device=outputs.device, dtype=dtype
@@ -761,9 +797,24 @@ class DINOXHead(nn.Module):
                 cls_target = F.one_hot(
                     gt_matched_classes.to(torch.int64), self.num_classes
                 ) * iou_weight.unsqueeze(-1)
-                cls_loss += self.bcewithlog_loss(
+
+                cls_loss_raw = self.bcewithlog_loss(
                     cls_preds[batch_idx][fg_mask], cls_target
-                ).sum()
+                )
+                if self.use_mal:
+                    cls_sigmoid = cls_preds[batch_idx][fg_mask].sigmoid()
+                    matched_cls_idx = gt_matched_classes.to(torch.int64)
+                    cls_score_for_gt = cls_sigmoid[
+                        torch.arange(len(matched_cls_idx), device=cls_sigmoid.device),
+                        matched_cls_idx,
+                    ]
+                    m = matchability_score(
+                        pred_ious_this_matching, cls_score_for_gt, self.mal_gamma
+                    )
+                    w = mal_weight(m)
+                    cls_loss += (cls_loss_raw * w.unsqueeze(-1)).sum()
+                else:
+                    cls_loss += cls_loss_raw.sum()
 
                 # Regression loss (IoU on decoded cxcywh)
                 reg_target = gt_bboxes[matched_gt_inds]
