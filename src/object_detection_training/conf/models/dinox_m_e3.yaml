@@ -1,0 +1,9 @@
+defaults:
+  - dinox_m_baseline
+  - _self_
+
+# E3 = Baseline + TAL assigner (ablation: TAL alone, no soft labels)
+assigner: tal
+tal_topk: 13
+tal_alpha: 1.0
+tal_beta: 6.0

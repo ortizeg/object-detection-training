@@ -67,6 +67,12 @@ class DINOXLightningModel(BaseDetectionModel):
         use_soft_labels: bool = False,
         soft_label_gamma: float = 2.0,
         use_log_iou_cost: bool = False,
+        use_mal: bool = False,
+        mal_gamma: float = 1.5,
+        assigner: str = "simota",
+        tal_topk: int = 13,
+        tal_alpha: float = 1.0,
+        tal_beta: float = 6.0,
     ):
         """Initialize DINO-X Lightning model.
 
@@ -96,6 +102,12 @@ class DINOXLightningModel(BaseDetectionModel):
             use_soft_labels: Enable soft label assignment targets.
             soft_label_gamma: Gamma for soft label quality weighting.
             use_log_iou_cost: Enable -log(IoU) regression cost in SimOTA.
+            use_mal: Enable Matchability-Aware Loss weighting.
+            mal_gamma: Gamma for MAL matchability score.
+            assigner: Label assignment strategy ('simota' or 'tal').
+            tal_topk: Top-k candidates per GT for TAL.
+            tal_alpha: Classification exponent for TAL alignment metric.
+            tal_beta: IoU exponent for TAL alignment metric.
         """
         super().__init__(
             num_classes=num_classes,
@@ -122,6 +134,12 @@ class DINOXLightningModel(BaseDetectionModel):
         self.use_soft_labels = use_soft_labels
         self.soft_label_gamma = soft_label_gamma
         self.use_log_iou_cost = use_log_iou_cost
+        self.use_mal = use_mal
+        self.mal_gamma = mal_gamma
+        self.assigner = assigner
+        self.tal_topk = tal_topk
+        self.tal_alpha = tal_alpha
+        self.tal_beta = tal_beta
 
         if in_channels is None:
             in_channels = [256, 512, 1024]
@@ -135,6 +153,12 @@ class DINOXLightningModel(BaseDetectionModel):
             use_soft_labels=use_soft_labels,
             soft_label_gamma=soft_label_gamma,
             use_log_iou_cost=use_log_iou_cost,
+            use_mal=use_mal,
+            mal_gamma=mal_gamma,
+            assigner=assigner,  # type: ignore[arg-type]
+            tal_topk=tal_topk,
+            tal_alpha=tal_alpha,
+            tal_beta=tal_beta,
         )
 
         # Build DINO-X model
@@ -144,7 +168,9 @@ class DINOXLightningModel(BaseDetectionModel):
             f"use_dfl={use_dfl}, reg_max={reg_max}, "
             f"use_soft_labels={use_soft_labels}, "
             f"soft_label_gamma={soft_label_gamma}, "
-            f"use_log_iou_cost={use_log_iou_cost})"
+            f"use_log_iou_cost={use_log_iou_cost}, "
+            f"use_mal={use_mal}, mal_gamma={mal_gamma}, "
+            f"assigner={assigner})"
         )
 
         backbone = YOLOPAFPN(  # type: ignore[no-untyped-call]
@@ -165,6 +191,12 @@ class DINOXLightningModel(BaseDetectionModel):
             use_soft_labels=use_soft_labels,
             soft_label_gamma=soft_label_gamma,
             use_log_iou_cost=use_log_iou_cost,
+            use_mal=use_mal,
+            mal_gamma=mal_gamma,
+            assigner_type=assigner,
+            tal_topk=tal_topk,
+            tal_alpha=tal_alpha,
+            tal_beta=tal_beta,
         )
 
         self.model = DINOX(backbone=backbone, head=head)

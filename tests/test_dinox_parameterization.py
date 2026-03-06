@@ -50,6 +50,31 @@ class TestHydraConfigCompleteness:
         assert cfg.models.reg_max == 16
         assert cfg.models.dfl_loss_weight == 0.25
 
+    def test_dinox_e3_has_tal_params(self) -> None:
+        """dinox_m_e3 has TAL assigner with baseline (no soft labels)."""
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
+            cfg = hydra.compose(
+                config_name="train_dinox",
+                overrides=["models=dinox_m_e3"],
+            )
+        assert cfg.models.assigner == "tal"
+        assert cfg.models.tal_topk == 13
+        assert cfg.models.tal_alpha == 1.0
+        assert cfg.models.tal_beta == 6.0
+        assert cfg.models.use_soft_labels is False
+
+    def test_dinox_e4_has_tal_and_soft_labels(self) -> None:
+        """dinox_m_e4 has TAL assigner with soft labels enabled."""
+        with hydra.initialize(version_base=None, config_path=CONF_PATH):
+            cfg = hydra.compose(
+                config_name="train_dinox",
+                overrides=["models=dinox_m_e4"],
+            )
+        assert cfg.models.assigner == "tal"
+        assert cfg.models.tal_topk == 13
+        assert cfg.models.use_soft_labels is True
+        assert cfg.models.soft_label_gamma == 2.0
+
     def test_dinox_base_params_present(self) -> None:
         """dinox_base defines common training hyperparameters."""
         with hydra.initialize(version_base=None, config_path=CONF_PATH):
