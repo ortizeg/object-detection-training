@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from object_detection_training.models.base import BaseDetectionModel
+from object_detection_training.models.dinox_lightning import (
+    DINOXLightningModel,
+    DINOXMBaselineModel,
+    DINOXMDFLModel,
+)
 from object_detection_training.models.rfdetr_lightning import (
     RFDETRLargeModel,
     RFDETRLightningModel,
@@ -22,6 +27,9 @@ from object_detection_training.models.yolox_lightning import (
 
 __all__ = [
     "BaseDetectionModel",
+    "DINOXLightningModel",
+    "DINOXMBaselineModel",
+    "DINOXMDFLModel",
     "RFDETRLargeModel",
     "RFDETRLightningModel",
     "RFDETRMediumModel",
