@@ -136,7 +136,7 @@ Note: Phases 4, 5, and 6 depend only on Phase 1 (and Phase 4 also on Phase 2), s
 |-------|----------------|--------|-----------|
 | 1. DFL Foundation and Infrastructure | 3/3 | Complete | 2026-03-06 |
 | 2. Soft Label Assignment | 2/2 | Complete | 2026-03-06 |
-| 3. Loss and Assignment Improvements | 0/2 | Not started | - |
+| 3. Loss and Assignment Improvements | 2/2 | Complete | 2026-03-06 |
 | 4. NMS-Free Dual Head | 0/2 | Not started | - |
 | 5. DINOv2 Feature Distillation | 0/2 | Not started | - |
 | 6. Scheduler-Free Optimizer | 0/1 | Not started | - |
