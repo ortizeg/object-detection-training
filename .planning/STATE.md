@@ -5,37 +5,39 @@
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Beat RF-DETR-S (53.0% COCO mAP) with YOLOX-M architecture using training innovations alone, all Apache 2.0
-**Current focus:** Phase 1 - DFL Foundation and Infrastructure
+**Current focus:** Phase 2 - Soft Label Assignment
 
 ## Current Position
 
-Phase: 1 of 7 (DFL Foundation and Infrastructure) -- COMPLETE
-Plan: 3 of 3 in current phase
-Status: Phase Complete
-Last activity: 2026-03-06 -- Completed 01-03-PLAN.md (DINO-X Test Suite)
+Phase: 2 of 7 (Soft Label Assignment)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-03-06 -- Completed 02-01-PLAN.md (Soft Label Assignment Implementation)
 
-Progress: [██░░░░░░░░] 14%
+Progress: [███░░░░░░░] 19%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 5.3min
-- Total execution time: 0.27 hours
+- Total plans completed: 4
+- Average duration: 4.8min
+- Total execution time: 0.32 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 3 | 16min | 5.3min |
+| 02 | 1 | 3min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 7min, 4min, 5min
-- Trend: stable
+- Last 5 plans: 7min, 4min, 5min, 3min
+- Trend: improving
 
 *Updated after each plan completion*
 | Phase 01 P02 | 4min | 2 tasks | 6 files |
 | Phase 01 P03 | 5min | 2 tasks | 6 files |
+| Phase 02 P01 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -52,6 +54,8 @@ Recent decisions affecting current work:
 - [Phase 01]: No task_manager.py changes needed -- existing import chain auto-discovers registered DINO-X models
 - [Phase 01]: Reuse YOLOX_CHECKPOINT_URLS and download_checkpoint from yolox_lightning for DINO-X weight loading
 - [Phase 01]: Phase 1 tests cover dinox_m_baseline and dinox_m_dfl only; ablation configs A-H deferred to later phases
+- [Phase 02]: Both -log(IoU) branches identical by design for ablation explicitness and future GIoU cost alternative
+- [Phase 02]: Non-in-place .sigmoid() in RTMDet path; autocast(enabled=False) per research pitfalls
 
 ### Pending Todos
 
@@ -64,5 +68,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 01-03-PLAN.md (DINO-X Test Suite) -- Phase 1 complete
+Stopped at: Completed 02-01-PLAN.md (Soft Label Assignment Implementation)
 Resume file: None
