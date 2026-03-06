@@ -6,6 +6,7 @@ from .config import DINOXConfig
 from .dfl import DFLModule, distribution_focal_loss
 from .dinox import DINOX
 from .dinox_head import DINOXHead
+from .distillation import DistillationModule
 from .mal import mal_weight, matchability_score
 from .tal import TaskAlignedAssigner
 
@@ -14,6 +15,7 @@ __all__ = [
     "DFLModule",
     "DINOXConfig",
     "DINOXHead",
+    "DistillationModule",
     "TaskAlignedAssigner",
     "distribution_focal_loss",
     "mal_weight",
