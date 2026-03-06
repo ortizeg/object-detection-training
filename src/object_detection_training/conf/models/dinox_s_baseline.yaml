@@ -1,0 +1,11 @@
+defaults:
+  - DINOXSBaseline
+  - dinox_base
+  - _self_
+
+# DINO-X Small Baseline (YOLOX-S equivalent, no DFL)
+depth: 0.33
+width: 0.50
+depthwise: false
+checkpoint_name: yolox_s.pth
+use_dfl: false

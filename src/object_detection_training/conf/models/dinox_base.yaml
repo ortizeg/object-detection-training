@@ -1,0 +1,31 @@
+defaults:
+  - base
+  - _self_
+
+# DINO-X Base Configuration
+learning_rate: 1e-3
+weight_decay: 5e-4
+warmup_epochs: 5
+download_pretrained: true
+pretrain_weights: null
+freeze_backbone_epochs: 0
+l1_loss_epoch: 0
+iou_loss_type: iou
+
+# Architecture (common defaults, matching YOLOX-S baseline)
+depth: 0.33
+width: 0.50
+depthwise: false
+in_channels:
+  - 256
+  - 512
+  - 1024
+
+# DFL settings (off by default = standard YOLOX behavior)
+use_dfl: false
+reg_max: 16
+dfl_loss_weight: 0.25
+
+# YOLOX-style: raw 0-255 float values, no normalization
+image_mean: null
+image_std: null
