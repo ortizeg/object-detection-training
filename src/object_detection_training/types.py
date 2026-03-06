@@ -118,6 +118,9 @@ class LRSchedulerConfig(TypedDict, total=False):
     frequency: int
 
 
-class OptimizerConfig(TypedDict):
+class _OptimizerConfigRequired(TypedDict):
     optimizer: torch.optim.Optimizer
+
+
+class OptimizerConfig(_OptimizerConfigRequired, total=False):
     lr_scheduler: LRSchedulerConfig

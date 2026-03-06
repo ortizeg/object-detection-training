@@ -396,14 +396,11 @@ class TestHydraE5E6Configs:
         assert cfg.models.assigner == "simota"
 
     def test_hydra_e6_loads(self) -> None:
-        """E6 config (TAL + soft labels + dual head) loads correctly."""
+        """E6 config (scheduler-free AdamW) loads correctly."""
         with hydra.initialize(version_base=None, config_path=CONF_PATH):
             cfg = hydra.compose(
                 config_name="train_dinox",
                 overrides=["models=dinox_m_e6"],
             )
-        assert cfg.models.use_dual_head is True
-        assert cfg.models.use_soft_labels is True
-        assert cfg.models.use_log_iou_cost is True
-        assert cfg.models.assigner == "tal"
-        assert cfg.models.lambda_o2o == 1.0
+        assert cfg.models.use_scheduler_free is True
+        assert cfg.models.learning_rate == 0.0025

@@ -53,7 +53,7 @@ class DINOXConfig(BaseModel, frozen=True):
     distill_layer_indices: list[int] = Field(default_factory=lambda: [3, 7, 11])
     distill_teacher: str = "dinov2_vitb14"
 
-    # Future phases: scheduler-free
+    # Phase 6: scheduler-free
     use_scheduler_free: bool = False
 
     # Assignment and loss configuration

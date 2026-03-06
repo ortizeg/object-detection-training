@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Beat RF-DETR-S (53.0% COCO mAP) with YOLOX-M architecture using training innovations alone, all Apache 2.0
-**Current focus:** Phase 5 - DINOv2 Feature Distillation
+**Current focus:** Phase 6 - Scheduler-Free Optimizer (Complete)
 
 ## Current Position
 
-Phase: 5 of 7 (DINOv2 Feature Distillation)
-Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-06 -- Completed 05-02-PLAN.md (Distillation Unit Tests)
+Phase: 6 of 7 (Scheduler-Free Optimizer)
+Plan: 1 of 1 in current phase
+Status: Phase 6 Complete
+Last activity: 2026-03-06 -- Completed 06-01-PLAN.md (Scheduler-Free Optimizer Integration)
 
-Progress: [██████████] 100%
+Progress: [████████████░] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 5.0min
-- Total execution time: 0.76 hours
+- Total execution time: 0.83 hours
 
 **By Phase:**
 
@@ -30,10 +30,11 @@ Progress: [██████████] 100%
 | 01 | 3 | 16min | 5.3min |
 | 02 | 2 | 6min | 3min |
 | 03 | 2 | 11min | 5.5min |
-| 05 | 2 | 14min | 7min |
+| 04 | 2 | 13min | 6.5min |
+| 06 | 1 | 7min | 7min |
 
 **Recent Trend:**
-- Last 5 plans: 3min, 6min, 5min, 10min, 4min
+- Last 5 plans: 6min, 5min, 6min, 7min, 7min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -43,8 +44,9 @@ Progress: [██████████] 100%
 | Phase 02 P02 | 3min | 1 tasks | 1 files |
 | Phase 03 P01 | 6min | 2 tasks | 6 files |
 | Phase 03 P02 | 5min | 2 tasks | 6 files |
-| Phase 05 P01 | 10min | 2 tasks | 7 files |
-| Phase 05 P02 | 4min | 1 tasks | 1 files |
+| Phase 04 P01 | 6min | 2 tasks | 6 files |
+| Phase 04 P02 | 7min | 2 tasks | 3 files |
+| Phase 06 P01 | 7min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -67,12 +69,15 @@ Recent decisions affecting current work:
 - [Phase 03]: Duplicated _bboxes_iou in tal.py to avoid circular import (dinox_head imports tal, tal cannot import dinox_head)
 - [Phase 03]: Used bounded MAL weight (1-m)^2+1.0 in [1.0, 2.0] for numerical stability
 - [Phase 03]: Added soft label, MAL, and assigner defaults to dinox_base.yaml for Hydra schema completeness
-- [Phase 05]: Used type: ignore[operator] for DINOv2 get_intermediate_layers return type (nn.Module generic typing limitation)
-- [Phase 05]: Lazy import of DistillationModule in Lightning model to avoid torch.hub load when distillation is disabled
-- [Phase 05]: BGR images passed to DistillationModule which handles BGR->RGB internally (matches YOLOX pipeline convention)
-- [Phase 05]: Used FakeTeacher(nn.Module) mock for distillation tests to properly support .parameters() and .named_parameters()
-- [Phase 05]: Zero-loss identity test verifies per-level MSE at 768->768 projector since non-square channel projectors cannot be identity
-- [Phase 05]: ONNX exclusion test uses forward spy pattern rather than graph inspection
+- [Phase 04]: Duplicated spatial filtering helpers in hungarian.py (same pattern as tal.py) to avoid circular imports
+- [Phase 04]: O2O has no objectness prediction/loss -- constant-1 objectness at inference per research
+- [Phase 04]: O2O prediction layers initialized from O2M weights for warm-start convergence
+- [Phase 04]: O2O loss normalized by its own num_fg independently from O2M normalization
+- [Phase 04]: Used width=0.25 and depth=0.33 for fast dual head test execution
+- [Phase 04]: 400-anchor grid at stride=8 for Hungarian test coverage of GT positions
+- [Phase 06]: Conditional import of schedulefree inside configure_optimizers to avoid import-time dependency
+- [Phase 06]: TypedDict inheritance pattern for optional lr_scheduler in OptimizerConfig
+- [Phase 06]: type: ignore[import-untyped] for schedulefree (no py.typed marker)
 
 ### Pending Todos
 
@@ -85,5 +90,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 05-02-PLAN.md (Distillation Unit Tests) -- Phase 5 complete
+Stopped at: Completed 06-01-PLAN.md (Scheduler-Free Optimizer Integration) -- Phase 6 complete
 Resume file: None

@@ -54,6 +54,9 @@ distill_layer_indices:
   - 11
 distill_teacher: dinov2_vitb14
 
+# Scheduler-free optimizer (off by default = SGD + cosine)
+use_scheduler_free: false
+
 # YOLOX-style: raw 0-255 float values, no normalization
 image_mean: null
 image_std: null

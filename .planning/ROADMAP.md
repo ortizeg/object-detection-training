@@ -16,8 +16,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Soft Label Assignment** - Soft SimOTA with IoU-weighted targets and pluggable assigner protocol
 - [ ] **Phase 3: Loss and Assignment Improvements** - MAL cross-branch learning and TAL alternative assigner
 - [ ] **Phase 4: NMS-Free Dual Head** - O2O branch with consistent matching for NMS-free inference
-- [x] **Phase 5: DINOv2 Feature Distillation** - Frozen DINOv2-B/14 teacher with feature projection and A100 config
-- [ ] **Phase 6: Scheduler-Free Optimizer** - Schedule-free AdamW integration with Lightning hooks
+- [ ] **Phase 5: DINOv2 Feature Distillation** - Frozen DINOv2-B/14 teacher with feature projection and A100 config
+- [x] **Phase 6: Scheduler-Free Optimizer** - Schedule-free AdamW integration with Lightning hooks
 - [ ] **Phase 7: Ablation Deployment** - GCP launcher scripts and full experiment matrix execution
 
 ## Phase Details
@@ -78,11 +78,11 @@ Plans:
   2. Both O2M and O2O heads use identical alignment metric values (same alpha, beta), verified by config validation
   3. ONNX export includes only the O2O branch and produces output with constant-1 objectness for backward compatibility with existing evaluation code
   4. Unit tests verify Hungarian matching produces strict 1:1 assignment and O2O output shape matches O2M output shape
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md -- HungarianAssigner, O2O head layers, combined loss, config/Lightning wiring
+- [ ] 04-02-PLAN.md -- Dual head unit tests (TEST-05), E5/E6 ablation configs
 
 ### Phase 5: DINOv2 Feature Distillation
 **Goal**: A frozen DINOv2-B/14 teacher provides feature-level supervision during training with zero inference overhead, and A100 trainer config supports the increased memory requirements
@@ -97,8 +97,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [x] 05-01-PLAN.md -- DistillationModule, config fields, DINOX fpn_features, Lightning wiring, A100 trainer config
-- [x] 05-02-PLAN.md -- Distillation unit tests (TEST-04): teacher shape, projector alignment, zero-loss identity, ONNX exclusion
+- [ ] 05-01-PLAN.md -- DistillationModule, config fields, DINOX fpn_features, Lightning wiring, A100 trainer config
+- [ ] 05-02-PLAN.md -- Distillation unit tests (TEST-04): teacher shape, projector alignment, zero-loss identity, ONNX exclusion
 
 ### Phase 6: Scheduler-Free Optimizer
 **Goal**: Scheduler-free AdamW is available as an optimizer option that eliminates learning rate schedule tuning while integrating correctly with Lightning training hooks
@@ -108,10 +108,10 @@ Plans:
   1. Scheduler-free AdamW from facebookresearch/schedule_free is selectable via OptimizerConfig flag alongside existing SGD
   2. optimizer.train() and optimizer.eval() calls are correctly placed in Lightning on_train_epoch_start and on_validation_epoch_start hooks
   3. Training with scheduler-free AdamW converges on a short smoke test (few epochs, small subset) without NaN losses or crashed gradients
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 06-01: TBD
+- [ ] 06-01-PLAN.md — Scheduler-free AdamW optimizer, Lightning hooks, tests, E6 config
 
 ### Phase 7: Ablation Deployment
 **Goal**: GCP batch launcher scripts submit the full ablation experiment matrix to Vertex AI with correct GPU tier assignments per experiment
@@ -137,7 +137,7 @@ Note: Phases 4, 5, and 6 depend only on Phase 1 (and Phase 4 also on Phase 2), s
 | 1. DFL Foundation and Infrastructure | 3/3 | Complete | 2026-03-06 |
 | 2. Soft Label Assignment | 2/2 | Complete | 2026-03-06 |
 | 3. Loss and Assignment Improvements | 2/2 | Complete | 2026-03-06 |
-| 4. NMS-Free Dual Head | 0/2 | Not started | - |
-| 5. DINOv2 Feature Distillation | 2/2 | Complete | 2026-03-06 |
-| 6. Scheduler-Free Optimizer | 0/1 | Not started | - |
+| 4. NMS-Free Dual Head | 2/2 | Complete | 2026-03-06 |
+| 5. DINOv2 Feature Distillation | 0/2 | Not started | - |
+| 6. Scheduler-Free Optimizer | 1/1 | Complete | 2026-03-06 |
 | 7. Ablation Deployment | 0/1 | Not started | - |

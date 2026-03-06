@@ -2,9 +2,6 @@ defaults:
   - dinox_m_baseline
   - _self_
 
-# E6: TAL + soft labels + dual head (NMS-free)
-use_soft_labels: true
-use_log_iou_cost: true
-assigner: tal
-use_dual_head: true
-lambda_o2o: 1.0
+# E6: Scheduler-free AdamW optimizer
+use_scheduler_free: true
+learning_rate: 0.0025  # schedulefree default, higher than SGD 1e-3

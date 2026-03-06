@@ -47,6 +47,7 @@ opencv = "*"
 rich = "*"
 psutil = ">=7.2.2,<8"
 google-genai = ">=1.63.0,<2"
+schedulefree = ">=1.4,<2.0"
 
 [feature.dev.dependencies]
 pytest = "*"

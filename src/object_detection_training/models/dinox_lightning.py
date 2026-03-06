@@ -79,6 +79,7 @@ class DINOXLightningModel(BaseDetectionModel):
         distill_weight: float = 0.5,
         distill_layer_indices: list[int] | None = None,
         distill_teacher: str = "dinov2_vitb14",
+        use_scheduler_free: bool = False,
     ):
         """Initialize DINO-X Lightning model.
 
@@ -120,6 +121,8 @@ class DINOXLightningModel(BaseDetectionModel):
             distill_weight: Weight for distillation loss term.
             distill_layer_indices: Teacher ViT block indices to extract.
             distill_teacher: DINOv2 model name for torch.hub.
+            use_scheduler_free: Use scheduler-free AdamW optimizer
+                instead of SGD+cosine.
         """
         super().__init__(
             num_classes=num_classes,
@@ -158,6 +161,7 @@ class DINOXLightningModel(BaseDetectionModel):
         self.distill_weight = distill_weight
         self.distill_layer_indices = distill_layer_indices
         self.distill_teacher = distill_teacher
+        self._use_scheduler_free = use_scheduler_free
 
         if in_channels is None:
             in_channels = [256, 512, 1024]
@@ -180,6 +184,7 @@ class DINOXLightningModel(BaseDetectionModel):
             use_dual_head=use_dual_head,
             lambda_o2o=lambda_o2o,
             enable_distillation=enable_distillation,
+            use_scheduler_free=use_scheduler_free,
         )
 
         # Build DINO-X model
@@ -192,7 +197,8 @@ class DINOXLightningModel(BaseDetectionModel):
             f"use_log_iou_cost={use_log_iou_cost}, "
             f"use_mal={use_mal}, mal_gamma={mal_gamma}, "
             f"assigner={assigner}, use_dual_head={use_dual_head}, "
-            f"enable_distillation={enable_distillation})"
+            f"enable_distillation={enable_distillation}, "
+            f"use_scheduler_free={use_scheduler_free})"
         )
 
         backbone = YOLOPAFPN(  # type: ignore[no-untyped-call]
@@ -311,6 +317,34 @@ class DINOXLightningModel(BaseDetectionModel):
         ):
             self.model.head.use_l1 = True
             logger.info(f"Enabled L1 regression loss at epoch {self.current_epoch}")
+
+        if self._use_scheduler_free:
+            for opt in self.trainer.optimizers:
+                if hasattr(opt, "train"):
+                    opt.train()
+
+    def on_validation_model_eval(self) -> None:
+        """Switch scheduler-free optimizer to eval mode for validation."""
+        super().on_validation_model_eval()
+        if self._use_scheduler_free:
+            for opt in self.trainer.optimizers:
+                if hasattr(opt, "eval"):
+                    opt.eval()
+
+    def on_validation_model_train(self) -> None:
+        """Switch scheduler-free optimizer back to train mode after validation."""
+        super().on_validation_model_train()
+        if self._use_scheduler_free:
+            for opt in self.trainer.optimizers:
+                if hasattr(opt, "train"):
+                    opt.train()
+
+    def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
+        """Switch scheduler-free optimizer to eval mode before saving."""
+        if self._use_scheduler_free:
+            for opt in self.trainer.optimizers:
+                if hasattr(opt, "eval"):
+                    opt.eval()
 
     def _reinitialize_cls_biases(self) -> None:
         """Reinitialize classification prediction biases after weight loading.
@@ -673,19 +707,7 @@ class DINOXLightningModel(BaseDetectionModel):
                 elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
                     pg1.append(v.weight)
 
-        momentum = 0.9
-        nesterov = True
-
-        optimizer = torch.optim.SGD(
-            pg0,
-            lr=self.learning_rate,
-            momentum=momentum,
-            nesterov=nesterov,
-        )
-        optimizer.add_param_group({"params": pg1, "weight_decay": self.weight_decay})
-        optimizer.add_param_group({"params": pg2})
-
-        # Scheduler with warmup + cosine annealing
+        # Calculate warmup steps (shared by both optimizer paths)
         total_steps: int
         if self.trainer and hasattr(self.trainer, "estimated_stepping_batches"):
             total_steps = int(self.trainer.estimated_stepping_batches)
@@ -701,6 +723,36 @@ class DINOXLightningModel(BaseDetectionModel):
         warmup_steps = min(warmup_steps, total_steps // 2)
         warmup_steps = max(1, warmup_steps)
 
+        if self._use_scheduler_free:
+            from schedulefree import AdamWScheduleFree  # type: ignore[import-untyped]
+
+            optimizer = AdamWScheduleFree(
+                pg0,
+                lr=self.learning_rate,
+                betas=(0.9, 0.999),
+                eps=1e-8,
+                weight_decay=0.0,  # pg0 = BN, no decay
+                warmup_steps=warmup_steps,
+            )
+            optimizer.add_param_group(
+                {"params": pg1, "weight_decay": self.weight_decay}
+            )
+            optimizer.add_param_group({"params": pg2, "weight_decay": 0.0})
+            return {"optimizer": optimizer}
+
+        momentum = 0.9
+        nesterov = True
+
+        optimizer = torch.optim.SGD(
+            pg0,
+            lr=self.learning_rate,
+            momentum=momentum,
+            nesterov=nesterov,
+        )
+        optimizer.add_param_group({"params": pg1, "weight_decay": self.weight_decay})
+        optimizer.add_param_group({"params": pg2})
+
+        # Scheduler with warmup + cosine annealing
         scheduler_warmup = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=0.001, end_factor=1.0, total_iters=warmup_steps
         )
