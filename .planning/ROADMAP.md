@@ -94,11 +94,11 @@ Plans:
   3. Distillation loss is zero when student features exactly match teacher features (verified by unit test with identity projector)
   4. A100 trainer config (gpu_a100.yaml) sets appropriate batch size and precision for distillation training without OOM
   5. Unit tests verify teacher output shape, projector dimension alignment, and zero-loss identity condition
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 05-01-PLAN.md -- DistillationModule, config fields, DINOX fpn_features, Lightning wiring, A100 trainer config
+- [ ] 05-02-PLAN.md -- Distillation unit tests (TEST-04): teacher shape, projector alignment, zero-loss identity, ONNX exclusion
 
 ### Phase 6: Scheduler-Free Optimizer
 **Goal**: Scheduler-free AdamW is available as an optimizer option that eliminates learning rate schedule tuning while integrating correctly with Lightning training hooks
