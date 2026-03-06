@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DINOXConfig(BaseModel, frozen=True):
@@ -45,11 +45,15 @@ class DINOXConfig(BaseModel, frozen=True):
 
     # Future phases: dual head
     use_dual_head: bool = False
+    lambda_o2o: float = 1.0
 
-    # Future phases: distillation
+    # Phase 5: distillation
     enable_distillation: bool = False
+    distill_weight: float = 0.5
+    distill_layer_indices: list[int] = Field(default_factory=lambda: [3, 7, 11])
+    distill_teacher: str = "dinov2_vitb14"
 
-    # Future phases: scheduler-free
+    # Phase 6: scheduler-free
     use_scheduler_free: bool = False
 
     # Assignment and loss configuration

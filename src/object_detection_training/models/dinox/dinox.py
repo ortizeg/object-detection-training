@@ -76,6 +76,7 @@ class DINOX(nn.Module):
                 "conf_loss": conf_loss,
                 "cls_loss": cls_loss,
                 "num_fg": num_fg,
+                "fpn_features": fpn_outs,
             }
 
             if not self.training:

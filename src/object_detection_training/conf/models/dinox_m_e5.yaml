@@ -1,0 +1,9 @@
+defaults:
+  - dinox_m_baseline
+  - _self_
+
+# E5: SimOTA + soft labels + dual head (NMS-free)
+use_soft_labels: true
+use_log_iou_cost: true
+use_dual_head: true
+lambda_o2o: 1.0

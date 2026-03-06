@@ -73,6 +73,12 @@ class DINOXLightningModel(BaseDetectionModel):
         tal_topk: int = 13,
         tal_alpha: float = 1.0,
         tal_beta: float = 6.0,
+        use_dual_head: bool = False,
+        lambda_o2o: float = 1.0,
+        enable_distillation: bool = False,
+        distill_weight: float = 0.5,
+        distill_layer_indices: list[int] | None = None,
+        distill_teacher: str = "dinov2_vitb14",
         use_scheduler_free: bool = False,
     ):
         """Initialize DINO-X Lightning model.
@@ -109,6 +115,12 @@ class DINOXLightningModel(BaseDetectionModel):
             tal_topk: Top-k candidates per GT for TAL.
             tal_alpha: Classification exponent for TAL alignment metric.
             tal_beta: IoU exponent for TAL alignment metric.
+            use_dual_head: Enable O2O dual head for NMS-free inference.
+            lambda_o2o: Weight for O2O loss contribution.
+            enable_distillation: Enable DINOv2 feature distillation.
+            distill_weight: Weight for distillation loss term.
+            distill_layer_indices: Teacher ViT block indices to extract.
+            distill_teacher: DINOv2 model name for torch.hub.
             use_scheduler_free: Use scheduler-free AdamW optimizer
                 instead of SGD+cosine.
         """
@@ -143,6 +155,12 @@ class DINOXLightningModel(BaseDetectionModel):
         self.tal_topk = tal_topk
         self.tal_alpha = tal_alpha
         self.tal_beta = tal_beta
+        self.use_dual_head = use_dual_head
+        self.lambda_o2o = lambda_o2o
+        self.enable_distillation = enable_distillation
+        self.distill_weight = distill_weight
+        self.distill_layer_indices = distill_layer_indices
+        self.distill_teacher = distill_teacher
         self._use_scheduler_free = use_scheduler_free
 
         if in_channels is None:
@@ -163,6 +181,9 @@ class DINOXLightningModel(BaseDetectionModel):
             tal_topk=tal_topk,
             tal_alpha=tal_alpha,
             tal_beta=tal_beta,
+            use_dual_head=use_dual_head,
+            lambda_o2o=lambda_o2o,
+            enable_distillation=enable_distillation,
             use_scheduler_free=use_scheduler_free,
         )
 
@@ -175,7 +196,9 @@ class DINOXLightningModel(BaseDetectionModel):
             f"soft_label_gamma={soft_label_gamma}, "
             f"use_log_iou_cost={use_log_iou_cost}, "
             f"use_mal={use_mal}, mal_gamma={mal_gamma}, "
-            f"assigner={assigner}, use_scheduler_free={use_scheduler_free})"
+            f"assigner={assigner}, use_dual_head={use_dual_head}, "
+            f"enable_distillation={enable_distillation}, "
+            f"use_scheduler_free={use_scheduler_free})"
         )
 
         backbone = YOLOPAFPN(  # type: ignore[no-untyped-call]
@@ -202,9 +225,31 @@ class DINOXLightningModel(BaseDetectionModel):
             tal_topk=tal_topk,
             tal_alpha=tal_alpha,
             tal_beta=tal_beta,
+            use_dual_head=use_dual_head,
+            lambda_o2o=lambda_o2o,
         )
 
         self.model = DINOX(backbone=backbone, head=head)
+
+        # Conditionally create distillation module
+        if enable_distillation:
+            from object_detection_training.models.dinox.distillation import (
+                DistillationModule,
+            )
+
+            student_channels = [int(c * width) for c in in_channels]
+            self.distillation: DistillationModule | None = DistillationModule(
+                student_channels=student_channels,
+                teacher_layer_indices=distill_layer_indices or [3, 7, 11],
+                distill_weight=distill_weight,
+                teacher_model=distill_teacher,
+            )
+            logger.info(
+                f"Distillation enabled: teacher={distill_teacher}, "
+                f"weight={distill_weight}, layers={distill_layer_indices}"
+            )
+        else:
+            self.distillation = None
 
         # Override IoU loss type if requested
         if iou_loss_type != "iou":
@@ -314,7 +359,15 @@ class DINOXLightningModel(BaseDetectionModel):
         for conv in self.model.head.cls_preds:
             nn.init.constant_(conv.bias, bias_init)
 
-        logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
+        if hasattr(self.model.head, "cls_preds_o2o"):
+            for conv in self.model.head.cls_preds_o2o:
+                nn.init.constant_(conv.bias, bias_init)
+            logger.info(
+                f"Reinitialized cls_preds and cls_preds_o2o biases "
+                f"with prior_prob={prior_prob}"
+            )
+        else:
+            logger.info(f"Reinitialized cls_preds biases with prior_prob={prior_prob}")
 
     def _download_and_load_weights(self) -> None:
         """Download and load pretrained weights.
@@ -434,6 +487,22 @@ class DINOXLightningModel(BaseDetectionModel):
         cls_loss = outputs["cls_loss"]
         l1_loss = outputs["l1_loss"]
         num_fg = outputs["num_fg"]
+
+        # Add distillation loss if enabled
+        if self.distillation is not None:
+            fpn_features = outputs.get("fpn_features")
+            if fpn_features is not None:
+                # images from batch is RGB; distillation expects BGR
+                images_bgr = images[:, [2, 1, 0], :, :]
+                distill_loss = self.distillation(images_bgr, list(fpn_features))
+                loss = loss + self.distillation.distill_weight * distill_loss
+                self.log(
+                    "train/distill_loss",
+                    distill_loss,
+                    on_step=True,
+                    on_epoch=True,
+                    prog_bar=False,
+                )
 
         # Log losses
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
@@ -627,6 +696,16 @@ class DINOXLightningModel(BaseDetectionModel):
                 pg0.append(v.weight)
             elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
                 pg1.append(v.weight)
+
+        # Add distillation projector params (teacher stays frozen, not included)
+        if self.distillation is not None:
+            for k, v in self.distillation.projectors.named_modules():
+                if hasattr(v, "bias") and isinstance(v.bias, nn.Parameter):
+                    pg2.append(v.bias)
+                if isinstance(v, nn.BatchNorm2d) or "bn" in k:
+                    pg0.append(v.weight)
+                elif hasattr(v, "weight") and isinstance(v.weight, nn.Parameter):
+                    pg1.append(v.weight)
 
         # Calculate warmup steps (shared by both optimizer paths)
         total_steps: int
