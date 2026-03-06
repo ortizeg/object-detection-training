@@ -26,6 +26,21 @@ use_dfl: false
 reg_max: 16
 dfl_loss_weight: 0.25
 
+# Soft label settings (off by default = standard YOLOX behavior)
+use_soft_labels: false
+soft_label_gamma: 2.0
+use_log_iou_cost: false
+
+# MAL settings (off by default)
+use_mal: false
+mal_gamma: 1.5
+
+# Assignment strategy (simota = standard YOLOX behavior)
+assigner: simota
+tal_topk: 13
+tal_alpha: 1.0
+tal_beta: 6.0
+
 # YOLOX-style: raw 0-255 float values, no normalization
 image_mean: null
 image_std: null
