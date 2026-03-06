@@ -7,6 +7,7 @@ from object_detection_training.models.dinox_lightning import (
     DINOXLightningModel,
     DINOXMBaselineModel,
     DINOXMDFLModel,
+    DINOXSBaselineModel,
 )
 from object_detection_training.models.rfdetr_lightning import (
     RFDETRLargeModel,
@@ -30,6 +31,7 @@ __all__ = [
     "DINOXLightningModel",
     "DINOXMBaselineModel",
     "DINOXMDFLModel",
+    "DINOXSBaselineModel",
     "RFDETRLargeModel",
     "RFDETRLightningModel",
     "RFDETRMediumModel",

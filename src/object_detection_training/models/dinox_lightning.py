@@ -683,3 +683,16 @@ class DINOXMDFLModel(DINOXLightningModel):
         kwargs.setdefault("checkpoint_name", self._checkpoint_name)
         kwargs.setdefault("use_dfl", True)
         super().__init__(**kwargs)
+
+
+@register(name="DINOXSBaseline")
+class DINOXSBaselineModel(DINOXLightningModel):
+    """DINO-X Small Baseline model (no DFL) for Hydra instantiation."""
+
+    _checkpoint_name = "yolox_s.pth"
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs.pop("variant", None)
+        kwargs.setdefault("checkpoint_name", self._checkpoint_name)
+        kwargs.setdefault("use_dfl", False)
+        super().__init__(**kwargs)
