@@ -433,9 +433,20 @@ RF-DETR v3 wins on recall for every class (except rim which is tied). YOLOX v2 h
 | OWLv2 | 0.35 | 2,820 ms | — | Zero-shot |
 | Gemini 3.1 Pro (API) | 0.064 | 15,505 ms | — | Cloud API |
 
-RF-DETR v3 and YOLOX-S v2 rows measured with `time.perf_counter()` timing (first image excluded as warmup, test split, 93 images). Other rows from earlier GCP job logs.
+End-to-end rows measured with `time.perf_counter()` timing (first image excluded as warmup, test split, 93 images). Includes image I/O, preprocessing (resize, normalize), ONNX Runtime inference, and post-processing.
 
-YOLOX pure model inference (from training benchmark): **16.8 ms/img (59.6 FPS)** on NVIDIA L4. The gap between 16.8 ms pure inference and 211 ms end-to-end is due to image I/O, preprocessing (resize, normalize), and ONNX Runtime session overhead.
+### Pure Model Inference (NVIDIA L4, PyTorch)
+
+From `model_info.json` logged during training — measures only the forward pass (no I/O, preprocessing, or post-processing):
+
+| Model | Input | ms/img | FPS | Params | FLOPs |
+|-------|-------|--------|-----|--------|-------|
+| YOLOX-S v2 | 640x640 | 15.5 ms | 64.6 | 8.9M | 13.3G |
+| YOLOX-M v1 | 640x640 | 16.2 ms | 61.9 | 25.3M | 36.8G |
+| RF-DETR v3 Small | 640x640 | 20.4 ms | 49.1 | 32.1M | 61.0G |
+| RF-DETR Medium v2 | 576x576 | 21.0 ms | 47.5 | 33.4M | 32.4G |
+
+YOLOX-S pure inference is **1.3x faster** than RF-DETR Small (15.5 vs 20.4 ms). The gap widens to **3.1x** end-to-end (211 vs 643 ms) because RF-DETR's ViT backbone has heavier preprocessing and ONNX Runtime overhead. RF-DETR Medium has fewer FLOPs than Small (32.4G vs 61.0G at 576 vs 640 input) but similar inference time due to attention memory access patterns.
 
 ### Apple M3 Max CPU (ONNX Runtime + CPU)
 
