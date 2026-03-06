@@ -1,0 +1,11 @@
+defaults:
+  - DINOXMBaseline
+  - dinox_base
+  - _self_
+
+# DINO-X Medium Baseline (YOLOX-M equivalent, no DFL)
+depth: 0.67
+width: 0.75
+depthwise: false
+checkpoint_name: yolox_m.pth
+use_dfl: false

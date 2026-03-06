@@ -1,0 +1,13 @@
+defaults:
+  - DINOXMDFL
+  - dinox_base
+  - _self_
+
+# DINO-X Medium with DFL
+depth: 0.67
+width: 0.75
+depthwise: false
+checkpoint_name: yolox_m.pth
+use_dfl: true
+reg_max: 16
+dfl_loss_weight: 0.25
