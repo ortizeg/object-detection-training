@@ -108,10 +108,10 @@ Plans:
   1. Scheduler-free AdamW from facebookresearch/schedule_free is selectable via OptimizerConfig flag alongside existing SGD
   2. optimizer.train() and optimizer.eval() calls are correctly placed in Lightning on_train_epoch_start and on_validation_epoch_start hooks
   3. Training with scheduler-free AdamW converges on a short smoke test (few epochs, small subset) without NaN losses or crashed gradients
-**Plans**: TBD
+**Plans:** 1 plan
 
 Plans:
-- [ ] 06-01: TBD
+- [ ] 06-01-PLAN.md — Scheduler-free AdamW optimizer, Lightning hooks, tests, E6 config
 
 ### Phase 7: Ablation Deployment
 **Goal**: GCP batch launcher scripts submit the full ablation experiment matrix to Vertex AI with correct GPU tier assignments per experiment
