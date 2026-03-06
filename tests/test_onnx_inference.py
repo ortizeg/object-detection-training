@@ -462,3 +462,56 @@ class TestONNXInferenceTask:
         )
         with pytest.raises(ValueError, match="Unknown post_processor_type"):
             task.run()
+
+    @patch("object_detection_training.tasks.onnx_inference_task.ONNXInferencer")
+    @patch("object_detection_training.tasks.onnx_inference_task.ImageLoader")
+    @patch("object_detection_training.tasks.onnx_inference_task.save_annotated_image")
+    def test_run_with_draw(
+        self,
+        mock_save_viz: MagicMock,
+        mock_loader_cls: MagicMock,
+        mock_inferencer_cls: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Verifies visualization is saved when draw=True."""
+        from object_detection_training.tasks import ONNXInferenceTask
+
+        img_dir = tmp_path / "images"
+        img_dir.mkdir()
+        (img_dir / "test.jpg").touch()
+
+        output_dir = tmp_path / "output"
+
+        # Mock loader
+        loader = MagicMock()
+        loader.width = 640
+        loader.height = 480
+        loader.filename = "test.jpg"
+        loader.read.return_value = np.zeros((480, 640, 3), dtype=np.uint8)
+        mock_loader_cls.return_value = loader
+
+        # Mock inferencer
+        inferencer = MagicMock()
+        inferencer.predict.return_value = []
+        mock_inferencer_cls.return_value = inferencer
+
+        task = ONNXInferenceTask(
+            model_path=tmp_path / "model.onnx",
+            image_dir=img_dir,
+            output_dir=output_dir,
+            label_map={0: "person"},
+            draw=True,
+        )
+
+        task.run()
+
+        # Check if visualization dir was created
+        viz_dir = output_dir / "visualizations"
+        assert viz_dir.exists()
+
+        # Check if save_annotated_image was called
+        mock_save_viz.assert_called_once()
+        # First arg is image, second is annotation, third is path
+        args, _ = mock_save_viz.call_args
+        assert isinstance(args[2], Path)
+        assert args[2].name == "test.jpg"

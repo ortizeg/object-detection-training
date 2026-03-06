@@ -664,6 +664,67 @@ class YOLOXLightningModel(BaseDetectionModel):
             },
         }
 
+    def export_onnx(
+        self,
+        output_path: str,
+        input_height: int = 640,
+        input_width: int = 640,
+        opset_version: int = 17,
+        simplify: bool = True,
+        dynamic_axes: dict[str, Any] | None = None,
+    ) -> str:
+        """Export YOLOX to ONNX with a single output tensor.
+
+        YOLOX outputs ``[batch, num_anchors, 5 + num_classes]`` where
+        columns are ``[cx, cy, w, h, obj_conf, cls_0, ...]`` in pixel
+        coordinates.  This differs from the base class which assumes
+        three separate output tensors.
+        """
+        import onnx
+
+        self.set_export_mode(True)
+        device = next(self.parameters()).device
+
+        input_shape = (1, 3, input_height, input_width)
+        dummy_input = torch.randn(*input_shape, device=device)
+
+        if dynamic_axes is None:
+            dynamic_axes = {
+                "input": {0: "batch_size"},
+                "output": {0: "batch_size"},
+            }
+
+        out_path = Path(output_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Exporting YOLOX to ONNX: {out_path}")
+        torch.onnx.export(
+            self,
+            (dummy_input,),
+            str(out_path),
+            opset_version=opset_version,
+            input_names=["input"],
+            output_names=["output"],
+            dynamic_axes=dynamic_axes,
+        )
+
+        if simplify:
+            try:
+                import onnxsim
+
+                model = onnx.load(str(out_path))
+                model_simp, check = onnxsim.simplify(model)
+                if check:
+                    onnx.save(model_simp, str(out_path))
+                    logger.info("ONNX model simplified successfully")
+                else:
+                    logger.warning("ONNX simplification failed, using original model")
+            except ImportError:
+                logger.warning("onnxsim not installed, skipping simplification")
+
+        logger.info(f"YOLOX ONNX export complete: {out_path}")
+        return str(out_path)
+
 
 # Register model variants with Hydra
 @register(name="YOLOXNano")

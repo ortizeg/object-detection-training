@@ -444,6 +444,17 @@ class RFDETRLightningModel(BaseDetectionModel):
         model = deepcopy(self.model.cpu())
         model.to(device)
         model.eval()
+
+        # Update backbone shape to match export dimensions so that
+        # export() pre-computes position embeddings at the correct
+        # resolution.  Without this, exporting at a resolution different
+        # from training triggers F.interpolate(antialias=True) during
+        # ONNX tracing, which is not supported.
+        export_shape = (input_height, input_width)
+        for m in model.modules():
+            if hasattr(m, "shape") and hasattr(m, "_export"):
+                m.shape = export_shape
+
         model.export()
 
         # Create dummy input with requested dimensions

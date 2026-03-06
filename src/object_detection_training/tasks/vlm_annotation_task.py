@@ -6,6 +6,7 @@ from pathlib import Path
 
 from loguru import logger
 from pydantic import Field
+from tqdm import tqdm
 
 from object_detection_training.inference.gemini_inferencer import GeminiInferencer
 from object_detection_training.io.annotation import DetectionAnnotationWriter
@@ -16,6 +17,10 @@ from object_detection_training.schemas.annotation import (
 )
 from object_detection_training.tasks.base_task import BaseTask
 from object_detection_training.utils.hydra import register
+from object_detection_training.utils.visualization import (
+    save_annotated_image,
+    show_detections_interactive,
+)
 
 _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"})
 
@@ -35,11 +40,21 @@ class VLMAnnotationTask(BaseTask):
 
     # Model Configuration
     model_name: str = Field(
-        default="gemini-1.5-pro", description="Name of the VLM model to use"
+        default="gemini-3-pro-preview", description="Name of the VLM model to use"
     )
     classes: list[str] = Field(description="List of class names to detect")
     prompt_template: str | None = Field(
         default=None, description="Optional custom prompt template"
+    )
+    draw: bool = Field(
+        default=False, description="Whether to draw and save annotated images"
+    )
+    debug: bool = Field(
+        default=False,
+        description=(
+            "Interactive debug mode: show each image with "
+            "detections and wait for keypress (q to quit)"
+        ),
     )
 
     def run(self) -> dict[str, str | None]:
@@ -80,7 +95,7 @@ class VLMAnnotationTask(BaseTask):
         # Run inference and write annotations
         writer = DetectionAnnotationWriter(self.output_dir)
 
-        for img_path in image_paths:
+        for img_path in tqdm(image_paths, desc="VLM inference", unit="img"):
             try:
                 loader = ImageLoader(img_path)
                 image = loader.read()
@@ -103,11 +118,42 @@ class VLMAnnotationTask(BaseTask):
                 )
 
                 writer.write(annotation)
-                logger.debug(f"{loader.filename}: {len(detections)} detections")
+                logger.info(f"{loader.filename}: {len(detections)} detections")
+
+                if self.debug:
+                    for det in detections:
+                        cat = label_map.get(det.class_id, str(det.class_id))
+                        logger.info(
+                            f"  [{cat}] bbox=(x={det.bbox.x:.4f}, "
+                            f"y={det.bbox.y:.4f}, "
+                            f"w={det.bbox.w:.4f}, "
+                            f"h={det.bbox.h:.4f}) "
+                            f"conf={det.confidence:.2f}"
+                        )
+                    key = show_detections_interactive(
+                        image,
+                        annotation,
+                        window_name=f"Debug: {loader.filename}",
+                    )
+                    if key == ord("q"):
+                        logger.info("Debug quit requested — stopping early.")
+                        break
+
+                if self.draw:
+                    viz_dir = self.output_dir / "visualizations"
+                    viz_dir.mkdir(parents=True, exist_ok=True)
+                    viz_path = viz_dir / img_path.name
+                    save_annotated_image(image, annotation, viz_path)
+                    logger.debug(f"Saved visualization to {viz_path}")
 
             except Exception as e:
                 logger.error(f"Failed to process image {img_path}: {e}")
                 continue
+
+        if self.debug:
+            import cv2
+
+            cv2.destroyAllWindows()
 
         logger.info(
             f"VLM Inference complete. {len(image_paths)} images processed -> "

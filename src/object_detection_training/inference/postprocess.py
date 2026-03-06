@@ -82,9 +82,19 @@ class YOLOXPostProcessor(BasePostProcessor):
 
     Expected ONNX output: single tensor of shape
     ``[batch, num_anchors, 5 + num_classes]`` where columns are
-    ``[cx, cy, w, h, obj_conf, cls_0, cls_1, ...]`` in **pixel** coords.
+    ``[cx, cy, w, h, obj_conf, cls_0, cls_1, ...]`` in **pixel** coords
+    relative to the model input size.
 
     Applies objectness * class confidence scoring and greedy NMS.
+
+    Args:
+        label_map: Mapping from integer class index to label name.
+        confidence_threshold: Minimum confidence to keep a detection.
+        nms_iou_threshold: IoU threshold for NMS suppression.
+        model_input_size: Model input size (height, width) for coordinate
+            normalisation.  YOLOX outputs pixel coordinates relative to
+            the model input, not the original image, so we normalise by
+            model input size to get [0, 1] coordinates.
     """
 
     def __init__(
@@ -92,9 +102,11 @@ class YOLOXPostProcessor(BasePostProcessor):
         label_map: dict[int, str],
         confidence_threshold: float = 0.25,
         nms_iou_threshold: float = 0.45,
+        model_input_size: tuple[int, int] | None = None,
     ) -> None:
         super().__init__(label_map, confidence_threshold)
         self.nms_iou_threshold = nms_iou_threshold
+        self.model_input_size = model_input_size
 
     def __call__(
         self,
@@ -124,11 +136,18 @@ class YOLOXPostProcessor(BasePostProcessor):
         if len(scores) == 0:
             return []
 
+        # YOLOX outputs pixel coords relative to model input size, not
+        # original image. Use model_input_size for normalisation when set.
+        if self.model_input_size is not None:
+            norm_h, norm_w = self.model_input_size
+        else:
+            norm_w, norm_h = image_width, image_height
+
         # cxcywh (pixel) -> normalised xywh (top-left)
-        cx = pred[:, 0] / image_width
-        cy = pred[:, 1] / image_height
-        w = pred[:, 2] / image_width
-        h = pred[:, 3] / image_height
+        cx = pred[:, 0] / norm_w
+        cy = pred[:, 1] / norm_h
+        w = pred[:, 2] / norm_w
+        h = pred[:, 3] / norm_h
         x1 = cx - w / 2
         y1 = cy - h / 2
 
@@ -199,6 +218,82 @@ class YOLOXPostProcessor(BasePostProcessor):
             order = rest[~suppress]
 
         return keep
+
+
+class YOLO26PostProcessor(BasePostProcessor):
+    """YOLO26/Ultralytics post-processing (NMS-free).
+
+    Expected ONNX output: single tensor of shape
+    ``[batch, 300, 6]`` where columns are
+    ``[x1, y1, x2, y2, confidence, class_id]`` in **pixel** coordinates
+    relative to the model input size.
+
+    No NMS needed — YOLO26 uses a learned NMS-free head.
+
+    Args:
+        label_map: Mapping from integer class index to label name.
+        confidence_threshold: Minimum confidence to keep a detection.
+        model_input_size: Model input size (height, width) for coordinate
+            normalisation to [0, 1].
+    """
+
+    def __init__(
+        self,
+        label_map: dict[int, str],
+        confidence_threshold: float = 0.25,
+        model_input_size: tuple[int, int] = (640, 640),
+    ) -> None:
+        super().__init__(label_map, confidence_threshold)
+        self.model_input_size = model_input_size
+
+    def __call__(
+        self,
+        outputs: list[npt.NDArray[np.floating[Any]]],
+        image_width: int,
+        image_height: int,
+    ) -> list[Detection]:
+        """Decode YOLO26 predictions for a single image."""
+        # outputs[0] shape: [1, 300, 6]
+        pred = np.asarray(outputs[0], dtype=np.float32)
+        if pred.ndim == 3:
+            pred = pred[0]  # remove batch dim
+
+        # Columns: x1, y1, x2, y2, confidence, class_id
+        scores = pred[:, 4]
+        class_ids = pred[:, 5].astype(np.int32)
+
+        # Threshold
+        mask = scores > self.confidence_threshold
+        pred = pred[mask]
+        scores = scores[mask]
+        class_ids = class_ids[mask]
+
+        if len(scores) == 0:
+            return []
+
+        norm_h, norm_w = self.model_input_size
+
+        # xyxy (pixel) -> normalised xywh (top-left)
+        x1 = pred[:, 0] / norm_w
+        y1 = pred[:, 1] / norm_h
+        x2 = pred[:, 2] / norm_w
+        y2 = pred[:, 3] / norm_h
+        w = x2 - x1
+        h = y2 - y1
+
+        detections: list[Detection] = []
+        for i in range(len(scores)):
+            det = self._make_detection(
+                x=float(x1[i]),
+                y=float(y1[i]),
+                w=float(w[i]),
+                h=float(h[i]),
+                confidence=float(scores[i]),
+                class_id=int(class_ids[i]),
+            )
+            detections.append(det)
+
+        return detections
 
 
 class RFDETRPostProcessor(BasePostProcessor):

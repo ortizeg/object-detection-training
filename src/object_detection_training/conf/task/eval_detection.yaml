@@ -1,0 +1,81 @@
+# Evaluation Detection Task Configuration
+_target_: object_detection_training.tasks.eval_detection_task.EvalDetectionTask
+name: eval_detection
+
+# Data directories (COCO format with _annotations.coco.json)
+val_dir: ???               # Required: path to val directory
+test_dir: ???              # Required: path to test directory
+
+# Gemini config
+run_gemini: true
+gemini_model_name: "gemini-3.1-pro-preview"
+gemini_classes:
+  - "ball"
+  - "number"
+  - "player"
+  - "referee"
+  - "rim"
+gemini_prompt_template: >
+  Detect all basketball players, referees, the rim, the basketball, and
+  visible jersey numbers in this basketball game image.
+  Constraints:
+  - At most 10 players, 3 referees, 1 rim, and 1 ball per image.
+  - Each person gets exactly ONE bounding box with the most specific label.
+  Use EXACTLY these labels:
+  - "player" for any basketball player on the court
+  - "referee" for game officials
+  - "ball" for the basketball (only when NOT going through the rim)
+  - "rim" for the basketball hoop rim
+  - "number" for visible jersey numbers (tight box around the digits only)
+
+# SmolVLM2 config
+run_smolvlm2: true
+smolvlm2_model_name: "HuggingFaceTB/SmolVLM2-2.2B-Instruct"
+
+# RF-DETR config
+run_rfdetr: true
+onnx_model_path: null      # Path to RF-DETR ONNX model
+label_mapping_path: null   # Path to labels_mapping.json
+rfdetr_input_size: 560
+rfdetr_confidence_threshold: 0.01
+
+# YOLOX config
+run_yolox: false
+yolox_onnx_model_path: null      # Path to YOLOX ONNX model
+yolox_label_mapping_path: null   # Path to YOLOX labels_mapping.json
+yolox_input_size: 640
+yolox_confidence_threshold: 0.01
+yolox_nms_iou_threshold: 0.45
+
+# YOLO26 config
+run_yolo26: false
+yolo26_onnx_model_path: null
+yolo26_label_mapping_path: null
+yolo26_input_size: 640
+yolo26_confidence_threshold: 0.01
+
+# OmDet-Turbo config
+run_omdet_turbo: false
+omdet_turbo_model_name: "omlab/omdet-turbo-swin-tiny-hf"
+omdet_turbo_box_threshold: 0.01
+
+# Grounding DINO config
+run_grounding_dino: false
+grounding_dino_model_name: "IDEA-Research/grounding-dino-base"
+grounding_dino_box_threshold: 0.01
+grounding_dino_text_threshold: 0.01
+grounding_dino_nms_iou_threshold: 0.5
+
+# Florence-2 config
+run_florence2: false
+florence2_model_name: "microsoft/Florence-2-large-ft"
+florence2_task: "<OD>"
+
+# OWLv2 config
+run_owlv2: false
+owlv2_model_name: "google/owlv2-large-patch14-ensemble"
+owlv2_box_threshold: 0.01
+owlv2_nms_iou_threshold: 0.3
+
+# Evaluation config
+confidence_threshold_steps: 20

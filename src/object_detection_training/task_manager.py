@@ -157,7 +157,11 @@ def main(cfg: DictConfig) -> None:
             output_dir=output_dir,
             model=model,
         )
-    elif "ONNXInferenceTask" in task_target or "VLMAnnotationTask" in task_target:
+    elif (
+        "ONNXInferenceTask" in task_target
+        or "VLMAnnotationTask" in task_target
+        or "EvalDetectionTask" in task_target
+    ):
         # ---- Inference/Annotation: no model/data/trainer needed ----
         logger.info("Instantiating task...")
         task = hydra.utils.instantiate(

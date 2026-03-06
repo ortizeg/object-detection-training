@@ -1,7 +1,7 @@
-# Specialized Export Task for Basketball RF-DETR Small
+# Specialized Export Task for Basketball RF-DETR Medium
 
 defaults:
-  - /models@model: RFDETRSmall
+  - /models@model: RFDETRMedium
 
 _target_: object_detection_training.tasks.ONNXExportTask
 name: basketball_export_onnx

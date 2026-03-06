@@ -26,6 +26,7 @@ from object_detection_training.schemas.label_mapping import (
 )
 from object_detection_training.tasks.base_task import BaseTask
 from object_detection_training.utils.hydra import register
+from object_detection_training.utils.visualization import save_annotated_image
 
 _IMAGE_EXTENSIONS = frozenset({".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"})
 
@@ -90,6 +91,9 @@ class ONNXInferenceTask(BaseTask):
     providers: list[str] | None = Field(
         default=None,
         description="List of ONNX execution providers (e.g. ['CPUExecutionProvider'])",
+    )
+    draw: bool = Field(
+        default=False, description="Whether to draw and save annotated images"
     )
 
     def run(self) -> dict[str, str | None]:
@@ -188,6 +192,13 @@ class ONNXInferenceTask(BaseTask):
             )
             writer.write(annotation)
             logger.debug(f"{loader.filename}: {len(detections)} detections")
+
+            if self.draw:
+                viz_dir = self.output_dir / "visualizations"
+                viz_dir.mkdir(parents=True, exist_ok=True)
+                viz_path = viz_dir / img_path.name
+                save_annotated_image(image, annotation, viz_path)
+                logger.debug(f"Saved visualization to {viz_path}")
 
         logger.info(
             f"Inference complete. {len(image_paths)} images -> {self.output_dir}"

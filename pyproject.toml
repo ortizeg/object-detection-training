@@ -28,7 +28,7 @@ dependencies = [
     "Pillow",
     "opencv-python",
     "rich",
-    "transformers<4.49.0",
+    "transformers>=4.49.0,<4.52.0",
     "scipy",
     "requests",
     "tqdm",

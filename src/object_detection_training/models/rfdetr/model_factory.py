@@ -130,6 +130,24 @@ class Model:
                 if any(name.endswith(x) for x in query_param_names):
                     checkpoint["model"][name] = state[:num_desired_queries]
 
+            # Drop checkpoint keys whose shapes don't match the current model
+            # (e.g. position_embeddings when training at a different resolution
+            # than the pretrained checkpoint).  These will be randomly
+            # initialised or interpolated at runtime.
+            model_state = self.model.state_dict()
+            keys_to_drop = [
+                k
+                for k, v in checkpoint["model"].items()
+                if k in model_state and v.shape != model_state[k].shape
+            ]
+            for k in keys_to_drop:
+                print(
+                    f"Dropping checkpoint key '{k}' due to shape mismatch: "
+                    f"checkpoint {checkpoint['model'][k].shape} vs "
+                    f"model {model_state[k].shape}"
+                )
+                checkpoint["model"].pop(k)
+
             self.model.load_state_dict(checkpoint["model"], strict=False)
 
         if args.backbone_lora:

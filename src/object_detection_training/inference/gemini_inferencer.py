@@ -18,6 +18,21 @@ from object_detection_training.inference.base_inferencer import BaseInferencer
 from object_detection_training.schemas.detection import BoundingBox, Detection
 
 
+class GeminiBBox(BaseModel):
+    """Bounding box in Gemini's native coordinate system.
+
+    Gemini returns boxes as corner coordinates in a 0-1000 normalised
+    coordinate system.  Using explicit ``x_min/y_min/x_max/y_max`` field
+    names eliminates the ambiguity that causes Gemini to inconsistently
+    return xywh vs xyxy when the fields are named ``x, y, w, h``.
+    """
+
+    x_min: int = Field(description="Left edge (0-1000)")
+    y_min: int = Field(description="Top edge (0-1000)")
+    x_max: int = Field(description="Right edge (0-1000)")
+    y_max: int = Field(description="Bottom edge (0-1000)")
+
+
 class GeminiDetection(BaseModel):
     """Gemini response schema for a single detection.
 
@@ -26,7 +41,7 @@ class GeminiDetection(BaseModel):
     integer IDs after parsing.
     """
 
-    bbox: BoundingBox
+    bbox: GeminiBBox
     label: str
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
@@ -78,8 +93,8 @@ class GeminiInferencer(BaseInferencer):
 
         self._prompt = prompt_template or (
             f"Detect all instances of: {', '.join(classes)}. "
-            "Return bounding boxes normalised to [0, 1] in (x, y, w, h) "
-            "format where x,y is the top-left corner."
+            "Return bounding boxes as (x_min, y_min, x_max, y_max) in the "
+            "0-1000 normalised coordinate system."
         )
 
     # ------------------------------------------------------------------
@@ -96,12 +111,15 @@ class GeminiInferencer(BaseInferencer):
 
         Args:
             image: BGR uint8 image (OpenCV convention).
-            image_width: Original width (unused, kept for interface compat).
-            image_height: Original height (unused, kept for interface compat).
+            image_width: Image width in pixels (for coordinate normalisation).
+            image_height: Image height in pixels (for coordinate normalisation).
 
         Returns:
             List of Detection objects with class IDs matching ``self.classes``.
         """
+        w = image_width if image_width is not None else int(image.shape[1])
+        h = image_height if image_height is not None else int(image.shape[0])
+
         # Convert BGR → RGB for PIL
         rgb_image = Image.fromarray(image[..., ::-1])
 
@@ -117,10 +135,17 @@ class GeminiInferencer(BaseInferencer):
 
                 if response.parsed:
                     parsed: list[GeminiDetection] = response.parsed  # type: ignore[assignment]
-                    return self._map_detections(parsed)
+                    for det in parsed:
+                        logger.debug(
+                            f"Raw Gemini detection: label={det.label!r} "
+                            f"bbox=({det.bbox}) "
+                            f"conf={det.confidence:.2f}"
+                        )
+                    return self._map_detections(parsed, w, h)
 
                 if response.text:
-                    return self._parse_text_fallback(response.text)
+                    logger.debug("Gemini text fallback: %s", response.text[:500])
+                    return self._parse_text_fallback(response.text, w, h)
 
                 logger.warning("Gemini returned an empty response.")
                 return []
@@ -177,25 +202,43 @@ class GeminiInferencer(BaseInferencer):
 
         return None
 
-    def _map_detections(self, gemini_dets: list[GeminiDetection]) -> list[Detection]:
-        """Convert a list of ``GeminiDetection`` to internal ``Detection``."""
+    def _map_detections(
+        self, gemini_dets: list[GeminiDetection], image_width: int, image_height: int
+    ) -> list[Detection]:
+        """Convert a list of ``GeminiDetection`` to internal ``Detection``.
+
+        Gemini returns bounding boxes as ``(x_min, y_min, x_max, y_max)`` in a
+        0-1000 normalised coordinate system.  We convert to top-left xywh in
+        [0, 1] range.
+        """
         results: list[Detection] = []
         for det in gemini_dets:
             class_id = self._resolve_label(det.label)
             if class_id is None:
                 logger.warning(
-                    "Label %r not in class map %s — skipping",
-                    det.label,
-                    list(self._name_to_id.keys()),
+                    f"Label {det.label!r} not in class map "
+                    f"{list(self._name_to_id.keys())} — skipping",
                 )
                 continue
 
+            # Convert from 0-1000 xyxy to 0-1 xywh
+            x = det.bbox.x_min / 1000.0
+            y = det.bbox.y_min / 1000.0
+            w = (det.bbox.x_max - det.bbox.x_min) / 1000.0
+            h = (det.bbox.y_max - det.bbox.y_min) / 1000.0
+
             results.append(
-                Detection(bbox=det.bbox, confidence=det.confidence, class_id=class_id)
+                Detection(
+                    bbox=BoundingBox(x=x, y=y, w=w, h=h),
+                    confidence=det.confidence,
+                    class_id=class_id,
+                )
             )
         return results
 
-    def _parse_text_fallback(self, text: str) -> list[Detection]:
+    def _parse_text_fallback(
+        self, text: str, image_width: int, image_height: int
+    ) -> list[Detection]:
         """Parse raw JSON text when ``response.parsed`` is unavailable."""
         try:
             data = json.loads(text)
@@ -214,4 +257,4 @@ class GeminiInferencer(BaseInferencer):
             except Exception:
                 logger.debug("Skipping unparseable item: %s", item)
 
-        return self._map_detections(gemini_dets)
+        return self._map_detections(gemini_dets, image_width, image_height)
