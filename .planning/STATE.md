@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-03-05)
 
 **Core value:** Beat RF-DETR-S (53.0% COCO mAP) with YOLOX-M architecture using training innovations alone, all Apache 2.0
-**Current focus:** Phase 3 - Loss and Assignment Improvements
+**Current focus:** Phase 5 - DINOv2 Feature Distillation
 
 ## Current Position
 
-Phase: 3 of 7 (Loss and Assignment Improvements) -- COMPLETE
-Plan: 2 of 2 in current phase
-Status: Phase Complete
-Last activity: 2026-03-06 -- Completed 03-02-PLAN.md (MAL/TAL Tests + E3/E4 Configs)
+Phase: 5 of 7 (DINOv2 Feature Distillation)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-03-06 -- Completed 05-01-PLAN.md (DistillationModule + Lightning Integration)
 
-Progress: [████████░░] 38%
+Progress: [█████████░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
-- Average duration: 4.4min
-- Total execution time: 0.52 hours
+- Total plans completed: 8
+- Average duration: 5.1min
+- Total execution time: 0.69 hours
 
 **By Phase:**
 
@@ -30,9 +30,10 @@ Progress: [████████░░] 38%
 | 01 | 3 | 16min | 5.3min |
 | 02 | 2 | 6min | 3min |
 | 03 | 2 | 11min | 5.5min |
+| 05 | 1 | 10min | 10min |
 
 **Recent Trend:**
-- Last 5 plans: 5min, 3min, 3min, 6min, 5min
+- Last 5 plans: 3min, 3min, 6min, 5min, 10min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -42,6 +43,7 @@ Progress: [████████░░] 38%
 | Phase 02 P02 | 3min | 1 tasks | 1 files |
 | Phase 03 P01 | 6min | 2 tasks | 6 files |
 | Phase 03 P02 | 5min | 2 tasks | 6 files |
+| Phase 05 P01 | 10min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -64,6 +66,9 @@ Recent decisions affecting current work:
 - [Phase 03]: Duplicated _bboxes_iou in tal.py to avoid circular import (dinox_head imports tal, tal cannot import dinox_head)
 - [Phase 03]: Used bounded MAL weight (1-m)^2+1.0 in [1.0, 2.0] for numerical stability
 - [Phase 03]: Added soft label, MAL, and assigner defaults to dinox_base.yaml for Hydra schema completeness
+- [Phase 05]: Used type: ignore[operator] for DINOv2 get_intermediate_layers return type (nn.Module generic typing limitation)
+- [Phase 05]: Lazy import of DistillationModule in Lightning model to avoid torch.hub load when distillation is disabled
+- [Phase 05]: BGR images passed to DistillationModule which handles BGR->RGB internally (matches YOLOX pipeline convention)
 
 ### Pending Todos
 
@@ -76,5 +81,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 03-02-PLAN.md (MAL/TAL Tests + E3/E4 Configs) -- Phase 3 complete
+Stopped at: Completed 05-01-PLAN.md (DistillationModule + Lightning Integration)
 Resume file: None
