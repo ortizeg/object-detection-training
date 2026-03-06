@@ -9,7 +9,8 @@
 | Method | Type | Model | Notes |
 |--------|------|-------|-------|
 | RF-DETR v3 | Custom-trained | ONNX export (rfdetr-small, input 640) | Best run across all 23 RF-DETR training runs (run 20260117_005818, epoch=64, training mAP=0.5935), 91-class COCO heads with 11 basketball classes active |
-| RF-DETR Medium v2 | Custom-trained | ONNX export (rfdetr-medium, input 576) | Native 576x576 resolution (epoch=104, training mAP=0.5334), no pos-emb mismatch |
+| RF-DETR Medium v2 @640 | Custom-trained | ONNX export (rfdetr-medium, trained 576, eval 640) | Same checkpoint as v2, exported at 640 for fair comparison with RF-DETR Small v3 |
+| RF-DETR Medium v2 @576 | Custom-trained | ONNX export (rfdetr-medium, input 576) | Native 576x576 resolution (epoch=104, training mAP=0.5334), no pos-emb mismatch |
 | RF-DETR Medium v1 | Custom-trained | ONNX export (rfdetr-medium, input 640) | First run (epoch=39, mAP=0.4334), pos-emb mismatch from 576→640 |
 | YOLO26m | Custom-trained | ONNX export (yolo26m, input 640) | Ultralytics YOLO26 Medium (epoch=279, training mAP@50:95=0.6848), NMS-free end-to-end, separate repo (AGPL isolation) |
 | YOLO26s | Custom-trained | ONNX export (yolo26s, input 640) | Ultralytics YOLO26 Small (epoch=196, training mAP@50:95=0.6156), NMS-free end-to-end, separate repo (AGPL isolation) |
@@ -423,7 +424,8 @@ RF-DETR v3 wins on recall for every class (except rim which is tied). YOLOX v2 h
 | **YOLOX-M v1 (ONNX)** | **2.16** | **463 ms** | **468 ms** | 1.6x faster than RF-DETR |
 | **YOLO26m (ONNX)** | **2.04** | **490 ms** | **471 ms** | NMS-free, comparable to YOLOX-M |
 | **RF-DETR v3 (ONNX)** | **1.55** | **643 ms** | **643 ms** | Best accuracy, higher latency |
-| RF-DETR Medium v2 (ONNX) | 1.58 | 634 ms | 627 ms | Native 576, near RF-DETR v3 accuracy |
+| RF-DETR Medium v2 @576 (ONNX) | 1.58 | 634 ms | 627 ms | Native 576, near RF-DETR v3 accuracy |
+| RF-DETR Medium v2 @640 (ONNX) | 1.41 | 707 ms | 704 ms | Trained 576, eval 640 for fair comparison |
 | RF-DETR Medium v1 (ONNX) | 1.40 | 715 ms | 701 ms | Underperformed due to pos-emb reset |
 | OmDet-Turbo | 1.86 | 538 ms | — | Zero-shot |
 | Florence-2 | 0.92 | 1,087 ms | — | Zero-shot |
@@ -510,8 +512,9 @@ YOLOX-M's biggest improvements are on **ball** (+7.58 pts) and **number** (+3.74
 
 | Model | mAP@50:95 | mAP@50 | F1 | ms/img (L4) | Best For |
 |-------|-----------|--------|-----|------------|----------|
-| RF-DETR v3 | **61.16%** | **91.43%** | **92.05%** | 643 ms | Maximum accuracy, recall-critical |
-| RF-DETR-M v2 (576) | 59.74% | 91.36% | 92.08% | 634 ms | Near-best accuracy, slightly faster |
+| RF-DETR v3 | **61.16%** | **91.43%** | 92.05% | 643 ms | Maximum accuracy, recall-critical |
+| RF-DETR-M v2 @640 | 60.74% | 91.04% | 91.91% | 707 ms | Tied with v3 at same eval resolution |
+| RF-DETR-M v2 @576 | 59.74% | 91.36% | **92.08%** | 634 ms | Best F1, slightly faster than v3 |
 | YOLOX-M | 58.29% | 89.21% | 91.58% | 463 ms | Server-side, balanced speed/accuracy |
 | YOLOX-S | 53.43% | 86.76% | 89.26% | 211 ms | Edge deployment, real-time |
 | RF-DETR-M v1 (640) | 52.60% | 84.66% | 87.66% | 715 ms | *Not recommended (pos-emb issue)* |
@@ -550,17 +553,17 @@ YOLO26 detects objects well (high mAP@50) but boxes are not as tight (low mAP@75
 
 **v2 (576x576) — 59.74% mAP@50:95**: Retrained at native 576x576 resolution — pretrained checkpoint loads perfectly with no position embedding mismatch. Trained for 104 epochs (training mAP=0.5334). The +7.14 point improvement confirms position embedding preservation is critical for transfer learning.
 
-**Comparison with RF-DETR Small v3**:
+**Comparison with RF-DETR Small v3 (apples-to-apples at 640 eval)**:
 
-| Metric (test) | RF-DETR-M v2 (576) | RF-DETR v3 Small (512→640) | Delta |
-|---------------|--------------------|-----------------------------|-------|
-| mAP@50:95 | 59.74% | **61.16%** | -1.42 |
-| mAP@50 | 91.36% | **91.43%** | -0.07 |
-| mAP@75 | 63.43% | **64.59%** | -1.16 |
-| F1 | **92.08%** | 92.05% | +0.03 |
-| ms/img (L4) | **634 ms** | 643 ms | -9 ms |
+| Metric (test) | RF-DETR-M v2 @576 | RF-DETR-M v2 @640 | RF-DETR v3 Small @640 | Delta (M@640 vs S@640) |
+|---------------|--------------------|--------------------|------------------------|------------------------|
+| mAP@50:95 | 59.74% | 60.74% | **61.16%** | -0.42 |
+| mAP@50 | 91.36% | 91.04% | **91.43%** | -0.39 |
+| mAP@75 | 63.43% | 63.59% | **64.59%** | -1.00 |
+| F1 | **92.08%** | 91.91% | 92.05% | -0.14 |
+| ms/img (L4) | 634 ms | 707 ms | 643 ms | +64 ms |
 
-RF-DETR Medium v2 is now competitive with RF-DETR Small v3 — within 1.4 points on mAP@50:95, essentially tied on mAP@50 and F1, and marginally faster. RF-DETR Small's slight mAP@50:95 edge likely comes from its 23-run hyperparameter sweep vs Medium's single run. A sweep of RF-DETR Medium at 576 could potentially match or exceed Small v3.
+When evaluated at the same 640 resolution as RF-DETR Small v3, Medium closes to within **0.42 points** on mAP@50:95 — essentially tied. The remaining gap (1.4 pts at 576 eval vs 0.42 pts at 640 eval) was due to the eval resolution difference, not model quality. RF-DETR Small v3's slight edge likely comes from its 23-run hyperparameter sweep vs Medium's single run. A sweep of RF-DETR Medium at 576 could potentially match or exceed Small v3.
 
 **Lesson**: Never train a model at a resolution different from its pretrained checkpoint without implementing position embedding interpolation. DINOv2's built-in bicubic interpolation (`dinov2.py:151-203`) works at inference time for resolution changes, but `load_state_dict` will silently drop mismatched position embeddings during training initialization.
 
