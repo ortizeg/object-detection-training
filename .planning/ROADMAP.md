@@ -78,11 +78,11 @@ Plans:
   2. Both O2M and O2O heads use identical alignment metric values (same alpha, beta), verified by config validation
   3. ONNX export includes only the O2O branch and produces output with constant-1 objectness for backward compatibility with existing evaluation code
   4. Unit tests verify Hungarian matching produces strict 1:1 assignment and O2O output shape matches O2M output shape
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md -- HungarianAssigner, O2O head layers, combined loss, config/Lightning wiring
+- [ ] 04-02-PLAN.md -- Dual head unit tests (TEST-05), E5/E6 ablation configs
 
 ### Phase 5: DINOv2 Feature Distillation
 **Goal**: A frozen DINOv2-B/14 teacher provides feature-level supervision during training with zero inference overhead, and A100 trainer config supports the increased memory requirements
