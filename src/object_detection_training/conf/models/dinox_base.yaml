@@ -41,6 +41,7 @@ tal_topk: 13
 tal_alpha: 1.0
 tal_beta: 6.0
 
+
 # YOLOX-style: raw 0-255 float values, no normalization
 image_mean: null
 image_std: null
