@@ -13,7 +13,7 @@ Transform YOLOX-M from 46.9% to 53.0%+ COCO mAP through six training innovations
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: DFL Foundation and Infrastructure** - New detection head with DFL regression, config system, Lightning integration
-- [ ] **Phase 2: Soft Label Assignment** - Soft SimOTA with IoU-weighted targets and pluggable assigner protocol
+- [x] **Phase 2: Soft Label Assignment** - Soft SimOTA with IoU-weighted targets and pluggable assigner protocol
 - [ ] **Phase 3: Loss and Assignment Improvements** - MAL cross-branch learning and TAL alternative assigner
 - [ ] **Phase 4: NMS-Free Dual Head** - O2O branch with consistent matching for NMS-free inference
 - [ ] **Phase 5: DINOv2 Feature Distillation** - Frozen DINOv2-B/14 teacher with feature projection and A100 config
@@ -135,7 +135,7 @@ Note: Phases 4, 5, and 6 depend only on Phase 1 (and Phase 4 also on Phase 2), s
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. DFL Foundation and Infrastructure | 3/3 | Complete | 2026-03-06 |
-| 2. Soft Label Assignment | 0/2 | Not started | - |
+| 2. Soft Label Assignment | 2/2 | Complete | 2026-03-06 |
 | 3. Loss and Assignment Improvements | 0/2 | Not started | - |
 | 4. NMS-Free Dual Head | 0/2 | Not started | - |
 | 5. DINOv2 Feature Distillation | 0/2 | Not started | - |
