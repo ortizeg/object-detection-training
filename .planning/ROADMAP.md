@@ -32,12 +32,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All ablation Hydra configs (A through H, E1-E4, F1-F4) load and validate without errors
   4. Unit tests for DFL verify output shape (4 * (reg_max+1) per anchor), loss gradient flow, and Integral decode correctness
   5. EMA callback correctly handles the new DINOXHead parameters without state dict mismatches
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md -- Core DINOX modules: DINOXConfig, DFLModule, DINOXHead, DINOX wrapper
+- [ ] 01-02-PLAN.md -- Lightning integration: DINOXLightningModel, Hydra configs, model registration
+- [ ] 01-03-PLAN.md -- Tests: DFL unit tests, config validation, Hydra parameterization, ONNX round-trip
 
 ### Phase 2: Soft Label Assignment
 **Goal**: Soft SimOTA replaces binary label assignment with IoU-weighted soft targets, providing richer training signal and establishing the pluggable assigner protocol used by all subsequent phases
