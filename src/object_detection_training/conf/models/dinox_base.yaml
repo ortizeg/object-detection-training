@@ -39,6 +39,7 @@ mal_gamma: 1.5
 use_dual_head: false
 lambda_o2o: 1.0
 
+
 # Assignment strategy (simota = standard YOLOX behavior)
 assigner: simota
 tal_topk: 13
