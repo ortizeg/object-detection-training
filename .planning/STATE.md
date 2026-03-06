@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-03-05)
 ## Current Position
 
 Phase: 5 of 7 (DINOv2 Feature Distillation)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-03-06 -- Completed 05-01-PLAN.md (DistillationModule + Lightning Integration)
+Plan: 2 of 2 in current phase
+Status: Phase Complete
+Last activity: 2026-03-06 -- Completed 05-02-PLAN.md (Distillation Unit Tests)
 
-Progress: [█████████░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 8
-- Average duration: 5.1min
-- Total execution time: 0.69 hours
+- Total plans completed: 9
+- Average duration: 5.0min
+- Total execution time: 0.76 hours
 
 **By Phase:**
 
@@ -30,10 +30,10 @@ Progress: [█████████░] 50%
 | 01 | 3 | 16min | 5.3min |
 | 02 | 2 | 6min | 3min |
 | 03 | 2 | 11min | 5.5min |
-| 05 | 1 | 10min | 10min |
+| 05 | 2 | 14min | 7min |
 
 **Recent Trend:**
-- Last 5 plans: 3min, 3min, 6min, 5min, 10min
+- Last 5 plans: 3min, 6min, 5min, 10min, 4min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -44,6 +44,7 @@ Progress: [█████████░] 50%
 | Phase 03 P01 | 6min | 2 tasks | 6 files |
 | Phase 03 P02 | 5min | 2 tasks | 6 files |
 | Phase 05 P01 | 10min | 2 tasks | 7 files |
+| Phase 05 P02 | 4min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Used type: ignore[operator] for DINOv2 get_intermediate_layers return type (nn.Module generic typing limitation)
 - [Phase 05]: Lazy import of DistillationModule in Lightning model to avoid torch.hub load when distillation is disabled
 - [Phase 05]: BGR images passed to DistillationModule which handles BGR->RGB internally (matches YOLOX pipeline convention)
+- [Phase 05]: Used FakeTeacher(nn.Module) mock for distillation tests to properly support .parameters() and .named_parameters()
+- [Phase 05]: Zero-loss identity test verifies per-level MSE at 768->768 projector since non-square channel projectors cannot be identity
+- [Phase 05]: ONNX exclusion test uses forward spy pattern rather than graph inspection
 
 ### Pending Todos
 
@@ -81,5 +85,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 05-01-PLAN.md (DistillationModule + Lightning Integration)
+Stopped at: Completed 05-02-PLAN.md (Distillation Unit Tests) -- Phase 5 complete
 Resume file: None
