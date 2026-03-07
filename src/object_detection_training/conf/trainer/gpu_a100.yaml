@@ -1,10 +1,10 @@
-# A100 GPU Trainer Configuration
+# A100 GPU Trainer Configuration (8x A100 DDP)
 _target_: lightning.Trainer
 max_epochs: 300
 precision: bf16-mixed
 accelerator: gpu
-devices: 1
-strategy: auto
+devices: 8
+strategy: ddp
 check_val_every_n_epoch: 10
 log_every_n_steps: 50
 enable_checkpointing: true

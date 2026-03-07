@@ -10,7 +10,7 @@ defaults:
   - data: coco_yolox_a100
   - trainer: gpu_a100
   - callbacks: default
-  - logging: null
+  - logging: wandb
   - _self_
 
 # Global Parameters

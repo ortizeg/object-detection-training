@@ -13,8 +13,8 @@ val_path: ??? # Required - path to validation data
 test_path: null # Optional - path to test data
 
 # Official YOLOX: 8 GPUs x 8 per GPU = 64 total
-# Single A100 40GB with YOLOX-S: bs=64 fits comfortably
-batch_size: 64
+# 8x A100 DDP: bs=8 per GPU, 64 effective total
+batch_size: 8
 num_workers: 8
 
 input_height: ${models.input_height}
