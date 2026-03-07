@@ -435,13 +435,17 @@ class CacheDataset(
             total_pixels = self._estimate_dataset_pixels()
             estimated_bytes = int(total_pixels * 3 * 1.2)  # 1.2x overhead
 
-            # Check system RAM
+            # Check system RAM, accounting for DDP (multiple processes share RAM)
             available_bytes = psutil.virtual_memory().available
-            threshold = available_bytes * 0.5
+            world_size = int(os.environ.get("WORLD_SIZE", "1"))
+            per_process_available = available_bytes // max(world_size, 1)
+            threshold = per_process_available * 0.5
 
             logger.info(
                 f"Auto-cache: Est. dataset size={estimated_bytes / 1e9:.2f}GB, "
                 f"Available RAM={available_bytes / 1e9:.2f}GB, "
+                f"World size={world_size}, "
+                f"Per-process budget={per_process_available / 1e9:.2f}GB, "
                 f"Threshold={threshold / 1e9:.2f}GB"
             )
 
