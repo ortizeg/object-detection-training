@@ -325,16 +325,9 @@ class COCODataModule(L.LightningDataModule):
         """Return validation data loader using new COCODetectionDataset."""
         val_dataset_raw = self._create_detection_dataset(self.val_path, "val")
         val_dataset: torch.utils.data.Dataset[tuple[torch.Tensor, DetectionTarget]]
-        if self.use_cache:
-            val_dataset_raw.transforms = None
-            val_dataset = CacheDataset(  # type: ignore[assignment]
-                val_dataset_raw,
-                cache_type=self.cache_type,
-                transforms=self.val_transforms,
-            )
-        else:
-            val_dataset_raw.transforms = self.val_transforms
-            val_dataset = val_dataset_raw  # type: ignore[assignment]
+        # Val is accessed infrequently (every N epochs), not worth caching
+        val_dataset_raw.transforms = self.val_transforms
+        val_dataset = val_dataset_raw  # type: ignore[assignment]
         return torch.utils.data.DataLoader(
             val_dataset,
             batch_size=self.batch_size,
