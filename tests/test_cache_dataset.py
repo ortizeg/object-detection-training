@@ -4,11 +4,13 @@ Creates a temporary synthetic COCO dataset (in-memory), wraps it with
 CacheDataset, and verifies:
 1. Cached output is identical to uncached output (both RAM and disk modes).
 2. Cached iteration is measurably faster than uncached.
+3. Sharded disk cache builds lazily and supports multi-shard reads.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Literal
@@ -49,7 +51,6 @@ def _create_synthetic_coco(root: Path) -> Path:
     for img_id in range(1, NUM_IMAGES + 1):
         filename = f"img_{img_id:04d}.jpg"
 
-        # Create a random RGB image and save as JPEG
         rng = np.random.default_rng(seed=img_id)
         arr = rng.integers(0, 255, (IMG_HEIGHT, IMG_WIDTH, 3), dtype=np.uint8)
         img = Image.fromarray(arr, mode="RGB")
@@ -113,7 +114,7 @@ def base_dataset(coco_root: Path) -> COCODetectionDataset:
 
 @pytest.fixture()
 def cached_dataset_disk(base_dataset: COCODetectionDataset) -> CacheDataset:
-    """Create a disk-cached version of the dataset."""
+    """Create a disk-cached version of the dataset (fully populated)."""
     cache = CacheDataset(
         dataset=base_dataset,
         cache_type="disk",
@@ -173,11 +174,7 @@ class TestCacheDatasetCorrectness:
         base_dataset: COCODetectionDataset,
         cached_dataset: CacheDataset,
     ) -> None:
-        """Every sample from the cache matches the original dataset.
-
-        Both RAM and disk modes now store raw numpy arrays (lossless),
-        so exact comparison is used for both.
-        """
+        """Every sample from the cache matches the original dataset."""
         for idx in range(len(base_dataset)):
             img_orig, target_orig = base_dataset[idx]
             img_cached, target_cached = cached_dataset[idx]
@@ -191,7 +188,6 @@ class TestCacheDatasetCorrectness:
             )
             assert np.array_equal(orig_arr, cached_arr), f"Pixel mismatch at idx {idx}"
 
-            # Compare target tensors
             for key in target_orig:
                 assert key in target_cached, f"Missing key {key} at idx {idx}"
                 if torch.is_tensor(target_orig[key]):
@@ -225,7 +221,7 @@ class TestCacheDatasetCorrectness:
 # Disk-specific tests
 # ---------------------------------------------------------------------------
 class TestCacheDatasetDisk:
-    """Tests specific to the disk (.npy file) backend."""
+    """Tests specific to the sharded disk backend."""
 
     def test_rebuild_flag(
         self,
@@ -244,7 +240,7 @@ class TestCacheDatasetDisk:
         base_dataset: COCODetectionDataset,
         tmp_path: Path,
     ) -> None:
-        """Second CacheDataset reuses existing .npy files without rebuilding."""
+        """Second CacheDataset reuses existing shard files."""
         cache_dir = tmp_path / "shared_cache"
         cache1 = CacheDataset(
             dataset=base_dataset,
@@ -252,37 +248,34 @@ class TestCacheDatasetDisk:
             cache_dir=cache_dir,
             rebuild=True,
         )
-        # Populate the lazy cache
+        # Populate the cache
         for idx in range(len(cache1)):
             _ = cache1[idx]
 
-        # Verify .npy files exist
-        npy_files = list(cache_dir.glob("*_img.npy"))
-        assert len(npy_files) == len(base_dataset)
+        # Verify shard files exist
+        bin_files = list(cache_dir.glob("shard_*.bin"))
+        assert len(bin_files) >= 1
 
-        # Record modification times
-        first_file = sorted(npy_files)[0]
-        mtime_after_build = first_file.stat().st_mtime
+        first_bin = sorted(bin_files)[0]
+        mtime_after_build = first_bin.stat().st_mtime
 
         time.sleep(0.1)
 
-        # Second cache should reuse existing files
+        # Second cache should reuse existing shard
         cache2 = CacheDataset(
             dataset=base_dataset, cache_type="disk", cache_dir=cache_dir
         )
-        # Access same sample — should read from cache, not rebuild
         _ = cache2[0]
-        mtime_reuse = first_file.stat().st_mtime
+        mtime_reuse = first_bin.stat().st_mtime
 
         assert mtime_reuse == mtime_after_build
-        assert len(cache1) == len(base_dataset)
 
     def test_lazy_cache_builds_incrementally(
         self,
         base_dataset: COCODetectionDataset,
         tmp_path: Path,
     ) -> None:
-        """Lazy cache only writes files for accessed indices."""
+        """Lazy cache only writes samples as they are accessed."""
         cache_dir = tmp_path / "lazy_cache"
         cache = CacheDataset(
             dataset=base_dataset,
@@ -291,20 +284,72 @@ class TestCacheDatasetDisk:
             rebuild=True,
         )
 
-        # No files yet (lazy)
-        assert len(list(cache_dir.glob("*_img.npy"))) == 0
+        # Shard files may exist but should be empty
+        total_cached = sum(len(s) for s in cache._shards)
+        assert total_cached == 0
 
         # Access first 5 samples
         for idx in range(5):
             _ = cache[idx]
 
-        assert len(list(cache_dir.glob("*_img.npy"))) == 5
+        total_cached = sum(len(s) for s in cache._shards)
+        assert total_cached == 5
 
         # Access remaining
         for idx in range(5, len(base_dataset)):
             _ = cache[idx]
 
-        assert len(list(cache_dir.glob("*_img.npy"))) == len(base_dataset)
+        total_cached = sum(len(s) for s in cache._shards)
+        assert total_cached == len(base_dataset)
+
+    def test_multi_shard_read(
+        self,
+        base_dataset: COCODetectionDataset,
+        tmp_path: Path,
+    ) -> None:
+        """Simulate multi-rank: write to different shards, read from all."""
+        cache_dir = tmp_path / "multi_shard"
+        cache_dir.mkdir()
+
+        # Simulate rank 0 writing even indices
+        with mock.patch.dict(os.environ, {"LOCAL_RANK": "0"}):
+            cache0 = CacheDataset(
+                dataset=base_dataset,
+                cache_type="disk",
+                cache_dir=cache_dir,
+            )
+            for idx in range(0, len(base_dataset), 2):
+                _ = cache0[idx]
+
+        # Simulate rank 1 writing odd indices
+        with mock.patch.dict(os.environ, {"LOCAL_RANK": "1"}):
+            cache1 = CacheDataset(
+                dataset=base_dataset,
+                cache_type="disk",
+                cache_dir=cache_dir,
+            )
+            for idx in range(1, len(base_dataset), 2):
+                _ = cache1[idx]
+
+        # Verify 2 shard files
+        assert len(list(cache_dir.glob("shard_*.bin"))) == 2
+
+        # New cache instance should read from both shards (all samples cached)
+        with mock.patch.dict(os.environ, {"LOCAL_RANK": "0"}):
+            cache_reader = CacheDataset(
+                dataset=base_dataset,
+                cache_type="disk",
+                cache_dir=cache_dir,
+            )
+
+        total_cached = sum(len(s) for s in cache_reader._shards)
+        assert total_cached == len(base_dataset)
+
+        # Verify all samples readable and correct
+        for idx in range(len(base_dataset)):
+            img_orig, _target_orig = base_dataset[idx]
+            img_cached, _target_cached = cache_reader[idx]
+            assert np.array_equal(np.array(img_orig), np.array(img_cached))
 
 
 # ---------------------------------------------------------------------------
@@ -379,8 +424,6 @@ class TestCacheDatasetAutoMode:
         base_dataset: COCODetectionDataset,
     ) -> None:
         """Should select 'ram' if estimated size < 50% available RAM."""
-        # 20 images * 640 * 480 * 3 bytes ~= 18 MB
-        # Mock available RAM to 1 GB (plenty)
         with mock.patch("psutil.virtual_memory") as mock_vm:
             mock_vm.return_value.available = 1024**3  # 1 GB
 
@@ -396,8 +439,6 @@ class TestCacheDatasetAutoMode:
         base_dataset: COCODetectionDataset,
     ) -> None:
         """Should select 'disk' if estimated size >= 50% available RAM."""
-        # 18 MB dataset
-        # Mock available RAM to 20 MB -> threshold 10 MB -> 18 MB > 10 MB -> disk
         with mock.patch("psutil.virtual_memory") as mock_vm:
             mock_vm.return_value.available = 20 * 1024**2  # 20 MB
 

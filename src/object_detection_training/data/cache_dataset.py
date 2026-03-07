@@ -5,11 +5,15 @@ Wraps any DetectionDataset and caches decoded images + pre-built target
 tensors.  Supports two cache backends:
 
 - **ram**: Stores samples in a Python list for zero-overhead reads.
-- **disk**: Lazy write-through cache using individual .npy files.
-  On first access (epoch 1), samples are read from the underlying dataset
-  and cached to disk. Subsequent reads bypass PIL I/O entirely.
-  With DDP, each rank caches different indices via DistributedSampler,
-  so all ranks collaboratively build the full cache in one epoch.
+- **disk**: Lazy write-through sharded binary cache. Each sample is
+  serialized and appended to a binary shard file with an index for
+  fast random access. With DDP, each rank writes to its own shard
+  (no contention), and all ranks can read from all shards.
+
+Inspired by:
+- YOLOX (Megvii): ThreadPool RAM cache, .npy disk cache
+- mlproject (viebboy): Sharded BinaryBlob with index files
+- mmengine: serialize_data for shared memory across workers
 
 Cache stores **pre-transform** data so stochastic augmentations still
 produce different results each epoch.
@@ -17,9 +21,11 @@ produce different results each epoch.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import io
 import os
+import struct
 from pathlib import Path
 from typing import Any, Literal
 
@@ -34,22 +40,36 @@ from object_detection_training.types import DetectionTarget
 
 __all__ = ["CacheDataset"]
 
+# ---------------------------------------------------------------------------
+# Binary format constants
+# ---------------------------------------------------------------------------
+# Each record: [img_len (4 bytes)] [target_len (4 bytes)] [img_bytes] [target_bytes]
+_HEADER_SIZE = 8  # two uint32 lengths
+
 
 # ---------------------------------------------------------------------------
 # Serialization helpers
 # ---------------------------------------------------------------------------
-def _serialize_target(target: DetectionTarget) -> bytes:
-    """Serialize a target dict of tensors to bytes using torch.save."""
-    buf = io.BytesIO()
-    torch.save(target, buf)
-    return buf.getvalue()
+def _serialize_sample(img: np.ndarray, target: DetectionTarget) -> tuple[bytes, bytes]:
+    """Serialize image (numpy) and target (torch) to bytes."""
+    img_buf = io.BytesIO()
+    np.save(img_buf, img)
+    img_bytes = img_buf.getvalue()
+
+    target_buf = io.BytesIO()
+    torch.save(target, target_buf)
+    target_bytes = target_buf.getvalue()
+
+    return img_bytes, target_bytes
 
 
-def _deserialize_target(data: bytes) -> DetectionTarget:
-    """Deserialize a target dict from bytes."""
-    buf = io.BytesIO(data)
-    result: DetectionTarget = torch.load(buf, weights_only=False)
-    return result
+def _deserialize_sample(
+    img_bytes: bytes, target_bytes: bytes
+) -> tuple[np.ndarray, DetectionTarget]:
+    """Deserialize image and target from bytes."""
+    img = np.load(io.BytesIO(img_bytes))
+    target: DetectionTarget = torch.load(io.BytesIO(target_bytes), weights_only=False)
+    return img, target
 
 
 def _coerce_to_pil(img: Image.Image | torch.Tensor) -> Image.Image:
@@ -71,6 +91,127 @@ def _numpy_to_pil(arr: np.ndarray) -> Image.Image:
 
 
 # ---------------------------------------------------------------------------
+# BinaryShard — single append-only binary file + index
+# ---------------------------------------------------------------------------
+class BinaryShard:
+    """A single shard of the binary cache.
+
+    Stores serialized samples in an append-only binary file with a
+    separate index mapping sample_idx -> (byte_offset, img_len, target_len).
+
+    File format per record:
+        [img_len: uint32][target_len: uint32][img_bytes][target_bytes]
+
+    The index file is a CSV: sample_idx,byte_offset,img_len,target_len
+    """
+
+    def __init__(self, bin_path: Path, idx_path: Path) -> None:
+        self._bin_path = bin_path
+        self._idx_path = idx_path
+        # In-memory index: sample_idx -> (byte_offset, img_len, target_len)
+        self._index: dict[int, tuple[int, int, int]] = {}
+        # File handles (lazily opened, per-process via PID tracking)
+        self._read_fh: io.BufferedReader | None = None
+        self._write_fh: io.BufferedWriter | None = None
+        self._idx_fh: io.TextIOWrapper | None = None
+        self._pid: int | None = None
+        # Load existing index if present
+        self._load_index()
+
+    def _load_index(self) -> None:
+        """Load the index file into memory."""
+        if not self._idx_path.exists():
+            return
+        with open(self._idx_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split(",")
+                sample_idx = int(parts[0])
+                byte_offset = int(parts[1])
+                img_len = int(parts[2])
+                target_len = int(parts[3])
+                self._index[sample_idx] = (byte_offset, img_len, target_len)
+
+    def _ensure_read_fh(self) -> io.BufferedReader:
+        """Get or create a read file handle (process-safe)."""
+        pid = os.getpid()
+        if self._read_fh is None or self._pid != pid:
+            if self._read_fh is not None:
+                with contextlib.suppress(Exception):
+                    self._read_fh.close()
+            self._read_fh = open(self._bin_path, "rb")  # noqa: SIM115
+            self._pid = pid
+        return self._read_fh
+
+    def _ensure_write_fhs(self) -> tuple[io.BufferedWriter, io.TextIOWrapper]:
+        """Get or create write file handles (append mode)."""
+        if self._write_fh is None:
+            self._write_fh = open(self._bin_path, "ab")  # noqa: SIM115
+            self._idx_fh = open(self._idx_path, "a")  # noqa: SIM115
+        if self._idx_fh is None:
+            raise RuntimeError("Index file handle not initialized")
+        return self._write_fh, self._idx_fh
+
+    def __contains__(self, sample_idx: int) -> bool:
+        return sample_idx in self._index
+
+    def __len__(self) -> int:
+        return len(self._index)
+
+    def write(self, sample_idx: int, img_bytes: bytes, target_bytes: bytes) -> None:
+        """Append a sample to the shard."""
+        if sample_idx in self._index:
+            return  # Already cached
+
+        bin_fh, idx_fh = self._ensure_write_fhs()
+
+        byte_offset = bin_fh.tell()
+        # Write header + data
+        header = struct.pack("<II", len(img_bytes), len(target_bytes))
+        bin_fh.write(header)
+        bin_fh.write(img_bytes)
+        bin_fh.write(target_bytes)
+        bin_fh.flush()
+
+        # Write index entry
+        idx_fh.write(
+            f"{sample_idx},{byte_offset},{len(img_bytes)},{len(target_bytes)}\n"
+        )
+        idx_fh.flush()
+
+        # Update in-memory index
+        self._index[sample_idx] = (
+            byte_offset,
+            len(img_bytes),
+            len(target_bytes),
+        )
+
+    def read(self, sample_idx: int) -> tuple[bytes, bytes]:
+        """Read a sample from the shard by index."""
+        if sample_idx not in self._index:
+            raise KeyError(f"Sample {sample_idx} not in shard {self._bin_path}")
+
+        byte_offset, img_len, target_len = self._index[sample_idx]
+        fh = self._ensure_read_fh()
+        fh.seek(byte_offset + _HEADER_SIZE)
+        img_bytes = fh.read(img_len)
+        target_bytes = fh.read(target_len)
+        return img_bytes, target_bytes
+
+    def close(self) -> None:
+        """Close all file handles."""
+        for fh in (self._read_fh, self._write_fh, self._idx_fh):
+            if fh is not None:
+                with contextlib.suppress(Exception):
+                    fh.close()
+        self._read_fh = None
+        self._write_fh = None
+        self._idx_fh = None
+
+
+# ---------------------------------------------------------------------------
 # CacheDataset
 # ---------------------------------------------------------------------------
 class CacheDataset(
@@ -83,21 +224,18 @@ class CacheDataset(
     dataset:
         The underlying DetectionDataset
     cache_type:
-        Type of cache storage backend:
-        - "ram": Store decoded images in memory (fastest, high RAM usage).
-          Built upfront before training starts.
-        - "disk": Lazy write-through cache using .npy files. Samples are
-          cached on first access during epoch 1. With DDP, each rank
-          caches different indices so the full cache builds collaboratively.
-        - "auto": Automatically select based on available system RAM.
+        - "ram": In-memory cache (fastest, high RAM usage). Built upfront.
+        - "disk": Lazy write-through sharded binary cache. Each DDP rank
+          writes to its own shard file; all ranks read from all shards.
+          Training starts immediately — cache builds during epoch 1.
+        - "auto": Selects ram/disk based on available memory and world size.
     cache_dir:
-        Directory for .npy files (disk mode only). Defaults to
+        Directory for shard files (disk mode). Defaults to
         ``{dataset.root_path}/.cache/{split}/``.
     transforms:
-        Optional transforms applied **after** cache retrieval so that
-        stochastic augmentations produce different results each epoch.
+        Optional transforms applied **after** cache retrieval.
     rebuild:
-        If ``True``, delete any existing cache and rebuild from scratch.
+        If True, delete existing cache and start fresh.
     """
 
     def __init__(
@@ -122,6 +260,8 @@ class CacheDataset(
 
         # --- Disk cache state ---
         self._cache_dir: Path | None = None
+        self._shards: list[BinaryShard] = []
+        self._write_shard: BinaryShard | None = None
 
         if self._cache_type == "ram":
             self._build_ram_cache()
@@ -134,22 +274,69 @@ class CacheDataset(
             if rebuild:
                 self._clear_disk_cache()
 
-            cached_count = self._count_cached()
-            total = len(self._dataset)
-            logger.info(
-                f"Disk cache: {self._cache_dir} "
-                f"({cached_count}/{total} samples already cached, "
-                f"remaining will be cached lazily during training)"
-            )
+            self._init_shards()
+
+    # ------------------------------------------------------------------
+    # Shard management
+    # ------------------------------------------------------------------
+    def _init_shards(self) -> None:
+        """Discover existing shards and set up this rank's write shard."""
+        if self._cache_dir is None:
+            return
+
+        # Determine this rank's shard ID
+        rank = int(os.environ.get("LOCAL_RANK", "0"))
+        write_bin = self._cache_dir / f"shard_{rank:03d}.bin"
+        write_idx = self._cache_dir / f"shard_{rank:03d}.idx"
+
+        # Discover all existing shards (from this and previous runs)
+        self._shards = []
+        for idx_file in sorted(self._cache_dir.glob("shard_*.idx")):
+            shard_bin = idx_file.with_suffix(".bin")
+            if shard_bin.exists():
+                shard = BinaryShard(shard_bin, idx_file)
+                self._shards.append(shard)
+                # Reuse as write shard if it matches this rank
+                if shard_bin == write_bin:
+                    self._write_shard = shard
+
+        # If this rank's shard doesn't exist yet, create it
+        if self._write_shard is None:
+            self._write_shard = BinaryShard(write_bin, write_idx)
+            self._shards.append(self._write_shard)
+
+        # Build unified index: sample_idx -> shard reference
+        total_cached = sum(len(s) for s in self._shards)
+        total = len(self._dataset)
+        logger.info(
+            f"Disk cache: {self._cache_dir} "
+            f"({total_cached}/{total} samples across {len(self._shards)} shards, "
+            f"writing to {write_bin.stem})"
+        )
+
+    def _find_in_shards(self, sample_idx: int) -> BinaryShard | None:
+        """Find which shard contains a given sample index."""
+        for shard in self._shards:
+            if sample_idx in shard:
+                return shard
+        return None
+
+    def _clear_disk_cache(self) -> None:
+        """Remove all cached files."""
+        if self._cache_dir is None:
+            return
+        import shutil
+
+        if self._cache_dir.exists():
+            logger.info(f"Removing existing cache: {self._cache_dir}")
+            shutil.rmtree(self._cache_dir)
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # RAM cache (upfront, like YOLOX official)
     # ------------------------------------------------------------------
     def _build_ram_cache(self) -> None:
-        """Load all samples into a Python list for zero-overhead reads.
-
-        Uses ThreadPool for parallel I/O (like YOLOX official).
-        """
+        """Load all samples into a Python list for zero-overhead reads."""
         from multiprocessing.pool import ThreadPool
 
         from tqdm import tqdm
@@ -188,70 +375,6 @@ class CacheDataset(
         )
 
     # ------------------------------------------------------------------
-    # Disk cache helpers
-    # ------------------------------------------------------------------
-    def _img_cache_path(self, idx: int) -> Path:
-        """Return the .npy file path for a given index."""
-        if self._cache_dir is None:
-            raise RuntimeError("No cache_dir configured for disk cache")
-        return self._cache_dir / f"{idx:06d}_img.npy"
-
-    def _target_cache_path(self, idx: int) -> Path:
-        """Return the target cache file path for a given index."""
-        if self._cache_dir is None:
-            raise RuntimeError("No cache_dir configured for disk cache")
-        return self._cache_dir / f"{idx:06d}_target.bin"
-
-    def _is_cached(self, idx: int) -> bool:
-        """Check if a sample is already cached on disk."""
-        return self._img_cache_path(idx).exists()
-
-    def _count_cached(self) -> int:
-        """Count how many samples are already cached."""
-        if self._cache_dir is None:
-            return 0
-        return len(list(self._cache_dir.glob("*_img.npy")))
-
-    def _clear_disk_cache(self) -> None:
-        """Remove all cached files."""
-        if self._cache_dir is None:
-            return
-        import shutil
-
-        if self._cache_dir.exists():
-            logger.info(f"Removing existing cache: {self._cache_dir}")
-            shutil.rmtree(self._cache_dir)
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
-
-    def _write_to_disk(
-        self, idx: int, img: np.ndarray, target: DetectionTarget
-    ) -> None:
-        """Write a single sample to disk cache (atomic via rename)."""
-        img_path = self._img_cache_path(idx)
-        target_path = self._target_cache_path(idx)
-
-        # Atomic write: write to temp then rename (safe for concurrent DDP)
-        # np.save appends .npy if missing, so use .tmp extension without .npy
-        tmp_img = img_path.parent / f"{img_path.stem}.tmp"
-        tmp_target = target_path.parent / f"{target_path.stem}.tmp"
-
-        np.save(str(tmp_img), img)
-        # np.save auto-appends .npy, so the actual file is .tmp.npy
-        tmp_img_actual = tmp_img.with_suffix(".tmp.npy")
-        with open(tmp_target, "wb") as f:
-            f.write(_serialize_target(target))
-
-        tmp_img_actual.rename(img_path)
-        tmp_target.rename(target_path)
-
-    def _read_from_disk(self, idx: int) -> tuple[np.ndarray, DetectionTarget]:
-        """Read a single sample from disk cache."""
-        img = np.load(str(self._img_cache_path(idx)))
-        with open(self._target_cache_path(idx), "rb") as f:
-            target = _deserialize_target(f.read())
-        return img, target
-
-    # ------------------------------------------------------------------
     # Dataset interface
     # ------------------------------------------------------------------
     def __len__(self) -> int:
@@ -268,7 +391,7 @@ class CacheDataset(
     def _getitem_ram(
         self, idx: int
     ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
-        """Read from in-memory list (deepcopy to prevent mutation)."""
+        """Read from in-memory list."""
         if self._ram_cache is None:
             raise RuntimeError("RAM cache not initialized")
         cached = self._ram_cache[idx]
@@ -285,25 +408,33 @@ class CacheDataset(
     def _getitem_disk(
         self, idx: int
     ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
-        """Lazy write-through disk cache.
+        """Lazy write-through sharded disk cache.
 
-        On cache hit: read from .npy file (fast local I/O).
-        On cache miss: read from underlying dataset, write to cache, return.
+        On cache hit: seek + read from the shard that has this sample.
+        On cache miss: read from underlying dataset, write to this rank's
+        shard, return the sample. By end of epoch 1, all samples are cached.
         """
-        if self._is_cached(idx):
-            img_arr, target = self._read_from_disk(idx)
+        shard = self._find_in_shards(idx)
+
+        if shard is not None:
+            # Cache hit — read from shard
+            img_bytes, target_bytes = shard.read(idx)
+            img_arr, target = _deserialize_sample(img_bytes, target_bytes)
         else:
-            # Cache miss — read from underlying dataset (GCS FUSE)
+            # Cache miss — read from underlying dataset
             saved_transforms = self._dataset.transforms
             self._dataset.transforms = None
             try:
                 img, target = self._dataset[idx]
                 img = _coerce_to_pil(img)
                 img_arr = _pil_to_numpy(img)
-                # Write to disk for future epochs
-                self._write_to_disk(idx, img_arr, target)
             finally:
                 self._dataset.transforms = saved_transforms
+
+            # Write to this rank's shard
+            if self._write_shard is not None:
+                img_bytes, target_bytes = _serialize_sample(img_arr, target)
+                self._write_shard.write(idx, img_bytes, target_bytes)
 
         img = _numpy_to_pil(img_arr)
         if self.transforms is not None:
@@ -342,18 +473,17 @@ class CacheDataset(
                 f"cache_type='ram', "
                 f"cached={len(self)} samples)"
             )
-        cached = self._count_cached()
+        total_cached = sum(len(s) for s in self._shards)
         return (
             f"CacheDataset(wrapped={self._dataset!r}, "
-            f"cache_type='disk', cache={self._cache_dir}, "
-            f"cached={cached}/{len(self)} samples)"
+            f"cache_type='disk', shards={len(self._shards)}, "
+            f"cached={total_cached}/{len(self)} samples)"
         )
 
     def _resolve_cache_type(self) -> Literal["ram", "disk"]:
         """Determine whether to use RAM or disk cache based on available memory.
 
-        Estimates RAM usage from image metadata. Accounts for DDP world size
-        since multiple processes share the same physical RAM.
+        Accounts for DDP world size since multiple processes share RAM.
         """
         try:
             total_pixels = self._estimate_dataset_pixels()
