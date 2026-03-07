@@ -114,11 +114,15 @@ def base_dataset(coco_root: Path) -> COCODetectionDataset:
 @pytest.fixture()
 def cached_dataset_disk(base_dataset: COCODetectionDataset) -> CacheDataset:
     """Create a disk-cached version of the dataset."""
-    return CacheDataset(
+    cache = CacheDataset(
         dataset=base_dataset,
         cache_type="disk",
         rebuild=True,
     )
+    # Access all samples to populate the lazy cache
+    for idx in range(len(cache)):
+        _ = cache[idx]
+    return cache
 
 
 @pytest.fixture()
@@ -146,11 +150,16 @@ class TestCacheDatasetCorrectness:
     ) -> CacheDataset:
         """Parametrized fixture yielding both cache backends."""
         cache_type: Literal["ram", "disk"] = request.param
-        return CacheDataset(
+        cache = CacheDataset(
             dataset=base_dataset,
             cache_type=cache_type,
             rebuild=True,
         )
+        # For disk mode, access all samples to populate the lazy cache
+        if cache_type == "disk":
+            for idx in range(len(cache)):
+                _ = cache[idx]
+        return cache
 
     def test_same_length(
         self,
@@ -164,12 +173,15 @@ class TestCacheDatasetCorrectness:
         base_dataset: COCODetectionDataset,
         cached_dataset: CacheDataset,
     ) -> None:
-        """Every sample from the cache matches the original dataset."""
+        """Every sample from the cache matches the original dataset.
+
+        Both RAM and disk modes now store raw numpy arrays (lossless),
+        so exact comparison is used for both.
+        """
         for idx in range(len(base_dataset)):
             img_orig, target_orig = base_dataset[idx]
             img_cached, target_cached = cached_dataset[idx]
 
-            # Compare images (both should be PIL Images pre-transforms)
             orig_arr = np.array(img_orig)
             cached_arr = np.array(img_cached)
 
@@ -177,21 +189,7 @@ class TestCacheDatasetCorrectness:
                 f"Image shape mismatch at idx {idx}: "
                 f"{orig_arr.shape} vs {cached_arr.shape}"
             )
-            # Disk cache uses JPEG re-encoding which introduces slight
-            # variations (especially on random noise), so use wider tolerance.
-            # RAM cache stores exact copies, so tight tolerance is fine.
-            if cached_dataset._cache_type == "disk":
-                # PSNR > 30 dB is "visually lossless"
-                mse = float(
-                    np.mean((orig_arr.astype(float) - cached_arr.astype(float)) ** 2)
-                )
-                if mse > 0:
-                    psnr = 10 * np.log10(255.0**2 / mse)
-                    assert psnr >= 28, f"PSNR too low at idx {idx}: {psnr:.1f} dB"
-            else:
-                assert np.array_equal(orig_arr, cached_arr), (
-                    f"Pixel mismatch at idx {idx}"
-                )
+            assert np.array_equal(orig_arr, cached_arr), f"Pixel mismatch at idx {idx}"
 
             # Compare target tensors
             for key in target_orig:
@@ -227,7 +225,7 @@ class TestCacheDatasetCorrectness:
 # Disk-specific tests
 # ---------------------------------------------------------------------------
 class TestCacheDatasetDisk:
-    """Tests specific to the disk (SQLite) backend."""
+    """Tests specific to the disk (.npy file) backend."""
 
     def test_rebuild_flag(
         self,
@@ -246,7 +244,7 @@ class TestCacheDatasetDisk:
         base_dataset: COCODetectionDataset,
         tmp_path: Path,
     ) -> None:
-        """Second CacheDataset reuses existing DB without rebuilding."""
+        """Second CacheDataset reuses existing .npy files without rebuilding."""
         cache_dir = tmp_path / "shared_cache"
         cache1 = CacheDataset(
             dataset=base_dataset,
@@ -254,19 +252,59 @@ class TestCacheDatasetDisk:
             cache_dir=cache_dir,
             rebuild=True,
         )
-        db_path = cache_dir / f"{base_dataset.split}.db"
-        assert db_path.exists()
-        mtime_after_build = db_path.stat().st_mtime
+        # Populate the lazy cache
+        for idx in range(len(cache1)):
+            _ = cache1[idx]
+
+        # Verify .npy files exist
+        npy_files = list(cache_dir.glob("*_img.npy"))
+        assert len(npy_files) == len(base_dataset)
+
+        # Record modification times
+        first_file = sorted(npy_files)[0]
+        mtime_after_build = first_file.stat().st_mtime
 
         time.sleep(0.1)
 
-        _cache2 = CacheDataset(
+        # Second cache should reuse existing files
+        cache2 = CacheDataset(
             dataset=base_dataset, cache_type="disk", cache_dir=cache_dir
         )
-        mtime_reuse = db_path.stat().st_mtime
+        # Access same sample — should read from cache, not rebuild
+        _ = cache2[0]
+        mtime_reuse = first_file.stat().st_mtime
 
         assert mtime_reuse == mtime_after_build
         assert len(cache1) == len(base_dataset)
+
+    def test_lazy_cache_builds_incrementally(
+        self,
+        base_dataset: COCODetectionDataset,
+        tmp_path: Path,
+    ) -> None:
+        """Lazy cache only writes files for accessed indices."""
+        cache_dir = tmp_path / "lazy_cache"
+        cache = CacheDataset(
+            dataset=base_dataset,
+            cache_type="disk",
+            cache_dir=cache_dir,
+            rebuild=True,
+        )
+
+        # No files yet (lazy)
+        assert len(list(cache_dir.glob("*_img.npy"))) == 0
+
+        # Access first 5 samples
+        for idx in range(5):
+            _ = cache[idx]
+
+        assert len(list(cache_dir.glob("*_img.npy"))) == 5
+
+        # Access remaining
+        for idx in range(5, len(base_dataset)):
+            _ = cache[idx]
+
+        assert len(list(cache_dir.glob("*_img.npy"))) == len(base_dataset)
 
 
 # ---------------------------------------------------------------------------
@@ -280,12 +318,7 @@ class TestCacheDatasetBenchmark:
         base_dataset: COCODetectionDataset,
         cached_dataset_disk: CacheDataset,
     ) -> None:
-        """Disk-cached dataset should be at least usable (speedup > 0.5x).
-
-        Note: With JPEG compression, disk cache may be slightly slower than
-        raw uncached reads for small images due to decode overhead, but
-        it saves massive disk space. RAM cache provides the 2x+ speedup.
-        """
+        """Disk-cached dataset should be at least usable (speedup > 0.5x)."""
         speedup = self._measure_speedup(base_dataset, cached_dataset_disk)
         assert speedup >= 0.5, (
             f"Expected >=0.5x speedup for disk cache, got {speedup:.2f}x"

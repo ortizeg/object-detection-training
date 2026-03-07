@@ -5,7 +5,11 @@ Wraps any DetectionDataset and caches decoded images + pre-built target
 tensors.  Supports two cache backends:
 
 - **ram**: Stores samples in a Python list for zero-overhead reads.
-- **disk**: Persists samples in a SQLite database for cross-run reuse.
+- **disk**: Lazy write-through cache using individual .npy files.
+  On first access (epoch 1), samples are read from the underlying dataset
+  and cached to disk. Subsequent reads bypass PIL I/O entirely.
+  With DDP, each rank caches different indices via DistributedSampler,
+  so all ranks collaboratively build the full cache in one epoch.
 
 Cache stores **pre-transform** data so stochastic augmentations still
 produce different results each epoch.
@@ -13,11 +17,9 @@ produce different results each epoch.
 
 from __future__ import annotations
 
-import concurrent.futures
 import copy
 import io
 import os
-import sqlite3
 from pathlib import Path
 from typing import Any, Literal
 
@@ -26,56 +28,16 @@ import psutil  # type: ignore[import-untyped]
 import torch
 from loguru import logger
 from PIL import Image
-from tqdm import tqdm
 
 from object_detection_training.data.detection_dataset import DetectionDataset
 from object_detection_training.types import DetectionTarget
 
 __all__ = ["CacheDataset"]
 
-# ---------------------------------------------------------------------------
-# SQL statements
-# ---------------------------------------------------------------------------
-_CREATE_TABLE = """
-CREATE TABLE IF NOT EXISTS cache (
-    idx       INTEGER PRIMARY KEY,
-    img_blob  BLOB    NOT NULL,
-    target    BLOB    NOT NULL
-);
-"""
-
-_INSERT = """
-INSERT OR REPLACE INTO cache (idx, img_blob, target)
-VALUES (?, ?, ?);
-"""
-
-_SELECT = "SELECT img_blob, target FROM cache WHERE idx = ?;"
-
-_COUNT = "SELECT COUNT(*) FROM cache;"
-
-# JPEG quality for compressed storage (95 is visually lossless)
-_JPEG_QUALITY = 95
-
 
 # ---------------------------------------------------------------------------
 # Serialization helpers
 # ---------------------------------------------------------------------------
-def _serialize_image(img: Image.Image) -> bytes:
-    """Serialize a PIL Image to compressed JPEG bytes.
-
-    Stores JPEG-compressed data (~20-30x smaller than raw pixels for
-    typical photos) while remaining visually lossless at quality=95.
-    """
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=_JPEG_QUALITY)
-    return buf.getvalue()
-
-
-def _deserialize_image(img_bytes: bytes) -> Image.Image:
-    """Reconstruct a PIL Image from JPEG bytes."""
-    return Image.open(io.BytesIO(img_bytes)).convert("RGB")
-
-
 def _serialize_target(target: DetectionTarget) -> bytes:
     """Serialize a target dict of tensors to bytes using torch.save."""
     buf = io.BytesIO()
@@ -98,6 +60,16 @@ def _coerce_to_pil(img: Image.Image | torch.Tensor) -> Image.Image:
     return img
 
 
+def _pil_to_numpy(img: Image.Image) -> np.ndarray:
+    """Convert PIL Image to numpy array (H, W, 3) uint8."""
+    return np.asarray(img, dtype=np.uint8)
+
+
+def _numpy_to_pil(arr: np.ndarray) -> Image.Image:
+    """Convert numpy array (H, W, 3) to PIL Image."""
+    return Image.fromarray(arr)
+
+
 # ---------------------------------------------------------------------------
 # CacheDataset
 # ---------------------------------------------------------------------------
@@ -106,10 +78,6 @@ class CacheDataset(
 ):
     """Wraps a DetectionDataset with an in-memory or on-disk cache.
 
-    On first access (or explicit ``build_cache()``), every sample is read
-    from the underlying dataset and cached.  Subsequent reads bypass PIL
-    I/O and annotation parsing entirely.
-
     Parameters
     ----------
     dataset:
@@ -117,19 +85,19 @@ class CacheDataset(
     cache_type:
         Type of cache storage backend:
         - "ram": Store decoded images in memory (fastest, high RAM usage).
-        - "disk": Store compressed images in SQLite (slower, low RAM usage).
+          Built upfront before training starts.
+        - "disk": Lazy write-through cache using .npy files. Samples are
+          cached on first access during epoch 1. With DDP, each rank
+          caches different indices so the full cache builds collaboratively.
         - "auto": Automatically select based on available system RAM.
     cache_dir:
-        Directory for the SQLite DB (disk mode only).  Defaults to
-        ``{dataset.root_path}/.cache/``.
+        Directory for .npy files (disk mode only). Defaults to
+        ``{dataset.root_path}/.cache/{split}/``.
     transforms:
         Optional transforms applied **after** cache retrieval so that
         stochastic augmentations produce different results each epoch.
     rebuild:
         If ``True``, delete any existing cache and rebuild from scratch.
-    num_threads:
-        Number of worker threads for parallel cache building. Defaults to
-        min(32, os.cpu_count() + 4).
     """
 
     def __init__(
@@ -139,7 +107,7 @@ class CacheDataset(
         cache_dir: str | Path | None = None,
         transforms: Any | None = None,
         rebuild: bool = False,
-        num_threads: int | None = None,
+        **kwargs: Any,
     ) -> None:
         self._dataset = dataset
         self.transforms = transforms
@@ -149,183 +117,139 @@ class CacheDataset(
         else:
             self._cache_type = cache_type
 
-        if num_threads is None:
-            # Default to reasonable number of threads for I/O bound work
-            cpu_count = os.cpu_count() or 1
-            self.num_threads = min(32, cpu_count + 4)
-        else:
-            self.num_threads = num_threads
-
         # --- RAM cache state ---
-        self._ram_cache: list[tuple[Image.Image, DetectionTarget] | None] | None = None
+        self._ram_cache: list[tuple[np.ndarray, DetectionTarget] | None] | None = None
 
         # --- Disk cache state ---
-        self._db_path: Path | None = None
-        self._conn: sqlite3.Connection | None = None
+        self._cache_dir: Path | None = None
 
         if self._cache_type == "ram":
             self._build_ram_cache()
         else:
-            # Determine cache location
             if cache_dir is None:
-                cache_dir = dataset.root_path / ".cache"
+                cache_dir = dataset.root_path / ".cache" / dataset.split
             self._cache_dir = Path(cache_dir)
             self._cache_dir.mkdir(parents=True, exist_ok=True)
-            self._db_path = self._cache_dir / f"{dataset.split}.db"
 
-            if rebuild and self._db_path.exists():
-                logger.info(f"Removing existing cache: {self._db_path}")
-                self._db_path.unlink()
+            if rebuild:
+                self._clear_disk_cache()
 
-            self._ensure_disk_cache()
+            cached_count = self._count_cached()
+            total = len(self._dataset)
+            logger.info(
+                f"Disk cache: {self._cache_dir} "
+                f"({cached_count}/{total} samples already cached, "
+                f"remaining will be cached lazily during training)"
+            )
 
     # ------------------------------------------------------------------
-    # RAM cache
+    # RAM cache (upfront, like YOLOX official)
     # ------------------------------------------------------------------
     def _build_ram_cache(self) -> None:
-        """Load all samples into a Python list for zero-overhead reads."""
+        """Load all samples into a Python list for zero-overhead reads.
+
+        Uses ThreadPool for parallel I/O (like YOLOX official).
+        """
+        from multiprocessing.pool import ThreadPool
+
+        from tqdm import tqdm
+
         saved_transforms = self._dataset.transforms
         self._dataset.transforms = None
 
         total = len(self._dataset)
-        logger.info(f"Building RAM cache: {total} samples (threads={self.num_threads})")
+        num_threads = min(8, max(1, (os.cpu_count() or 1) - 1))
+        logger.info(f"Building RAM cache: {total} samples (threads={num_threads})")
 
-        def _load_sample(idx: int) -> tuple[Image.Image, DetectionTarget]:
+        def _load_sample(idx: int) -> tuple[np.ndarray, DetectionTarget]:
             img, target = self._dataset[idx]
             img = _coerce_to_pil(img)
-            return img, target
+            return _pil_to_numpy(img), target
 
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.num_threads
-        ) as executor:
-            # Use map to preserve order corresponding to indices
-            results = list(
-                tqdm(
-                    executor.map(_load_sample, range(total)),
-                    total=total,
-                    desc="RAM Cache",
-                    unit="img",
-                )
-            )
+        results: list[tuple[np.ndarray, DetectionTarget] | None] = [None] * total
+        pool = ThreadPool(num_threads)
+        loaded = pool.imap(_load_sample, range(total))
+
+        mem_bytes = 0
+        gb = 1 << 30
+        for i, sample in enumerate(
+            tqdm(loaded, total=total, desc="RAM Cache", unit="img")
+        ):
+            results[i] = sample
+            mem_bytes += sample[0].nbytes
+
+        pool.close()
+        pool.join()
 
         self._ram_cache = results
         self._dataset.transforms = saved_transforms
-        logger.info(f"RAM cache built: {total} samples in memory")
-
-    # ------------------------------------------------------------------
-    # SQLite connection management
-    # ------------------------------------------------------------------
-    @property
-    def _connection(self) -> sqlite3.Connection:
-        """Return a per-process SQLite connection (WAL mode for readers)."""
-        if self._conn is None:
-            if self._db_path is None:
-                raise RuntimeError("No db_path configured for disk cache")
-            self._conn = sqlite3.connect(
-                str(self._db_path),
-                check_same_thread=False,
-            )
-            self._conn.execute("PRAGMA journal_mode=WAL;")
-            self._conn.execute("PRAGMA synchronous=NORMAL;")
-        return self._conn
-
-    # ------------------------------------------------------------------
-    # Disk cache building
-    # ------------------------------------------------------------------
-    def _ensure_disk_cache(self) -> None:
-        """Build the disk cache if it is missing or incomplete."""
-        conn = self._connection
-        conn.execute(_CREATE_TABLE)
-        conn.commit()
-
-        count = conn.execute(_COUNT).fetchone()[0]
-        expected = len(self._dataset)
-
-        if count >= expected:
-            logger.info(f"Cache hit: {self._db_path} ({count} samples already cached)")
-            return
         logger.info(
-            f"Building cache: {self._db_path} "
-            f"({count}/{expected} samples present, caching remaining)"
-        )
-        self.build_cache()
-
-    def build_cache(self) -> None:
-        """Populate the SQLite cache from the underlying dataset.
-
-        Temporarily strips transforms from the wrapped dataset so that
-        raw (pre-transform) data is cached. Uses ThreadPoolExecutor for
-        parallel I/O and encoding.
-        """
-        saved_transforms = self._dataset.transforms
-        self._dataset.transforms = None
-
-        conn = self._connection
-        conn.execute(_CREATE_TABLE)
-
-        total = len(self._dataset)
-        batch_size = 1000
-
-        # Optimization: Fetch all existing indices at once to avoid SELECT inside loop
-        existing_cursor = conn.execute("SELECT idx FROM cache")
-        existing_indices = {row[0] for row in existing_cursor.fetchall()}
-
-        indices_to_process = [i for i in range(total) if i not in existing_indices]
-
-        if not indices_to_process:
-            self._dataset.transforms = saved_transforms
-            logger.info("All samples already cached.")
-            return
-
-        logger.info(
-            f"Building disk cache: {len(indices_to_process)} samples "
-            f"(threads={self.num_threads})"
+            f"RAM cache built: {total} samples, {mem_bytes / gb:.1f}GB in memory"
         )
 
-        def _process_sample(idx: int) -> tuple[int, bytes, bytes] | None:
-            try:
-                img, target = self._dataset[idx]
-                img = _coerce_to_pil(img)
-                img_bytes = _serialize_image(img)
-                target_bytes = _serialize_target(target)
-                return idx, img_bytes, target_bytes
-            except Exception as e:
-                logger.error(f"Failed to process sample {idx}: {e}")
-                return None
+    # ------------------------------------------------------------------
+    # Disk cache helpers
+    # ------------------------------------------------------------------
+    def _img_cache_path(self, idx: int) -> Path:
+        """Return the .npy file path for a given index."""
+        if self._cache_dir is None:
+            raise RuntimeError("No cache_dir configured for disk cache")
+        return self._cache_dir / f"{idx:06d}_img.npy"
 
-        # Execute parallel processing
-        pending_inserts = []
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.num_threads
-        ) as executor:
-            futures = [
-                executor.submit(_process_sample, idx) for idx in indices_to_process
-            ]
+    def _target_cache_path(self, idx: int) -> Path:
+        """Return the target cache file path for a given index."""
+        if self._cache_dir is None:
+            raise RuntimeError("No cache_dir configured for disk cache")
+        return self._cache_dir / f"{idx:06d}_target.bin"
 
-            for future in tqdm(
-                concurrent.futures.as_completed(futures),
-                total=len(indices_to_process),
-                desc="Disk Cache",
-                unit="img",
-            ):
-                result = future.result()
-                if result is None:
-                    continue
+    def _is_cached(self, idx: int) -> bool:
+        """Check if a sample is already cached on disk."""
+        return self._img_cache_path(idx).exists()
 
-                pending_inserts.append(result)
+    def _count_cached(self) -> int:
+        """Count how many samples are already cached."""
+        if self._cache_dir is None:
+            return 0
+        return len(list(self._cache_dir.glob("*_img.npy")))
 
-                if len(pending_inserts) >= batch_size:
-                    conn.executemany(_INSERT, pending_inserts)
-                    conn.commit()
-                    pending_inserts.clear()
+    def _clear_disk_cache(self) -> None:
+        """Remove all cached files."""
+        if self._cache_dir is None:
+            return
+        import shutil
 
-        # Flush remaining
-        if pending_inserts:
-            conn.executemany(_INSERT, pending_inserts)
-            conn.commit()
+        if self._cache_dir.exists():
+            logger.info(f"Removing existing cache: {self._cache_dir}")
+            shutil.rmtree(self._cache_dir)
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
 
-        self._dataset.transforms = saved_transforms
-        logger.info(f"Cache built: {total} samples in {self._db_path}")
+    def _write_to_disk(
+        self, idx: int, img: np.ndarray, target: DetectionTarget
+    ) -> None:
+        """Write a single sample to disk cache (atomic via rename)."""
+        img_path = self._img_cache_path(idx)
+        target_path = self._target_cache_path(idx)
+
+        # Atomic write: write to temp then rename (safe for concurrent DDP)
+        # np.save appends .npy if missing, so use .tmp extension without .npy
+        tmp_img = img_path.parent / f"{img_path.stem}.tmp"
+        tmp_target = target_path.parent / f"{target_path.stem}.tmp"
+
+        np.save(str(tmp_img), img)
+        # np.save auto-appends .npy, so the actual file is .tmp.npy
+        tmp_img_actual = tmp_img.with_suffix(".tmp.npy")
+        with open(tmp_target, "wb") as f:
+            f.write(_serialize_target(target))
+
+        tmp_img_actual.rename(img_path)
+        tmp_target.rename(target_path)
+
+    def _read_from_disk(self, idx: int) -> tuple[np.ndarray, DetectionTarget]:
+        """Read a single sample from disk cache."""
+        img = np.load(str(self._img_cache_path(idx)))
+        with open(self._target_cache_path(idx), "rb") as f:
+            target = _deserialize_target(f.read())
+        return img, target
 
     # ------------------------------------------------------------------
     # Dataset interface
@@ -350,7 +274,9 @@ class CacheDataset(
         cached = self._ram_cache[idx]
         if cached is None:
             raise RuntimeError(f"RAM cache miss at index {idx}")
-        img, target = copy.deepcopy(cached)
+        img_arr, target = cached
+        img = _numpy_to_pil(img_arr.copy())
+        target = copy.deepcopy(target)
 
         if self.transforms is not None:
             img, target = self.transforms(img, target)
@@ -359,19 +285,27 @@ class CacheDataset(
     def _getitem_disk(
         self, idx: int
     ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
-        """Read from SQLite disk cache."""
-        row = self._connection.execute(_SELECT, (idx,)).fetchone()
+        """Lazy write-through disk cache.
 
-        if row is None:
-            raise RuntimeError(
-                f"Cache miss at index {idx} — cache may be corrupted. "
-                f"Delete {self._db_path} and re-run to rebuild."
-            )
+        On cache hit: read from .npy file (fast local I/O).
+        On cache miss: read from underlying dataset, write to cache, return.
+        """
+        if self._is_cached(idx):
+            img_arr, target = self._read_from_disk(idx)
+        else:
+            # Cache miss — read from underlying dataset (GCS FUSE)
+            saved_transforms = self._dataset.transforms
+            self._dataset.transforms = None
+            try:
+                img, target = self._dataset[idx]
+                img = _coerce_to_pil(img)
+                img_arr = _pil_to_numpy(img)
+                # Write to disk for future epochs
+                self._write_to_disk(idx, img_arr, target)
+            finally:
+                self._dataset.transforms = saved_transforms
 
-        img_bytes, target_bytes = row
-        img = _deserialize_image(img_bytes)
-        target: DetectionTarget = _deserialize_target(target_bytes)
-
+        img = _numpy_to_pil(img_arr)
         if self.transforms is not None:
             img, target = self.transforms(img, target)
 
@@ -408,34 +342,23 @@ class CacheDataset(
                 f"cache_type='ram', "
                 f"cached={len(self)} samples)"
             )
+        cached = self._count_cached()
         return (
             f"CacheDataset(wrapped={self._dataset!r}, "
-            f"cache_type='disk', cache={self._db_path}, "
-            f"cached={len(self)} samples)"
+            f"cache_type='disk', cache={self._cache_dir}, "
+            f"cached={cached}/{len(self)} samples)"
         )
-
-    def _close(self) -> None:
-        """Close SQLite connection if open."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
 
     def _resolve_cache_type(self) -> Literal["ram", "disk"]:
         """Determine whether to use RAM or disk cache based on available memory.
 
-        Uses dataset image dimensions (metadata) to estimate uncompressed RAM usage.
-        If estimated usage is < 50% of currently available system RAM, selects 'ram'.
-        Otherwise selects 'disk'.
+        Estimates RAM usage from image metadata. Accounts for DDP world size
+        since multiple processes share the same physical RAM.
         """
         try:
-            # Estimate dataset size in RAM (uncompressed uint8 pixels)
-            # stored as list of tuples (PIL Image, dict)
-            # Image: W * H * 3 bytes
-            # Target: negligible compared to image
             total_pixels = self._estimate_dataset_pixels()
             estimated_bytes = int(total_pixels * 3 * 1.2)  # 1.2x overhead
 
-            # Check system RAM, accounting for DDP (multiple processes share RAM)
             available_bytes = psutil.virtual_memory().available
             world_size = int(os.environ.get("WORLD_SIZE", "1"))
             per_process_available = available_bytes // max(world_size, 1)
@@ -463,7 +386,6 @@ class CacheDataset(
     def _estimate_dataset_pixels(self) -> int:
         """Estimate total pixels in dataset using metadata (no image load)."""
         try:
-            # DetectionDataset guarantees images_df with width/height columns
             if self._dataset.images_df is not None:
                 widths = self._dataset.images_df["width"]
                 heights = self._dataset.images_df["height"]
@@ -471,6 +393,5 @@ class CacheDataset(
         except Exception as e:
             logger.debug(f"Could not access image metadata: {e}")
 
-        # Fallback if metadata unavailable
         logger.warning("Could not access image metadata. Assuming 1920x1080 per image.")
         return len(self._dataset) * 1920 * 1080
