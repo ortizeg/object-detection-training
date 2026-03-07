@@ -1,0 +1,10 @@
+defaults:
+  - dinox_m_baseline
+  - _self_
+
+# D: MAL + Soft Labels (MAL requires soft labels for quality scores)
+use_mal: true
+mal_gamma: 1.5
+use_soft_labels: true
+soft_label_gamma: 2.0
+use_log_iou_cost: true

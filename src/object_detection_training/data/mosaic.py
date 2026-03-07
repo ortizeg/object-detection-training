@@ -37,7 +37,7 @@ class MosaicMixupDataset(
 
     def __init__(
         self,
-        dataset: DetectionDataset,
+        dataset: DetectionDataset | torch.utils.data.Dataset[Any],
         input_height: int = 640,
         input_width: int = 640,
         mosaic_prob: float = 1.0,

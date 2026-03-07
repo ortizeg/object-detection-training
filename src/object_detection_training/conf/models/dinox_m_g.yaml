@@ -1,0 +1,15 @@
+defaults:
+  - dinox_m_baseline
+  - _self_
+
+# G: Scheduler-free + DFL + Soft Labels + MAL combined
+use_dfl: true
+reg_max: 16
+dfl_loss_weight: 0.25
+use_soft_labels: true
+soft_label_gamma: 2.0
+use_log_iou_cost: true
+use_mal: true
+mal_gamma: 1.5
+use_scheduler_free: true
+learning_rate: 0.0025

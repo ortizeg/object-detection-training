@@ -1,0 +1,27 @@
+# YOLOX-S COCO Training on A100 — Matching Official YOLOX Repo
+# Target: reproduce official YOLOX-S COCO mAP (40.5% mAP@50:95)
+#
+# Official recipe: SGD, lr=0.01 (scaled by bs/64), cosine LR, mosaic+mixup,
+# EMA decay=0.9998, no-aug last 15 epochs with L1 loss, 300 epochs.
+
+defaults:
+  - task: train
+  - models: yolox_s
+  - data: coco_yolox_a100
+  - trainer: gpu_a100
+  - callbacks: default
+  - logging: null
+  - _self_
+
+# Global Parameters
+input_height: 640
+input_width: 640
+log_level: INFO
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/yolox_s_coco_${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/yolox_s_coco_${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

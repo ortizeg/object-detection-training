@@ -11,6 +11,7 @@ from torchvision.transforms import v2
 
 from object_detection_training.data.cache_dataset import CacheDataset
 from object_detection_training.data.coco_detection_dataset import COCODetectionDataset
+from object_detection_training.data.detection_dataset import DetectionDataset
 from object_detection_training.data.sampler import SamplerConfig, build_weighted_sampler
 from object_detection_training.models.rfdetr.collate import collate_fn
 from object_detection_training.types import DetectionTarget
@@ -268,25 +269,33 @@ class COCODataModule(L.LightningDataModule):
             self._label_map = self._train_detection_dataset.label_map
 
         train_dataset: torch.utils.data.Dataset[tuple[torch.Tensor, DetectionTarget]]
+
+        # Base dataset for mosaic/cache: no transforms (raw PIL images)
+        base_dataset: DetectionDataset | CacheDataset = self._train_detection_dataset
+        self._train_detection_dataset.transforms = None
+
+        # Optionally wrap with CacheDataset for fast IO
+        if self.use_cache:
+            base_dataset = CacheDataset(  # type: ignore[assignment]
+                self._train_detection_dataset,
+                cache_type=self.cache_type,
+            )
+
         if self._mosaic_enabled:
-            # Mosaic operates on raw PIL images — base dataset has no transforms
-            self._train_detection_dataset.transforms = None
+            # Mosaic operates on raw PIL images (from base or cache)
             from object_detection_training.data.mosaic import MosaicMixupDataset
 
             train_dataset = MosaicMixupDataset(  # type: ignore[assignment]
-                self._train_detection_dataset,
+                base_dataset,
                 input_height=self.input_height,
                 input_width=self.input_width,
                 mixup_prob=self._mixup_prob,
                 post_transforms=self.post_mosaic_transforms,
             )
         elif self.use_cache:
-            self._train_detection_dataset.transforms = None
-            train_dataset = CacheDataset(  # type: ignore[assignment]
-                self._train_detection_dataset,
-                cache_type=self.cache_type,
-                transforms=self.train_transforms,
-            )
+            # Cache without mosaic: apply train transforms after cache read
+            base_dataset.transforms = self.train_transforms  # type: ignore[union-attr]
+            train_dataset = base_dataset  # type: ignore[assignment]
         else:
             self._train_detection_dataset.transforms = self.train_transforms
             train_dataset = self._train_detection_dataset  # type: ignore[assignment]

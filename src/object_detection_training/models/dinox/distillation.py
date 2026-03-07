@@ -102,6 +102,16 @@ class DistillationModule(nn.Module):
         rgb = images[:, [2, 1, 0], :, :]
         images_norm = (rgb / 255.0 - self.mean) / self.std
 
+        # Resize to nearest multiple of patch_size (DINOv2 uses 14)
+        patch_size = 14
+        h, w = images_norm.shape[2], images_norm.shape[3]
+        new_h = (h // patch_size) * patch_size
+        new_w = (w // patch_size) * patch_size
+        if new_h != h or new_w != w:
+            images_norm = F.interpolate(
+                images_norm, size=(new_h, new_w), mode="bilinear", align_corners=False
+            )
+
         # Teacher forward (no grad)
         # get_intermediate_layers returns tuple[Tensor, ...] but nn.Module
         # typing doesn't expose it; suppress the callable-on-Tensor false positive.

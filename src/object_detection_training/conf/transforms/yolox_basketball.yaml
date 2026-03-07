@@ -1,6 +1,8 @@
-# YOLOX Transform Pipeline
+# YOLOX Transform Pipeline for Basketball Fine-tuning
+# Mosaic/mixup disabled (too aggressive for small datasets).
+# RandomErasing enabled for extra regularization on small datasets.
 # Boxes converted to pixel CXCYWH (matching original YOLOX repo). No box normalization.
-# No image normalization (raw 0-255). Matching official YOLOX augmentation.
+# No image normalization (raw 0-255).
 train_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
@@ -17,6 +19,10 @@ train_transforms:
       hue: 0.1
     - _target_: object_detection_training.transforms.ToFloat32Tensor
       scale: false
+    - _target_: torchvision.transforms.v2.RandomErasing
+      p: 0.3
+      scale: [0.02, 0.2]
+      ratio: [0.3, 3.3]
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
       format: CXCYWH
 
@@ -57,11 +63,14 @@ post_mosaic_transforms:
       hue: 0.1
     - _target_: object_detection_training.transforms.ToFloat32Tensor
       scale: false
+    - _target_: torchvision.transforms.v2.RandomErasing
+      p: 0.3
+      scale: [0.02, 0.2]
+      ratio: [0.3, 3.3]
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
       format: CXCYWH
 
-# Mosaic/MixUp config (DataModule-level, not part of v2 pipeline)
-# Official YOLOX: mosaic prob=1.0, mixup prob=1.0 for first 285 epochs
+# Mosaic/MixUp disabled for basketball fine-tuning
 mosaic:
-  enabled: true
-  mixup_prob: 1.0
+  enabled: false
+  mixup_prob: 0.3

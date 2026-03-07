@@ -851,14 +851,20 @@ class DINOXHead(nn.Module):
             num_fg += num_fg_img
 
             if num_fg_img > 0:
+                # Guard: clamp class indices to valid range for F.one_hot
+                gt_matched_classes = gt_matched_classes.clamp(0, self.num_classes - 1)
+
                 # Classification loss
                 if self.use_soft_labels:
-                    iou_weight = pred_ious_this_matching.pow(self.soft_label_gamma)
+                    iou_weight = pred_ious_this_matching.clamp(0, 1).pow(
+                        self.soft_label_gamma
+                    )
                 else:
                     iou_weight = pred_ious_this_matching
                 cls_target = F.one_hot(
                     gt_matched_classes.to(torch.int64), self.num_classes
                 ) * iou_weight.unsqueeze(-1)
+                cls_target = cls_target.clamp(0, 1)
 
                 cls_loss_raw = self.bcewithlog_loss(
                     cls_preds[batch_idx][fg_mask], cls_target
@@ -1105,7 +1111,10 @@ class DINOXHead(nn.Module):
 
         # Pairwise classification cost
         gt_cls_per_image = (
-            F.one_hot(gt_classes.to(torch.int64), self.num_classes)
+            F.one_hot(
+                gt_classes.to(torch.int64).clamp(0, self.num_classes - 1),
+                self.num_classes,
+            )
             .float()
             .unsqueeze(1)
             .repeat(1, num_in_boxes_anchor, 1)
@@ -1114,14 +1123,15 @@ class DINOXHead(nn.Module):
         if self.use_soft_labels:
             # RTMDet soft classification cost (SIMO-03)
             # Y_soft = IoU * one_hot_gt
-            soft_label = gt_cls_per_image * pair_wise_ious.unsqueeze(-1)
+            soft_label = gt_cls_per_image * pair_wise_ious.clamp(0, 1).unsqueeze(-1)
             # P = cls_sigmoid * obj_sigmoid (combined prediction score)
             with torch.cuda.amp.autocast(enabled=False):
                 pred_scores = (
                     cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid()
                     * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid()
-                )
+                ).clamp(1e-7, 1.0 - 1e-7)
                 # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
+                soft_label = soft_label.clamp(0, 1)
                 scale_factor = (soft_label - pred_scores).abs().pow(2.0)
                 pair_wise_cls_loss = (
                     F.binary_cross_entropy(pred_scores, soft_label, reduction="none")
@@ -1144,6 +1154,8 @@ class DINOXHead(nn.Module):
             + 3.0 * pair_wise_ious_loss
             + 1e6 * (~is_in_boxes_and_center)
         )
+        # Replace NaN/Inf in cost to prevent CUDA asserts in topk
+        cost = torch.nan_to_num(cost, nan=1e6, posinf=1e6, neginf=-1e6)
 
         (
             num_fg_result,
@@ -1261,7 +1273,7 @@ class DINOXHead(nn.Module):
 
         n_candidate_k = min(10, pair_wise_ious.size(1))
         topk_ious, _ = torch.topk(pair_wise_ious, n_candidate_k, dim=1)
-        dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1)
+        dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1, max=cost.size(1))
 
         for gt_idx in range(num_gt):
             _, pos_idx = torch.topk(

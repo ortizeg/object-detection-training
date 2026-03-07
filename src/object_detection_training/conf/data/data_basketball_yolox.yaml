@@ -1,7 +1,7 @@
 # Basketball Detection Dataset Configuration for YOLOX
 # Category filtering + YOLOX transforms (no box/image normalization)
 defaults:
-  - /transforms@_here_: yolox
+  - /transforms@_here_: yolox_basketball
   - _self_
 
 _target_: object_detection_training.data.coco_data_module.COCODataModule

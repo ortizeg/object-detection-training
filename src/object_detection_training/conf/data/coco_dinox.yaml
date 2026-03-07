@@ -1,0 +1,35 @@
+# COCO Dataset Configuration for DINO-X
+# Uses YOLOX transforms (raw 0-255, no normalization, pixel xyxy boxes).
+# Batch size 16 for L4 GPU (24GB VRAM) — 80 COCO classes need headroom.
+# Effective batch = 16 * 2 (accumulate) = 32.
+defaults:
+  - /transforms@_here_: yolox
+  - _self_
+
+_target_: object_detection_training.data.coco_data_module.COCODataModule
+_convert_: all
+
+train_path: ??? # Required - path to training data
+val_path: ??? # Required - path to validation data
+test_path: null # Optional - path to test data
+
+# L4 24GB: batch_size=16, accumulate=2, effective=32
+batch_size: 16
+num_workers: 4
+
+input_height: ${models.input_height}
+input_width: ${models.input_width}
+
+# Multi-scale params (referenced by transform YAML via ${data.*})
+multi_scale: true
+expanded_scales: true
+skip_random_resize: false
+patch_size: 16
+num_windows: 2
+
+pin_memory: true
+persistent_workers: true
+
+# Online class-balanced sampling
+sampler:
+  mode: disabled

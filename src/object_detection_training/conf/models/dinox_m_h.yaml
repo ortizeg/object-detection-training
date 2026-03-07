@@ -1,0 +1,24 @@
+defaults:
+  - dinox_m_baseline
+  - _self_
+
+# H: All features combined (best config candidate)
+use_dfl: true
+reg_max: 16
+dfl_loss_weight: 0.25
+use_soft_labels: true
+soft_label_gamma: 2.0
+use_log_iou_cost: true
+use_mal: true
+mal_gamma: 1.5
+use_dual_head: true
+lambda_o2o: 1.0
+enable_distillation: true
+distill_weight: 0.5
+distill_layer_indices:
+  - 3
+  - 7
+  - 11
+distill_teacher: dinov2_vitb14
+use_scheduler_free: true
+learning_rate: 0.0025

@@ -118,7 +118,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         self,
         num_classes: int = 80,
         pretrain_weights: str | None = None,
-        learning_rate: float = 1e-3,
+        learning_rate: float = 0.01,
         weight_decay: float = 5e-4,
         warmup_epochs: int = 5,
         download_pretrained: bool = True,
@@ -128,6 +128,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         image_std: list[float] | None = None,
         output_dir: str = "outputs",
         freeze_backbone_epochs: int = 0,
+        no_aug_epochs: int = 15,
         l1_loss_epoch: int = 0,
         iou_loss_type: str = "iou",
         depth: float = 0.33,
@@ -151,9 +152,10 @@ class YOLOXLightningModel(BaseDetectionModel):
             output_dir: Base directory for outputting results.
             freeze_backbone_epochs: Freeze backbone for this many initial epochs
                 during fine-tuning. 0 disables freezing.
-            l1_loss_epoch: Enable L1 regression loss starting at this epoch.
-                Adds extra box regression supervision for fine-grained
-                localization. 0 disables.
+            no_aug_epochs: Number of final epochs without mosaic/mixup augmentation.
+                At epoch (max_epochs - no_aug_epochs), mosaic/mixup are disabled
+                and L1 regression loss is enabled. Official YOLOX uses 15.
+                Set to 0 to disable.
             iou_loss_type: IoU loss variant for box regression ('iou' or 'giou').
                 GIoU provides better gradients for non-overlapping boxes.
             depth: Network depth multiplier.
@@ -179,7 +181,8 @@ class YOLOXLightningModel(BaseDetectionModel):
         self.input_height = input_height
         self.input_width = input_width
         self.freeze_backbone_epochs = freeze_backbone_epochs
-        self.l1_loss_epoch = l1_loss_epoch
+        self.no_aug_epochs = no_aug_epochs
+        self.l1_loss_epoch = l1_loss_epoch  # backward compat fallback
         self.checkpoint_name = checkpoint_name
 
         if in_channels is None:
@@ -263,14 +266,43 @@ class YOLOXLightningModel(BaseDetectionModel):
         logger.info("Unfroze backbone parameters")
 
     def on_train_epoch_start(self) -> None:
-        """Handle epoch-based training schedule changes."""
+        """Handle epoch-based training schedule changes.
+
+        Implements official YOLOX no-augmentation refinement period:
+        at epoch (max_epochs - no_aug_epochs), mosaic/mixup are disabled
+        and L1 regression loss is enabled for final convergence.
+        """
         if (
             self.freeze_backbone_epochs > 0
             and self.current_epoch == self.freeze_backbone_epochs
         ):
             self._unfreeze_backbone()
 
-        if (
+        # No-augmentation period: disable mosaic/mixup + enable L1 loss
+        if self.no_aug_epochs > 0 and self.trainer:
+            max_epochs = self.trainer.max_epochs or 300
+            no_aug_start = max_epochs - self.no_aug_epochs
+            if self.current_epoch == no_aug_start:
+                # Enable L1 loss for refined box regression
+                if not self.model.head.use_l1:
+                    self.model.head.use_l1 = True
+                    logger.info(
+                        f"No-aug period: enabled L1 loss at epoch {self.current_epoch}"
+                    )
+
+                # Disable mosaic/mixup on the training dataloader's dataset
+                train_dl = self.trainer.train_dataloader
+                if train_dl is not None:
+                    dataset = train_dl.dataset
+                    if hasattr(dataset, "enabled"):
+                        dataset.enabled = False
+                        logger.info(
+                            f"No-aug period: disabled mosaic/mixup "
+                            f"at epoch {self.current_epoch}"
+                        )
+
+        # Legacy fallback: explicit l1_loss_epoch (for backward compat)
+        elif (
             self.l1_loss_epoch > 0
             and self.current_epoch == self.l1_loss_epoch
             and not self.model.head.use_l1

@@ -3,13 +3,18 @@ defaults:
   - _self_
 
 # DINO-X Base Configuration
-learning_rate: 1e-3
+# Inherits official YOLOX hyperparameters as baseline.
+# LR scales linearly: lr = 0.01 * batch_size / 64
+learning_rate: 0.01
 weight_decay: 5e-4
 warmup_epochs: 5
 download_pretrained: true
 pretrain_weights: null
 freeze_backbone_epochs: 0
-l1_loss_epoch: 0
+
+# No-augmentation refinement period (official YOLOX: last 15 epochs)
+no_aug_epochs: 15
+
 iou_loss_type: iou
 
 # Architecture (common defaults, matching YOLOX-S baseline)

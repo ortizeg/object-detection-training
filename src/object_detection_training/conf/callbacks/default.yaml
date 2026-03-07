@@ -9,18 +9,10 @@ model_checkpoint:
   save_last: true
   verbose: true
 
-early_stopping:
-  _target_: lightning.pytorch.callbacks.EarlyStopping
-  monitor: val/mAP
-  mode: max
-  patience: 15
-  min_delta: 0.001
-  verbose: true
-
 ema:
   _target_: object_detection_training.callbacks.ema.EMACallback
-  decay: 0.993
-  warmup_steps: 0
+  decay: 0.9998
+  warmup_steps: 2000
 
 onnx_export:
   _target_: object_detection_training.callbacks.onnx_export.ONNXExportCallback

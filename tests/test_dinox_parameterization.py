@@ -88,7 +88,7 @@ class TestHydraConfigCompleteness:
             "warmup_epochs",
             "download_pretrained",
             "freeze_backbone_epochs",
-            "l1_loss_epoch",
+            "no_aug_epochs",
             "iou_loss_type",
             "use_dfl",
             "reg_max",

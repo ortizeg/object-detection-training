@@ -1,0 +1,34 @@
+# COCO Dataset Configuration for DINO-X on A100 (distillation experiments)
+# Uses YOLOX transforms (raw 0-255, no normalization, pixel xyxy boxes).
+# Batch size 32 with accumulate=1 on A100 80GB (effective=32).
+defaults:
+  - /transforms@_here_: yolox
+  - _self_
+
+_target_: object_detection_training.data.coco_data_module.COCODataModule
+_convert_: all
+
+train_path: ??? # Required - path to training data
+val_path: ??? # Required - path to validation data
+test_path: null # Optional - path to test data
+
+# A100 40GB: batch_size=96, accumulate=1, effective=96
+batch_size: 96
+num_workers: 8
+
+input_height: ${models.input_height}
+input_width: ${models.input_width}
+
+# Multi-scale params
+multi_scale: true
+expanded_scales: true
+skip_random_resize: false
+patch_size: 16
+num_windows: 2
+
+pin_memory: true
+persistent_workers: true
+
+# Online class-balanced sampling
+sampler:
+  mode: disabled

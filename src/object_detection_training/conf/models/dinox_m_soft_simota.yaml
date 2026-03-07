@@ -3,10 +3,13 @@ defaults:
   - dinox_base
   - _self_
 
-# A: DINO-X Medium Baseline (YOLOX-M equivalent, all flags off)
+# C: Soft Labels + Log-IoU SimOTA cost
 depth: 0.67
 width: 0.75
 depthwise: false
 checkpoint_name: yolox_m.pth
 download_pretrained: false
 use_dfl: false
+use_soft_labels: true
+soft_label_gamma: 2.0
+use_log_iou_cost: true

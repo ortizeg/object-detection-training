@@ -78,5 +78,5 @@ def test_hydra_callbacks():
         assert "model_info" in cfg.callbacks
 
         # Check EMA config
-        assert cfg.callbacks.ema.decay == 0.993
-        assert cfg.callbacks.ema.warmup_steps == 0
+        assert cfg.callbacks.ema.decay == 0.9998
+        assert cfg.callbacks.ema.warmup_steps == 2000

@@ -1,0 +1,25 @@
+# DINO-X COCO Ablation Training Configuration
+# Default: L4 GPU with batch_size=32, accumulate=2 (effective=64)
+# Override models group for different ablation experiments.
+
+defaults:
+  - _self_
+  - task: train
+  - models: dinox_m_baseline
+  - data: coco_dinox
+  - trainer: default
+  - callbacks: default
+  - logging: null
+
+# Global Parameters
+input_height: 640
+input_width: 640
+log_level: INFO
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
