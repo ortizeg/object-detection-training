@@ -362,48 +362,61 @@ class DetectionDataset(
         # Get annotations for this image
         anns_df = self.get_annotations_for_image(image_id)
 
-        # Build target dict in COCO/DETR format
+        # Build target dict in COCO/DETR format — vectorized via numpy
         # boxes in [x, y, w, h] format -> convert to [x1, y1, x2, y2]
-        boxes_list: list[list[float]] = []
-        labels_list: list[int] = []
-        areas_list: list[float] = []
-        iscrowd_list: list[int] = []
-
-        label_map = self.label_map
-
-        for _, ann in anns_df.iterrows():
-            x, y, bw, bh = ann["bbox_x"], ann["bbox_y"], ann["bbox_w"], ann["bbox_h"]
-            # Convert to x1, y1, x2, y2
-            x2 = x + bw
-            y2 = y + bh
-
-            # Clamp to image boundaries
-            x = max(0, min(x, w))
-            y = max(0, min(y, h))
-            x2 = max(0, min(x2, w))
-            y2 = max(0, min(y2, h))
-
-            # Skip degenerate boxes
-            if x2 <= x or y2 <= y:
-                continue
-
-            boxes_list.append([x, y, x2, y2])
-            # Map to contiguous labels
-            labels_list.append(label_map[ann["category_id"]])
-            areas_list.append(ann["area"] if "area" in ann else bw * bh)
-            iscrowd_list.append(1 if ann.get("is_crowd", False) else 0)
-
-        # Convert to tensors (handle empty annotations)
-        if len(boxes_list) == 0:
+        if len(anns_df) == 0:
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             labels = torch.zeros((0,), dtype=torch.int64)
             areas = torch.zeros((0,), dtype=torch.float32)
             iscrowd = torch.zeros((0,), dtype=torch.int64)
         else:
-            boxes = torch.as_tensor(boxes_list, dtype=torch.float32)
-            labels = torch.as_tensor(labels_list, dtype=torch.int64)
-            areas = torch.as_tensor(areas_list, dtype=torch.float32)
-            iscrowd = torch.as_tensor(iscrowd_list, dtype=torch.int64)
+            bbox = anns_df[["bbox_x", "bbox_y", "bbox_w", "bbox_h"]].values
+            x1 = bbox[:, 0]
+            y1 = bbox[:, 1]
+            x2 = bbox[:, 0] + bbox[:, 2]
+            y2 = bbox[:, 1] + bbox[:, 3]
+
+            # Clamp to image boundaries
+            x1 = np.clip(x1, 0, w)
+            y1 = np.clip(y1, 0, h)
+            x2 = np.clip(x2, 0, w)
+            y2 = np.clip(y2, 0, h)
+
+            # Filter degenerate boxes
+            keep = (x2 > x1) & (y2 > y1)
+            x1, y1, x2, y2 = x1[keep], y1[keep], x2[keep], y2[keep]
+            anns_kept = anns_df[keep]
+
+            if len(anns_kept) == 0:
+                boxes = torch.zeros((0, 4), dtype=torch.float32)
+                labels = torch.zeros((0,), dtype=torch.int64)
+                areas = torch.zeros((0,), dtype=torch.float32)
+                iscrowd = torch.zeros((0,), dtype=torch.int64)
+            else:
+                boxes_arr = np.stack([x1, y1, x2, y2], axis=1)
+                boxes = torch.as_tensor(boxes_arr, dtype=torch.float32)
+
+                label_map = self.label_map
+                labels = torch.as_tensor(
+                    anns_kept["category_id"].map(label_map).to_numpy(),
+                    dtype=torch.int64,
+                )
+                if "area" in anns_kept.columns:
+                    areas = torch.as_tensor(
+                        anns_kept["area"].to_numpy(dtype=np.float64),
+                        dtype=torch.float32,
+                    )
+                else:
+                    areas = torch.as_tensor(
+                        bbox[keep, 2] * bbox[keep, 3], dtype=torch.float32
+                    )
+                if "is_crowd" in anns_kept.columns:
+                    iscrowd = torch.as_tensor(
+                        anns_kept["is_crowd"].astype(int).to_numpy(),
+                        dtype=torch.int64,
+                    )
+                else:
+                    iscrowd = torch.zeros(len(anns_kept), dtype=torch.int64)
 
         target = {
             "boxes": tv_tensors.BoundingBoxes(boxes, format="XYXY", canvas_size=(h, w)),
