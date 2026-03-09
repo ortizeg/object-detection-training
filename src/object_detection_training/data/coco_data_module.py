@@ -124,6 +124,9 @@ class COCODataModule(L.LightningDataModule):
         mosaic = mosaic or {}
         self._mosaic_enabled: bool = bool(mosaic.get("enabled", False))
         self._mixup_prob: float = float(mosaic.get("mixup_prob", 0.3))
+        self._mosaic_use_cache: bool = bool(mosaic.get("use_cache", True))
+        self._mosaic_max_cached: int = int(mosaic.get("max_cached_images", 40))
+        self._mosaic_random_pop: bool = bool(mosaic.get("random_pop", True))
 
         # Sampler config
         self._sampler_config = SamplerConfig(**(sampler or {}))
@@ -279,6 +282,9 @@ class COCODataModule(L.LightningDataModule):
                 input_width=self.input_width,
                 mixup_prob=self._mixup_prob,
                 post_transforms=self.post_mosaic_transforms,
+                use_cache=self._mosaic_use_cache,
+                max_cached_images=self._mosaic_max_cached,
+                random_pop=self._mosaic_random_pop,
             )
         elif self.use_cache:
             self._train_detection_dataset.transforms = None
