@@ -14,7 +14,6 @@ produce different results each epoch.
 from __future__ import annotations
 
 import concurrent.futures
-import copy
 import io
 import os
 import sqlite3
@@ -22,6 +21,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
+import numpy.typing as npt
 import psutil  # type: ignore[import-untyped]
 import torch
 from loguru import logger
@@ -157,7 +157,9 @@ class CacheDataset(
             self.num_threads = num_threads
 
         # --- RAM cache state ---
-        self._ram_cache: list[tuple[Image.Image, DetectionTarget] | None] | None = None
+        self._ram_cache: (
+            list[tuple[npt.NDArray[np.uint8], DetectionTarget] | None] | None
+        ) = None
 
         # --- Disk cache state ---
         self._db_path: Path | None = None
@@ -190,10 +192,12 @@ class CacheDataset(
         total = len(self._dataset)
         logger.info(f"Building RAM cache: {total} samples (threads={self.num_threads})")
 
-        def _load_sample(idx: int) -> tuple[Image.Image, DetectionTarget]:
+        def _load_sample(idx: int) -> tuple[npt.NDArray[np.uint8], DetectionTarget]:
             img, target = self._dataset[idx]
             img = _coerce_to_pil(img)
-            return img, target
+            # Store as uint8 numpy array — contiguous memory that's trivially
+            # cheap to copy vs the Python object-graph walk of deepcopy on PIL.
+            return np.asarray(img, dtype=np.uint8).copy(), target
 
         with concurrent.futures.ThreadPoolExecutor(
             max_workers=self.num_threads
@@ -344,13 +348,21 @@ class CacheDataset(
     def _getitem_ram(
         self, idx: int
     ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
-        """Read from in-memory list (deepcopy to prevent mutation)."""
+        """Read from in-memory list.
+
+        Images are stored as uint8 numpy arrays — wrapping back to PIL
+        and shallow-copying the target dict is ~10x faster than
+        ``copy.deepcopy`` on a PIL Image + nested dict.  Downstream
+        transforms always clone tensors before in-place mutation.
+        """
         if self._ram_cache is None:
             raise RuntimeError("RAM cache not initialized")
         cached = self._ram_cache[idx]
         if cached is None:
             raise RuntimeError(f"RAM cache miss at index {idx}")
-        img, target = copy.deepcopy(cached)
+        arr, target = cached
+        img: torch.Tensor | Image.Image = Image.fromarray(arr)
+        target = target.copy()
 
         if self.transforms is not None:
             img, target = self.transforms(img, target)

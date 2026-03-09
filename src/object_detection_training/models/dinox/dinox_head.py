@@ -390,8 +390,16 @@ class DINOXHead(nn.Module):
         self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
         self.iou_loss = _IOULoss(reduction="none", loss_type=iou_loss_type)
 
-        # Grid cache
+        # Grid cache (training path — _get_output_and_grid)
         self.grids: list[torch.Tensor] = [torch.zeros(1)] * len(in_channels)
+        # DFL anchor center cache (training path — _get_output_and_grid)
+        # Keyed by FPN level k → (anchor_x, anchor_y) in pixel coords
+        self._anchor_cache: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
+        # Grid/stride cache (inference path — _decode_outputs)
+        # Keyed by (hsize, wsize, stride) → (grid, strides) tensors
+        self._decode_grid_cache: dict[
+            tuple[int, int, int], tuple[torch.Tensor, torch.Tensor]
+        ] = {}
 
         logger.debug(
             f"DINOXHead: num_classes={num_classes}, use_dfl={use_dfl}, "
@@ -517,11 +525,16 @@ class DINOXHead(nn.Module):
         strides_list: list[torch.Tensor] = []
 
         for (hsize, wsize), stride_val in zip(hw_sizes, self.strides, strict=True):
-            yv, xv = _meshgrid(torch.arange(hsize), torch.arange(wsize))
-            grid = torch.stack((xv, yv), 2).view(1, -1, 2)
+            cache_key = (hsize, wsize, stride_val)
+            if cache_key in self._decode_grid_cache:
+                grid, stride_t = self._decode_grid_cache[cache_key]
+            else:
+                yv, xv = _meshgrid(torch.arange(hsize), torch.arange(wsize))
+                grid = torch.stack((xv, yv), 2).view(1, -1, 2)
+                stride_t = torch.full((*grid.shape[:2], 1), stride_val)
+                self._decode_grid_cache[cache_key] = (grid, stride_t)
             grids.append(grid)
-            shape = grid.shape[:2]
-            strides_list.append(torch.full((*shape, 1), stride_val))
+            strides_list.append(stride_t)
 
         grids_cat = torch.cat(grids, dim=1).to(device=outputs.device, dtype=dtype)
         strides_cat = torch.cat(strides_list, dim=1).to(
@@ -689,7 +702,8 @@ class DINOXHead(nn.Module):
         n_ch = reg_ch + 1 + self.num_classes
         hsize, wsize = output.shape[-2:]
 
-        if grid.shape[2:4] != output.shape[2:4]:
+        grid_changed = grid.shape[2:4] != output.shape[2:4]
+        if grid_changed:
             yv, xv = _meshgrid(torch.arange(hsize), torch.arange(wsize))
             grid = (
                 torch.stack((xv, yv), 2)
@@ -697,6 +711,8 @@ class DINOXHead(nn.Module):
                 .to(device=output.device, dtype=dtype)
             )
             self.grids[k] = grid
+            # Invalidate anchor cache for this level
+            self._anchor_cache.pop(k, None)
 
         output = output.view(batch_size, 1, n_ch, hsize, wsize)
         output = output.permute(0, 1, 3, 4, 2).reshape(batch_size, hsize * wsize, -1)
@@ -712,9 +728,13 @@ class DINOXHead(nn.Module):
             ltrb = self.dfl(reg_raw)
 
             # Convert LTRB (in stride units) to CXCYWH (in pixel units)
-            # grid is in grid-cell coords; anchor = (grid + 0.5) * stride
-            anchor_x = (grid[..., 0] + 0.5) * stride
-            anchor_y = (grid[..., 1] + 0.5) * stride
+            # Anchor centers only depend on grid+stride, so cache them
+            if k in self._anchor_cache:
+                anchor_x, anchor_y = self._anchor_cache[k]
+            else:
+                anchor_x = (grid[..., 0] + 0.5) * stride
+                anchor_y = (grid[..., 1] + 0.5) * stride
+                self._anchor_cache[k] = (anchor_x, anchor_y)
 
             left = ltrb[..., 0] * stride
             top = ltrb[..., 1] * stride
@@ -784,6 +804,9 @@ class DINOXHead(nn.Module):
 
         num_fg = 0.0
 
+        # Pre-allocate objectness target (reused per-image, zeroed in-place)
+        tgt_obj = torch.zeros(total_num_anchors, 1, device=outputs.device, dtype=dtype)
+
         for batch_idx in range(outputs.shape[0]):
             num_gt = 0
             if targets is not None and len(targets) > batch_idx:
@@ -805,9 +828,7 @@ class DINOXHead(nn.Module):
                 gt_classes = torch.zeros(0, device=outputs.device)
 
             if num_gt == 0:
-                tgt_obj = torch.zeros(
-                    total_num_anchors, 1, device=outputs.device, dtype=dtype
-                )
+                tgt_obj.zero_()
                 obj_loss += self.bcewithlog_loss(obj_preds[batch_idx], tgt_obj).sum()
                 continue
 
@@ -842,9 +863,7 @@ class DINOXHead(nn.Module):
                         num_fg_img,
                     ) = self._get_assignments(*assigner_args)
             except Exception:
-                tgt_obj = torch.zeros(
-                    total_num_anchors, 1, device=outputs.device, dtype=dtype
-                )
+                tgt_obj.zero_()
                 obj_loss += self.bcewithlog_loss(obj_preds[batch_idx], tgt_obj).sum()
                 continue
 
@@ -925,10 +944,8 @@ class DINOXHead(nn.Module):
                         origin_preds_cat[batch_idx][fg_mask], l1_target
                     ).sum()
 
-            # Objectness loss
-            tgt_obj = torch.zeros(
-                total_num_anchors, 1, device=outputs.device, dtype=dtype
-            )
+            # Objectness loss (reuse pre-allocated tgt_obj)
+            tgt_obj.zero_()
             if num_fg_img > 0:
                 tgt_obj[fg_mask] = 1.0
             obj_loss += self.bcewithlog_loss(obj_preds[batch_idx], tgt_obj).sum()
@@ -1104,40 +1121,43 @@ class DINOXHead(nn.Module):
             pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
 
         # Pairwise classification cost
+        # Use expand() instead of repeat() to avoid O(num_gt * num_anchors * C)
+        # memory allocation — expand() creates a view sharing the same storage.
         gt_cls_per_image = (
             F.one_hot(gt_classes.to(torch.int64), self.num_classes)
             .float()
             .unsqueeze(1)
-            .repeat(1, num_in_boxes_anchor, 1)
+            .expand(-1, num_in_boxes_anchor, -1)
         )
+
+        # Pre-compute sigmoid once on the original tensors, then broadcast
+        # via expand(). Avoids redundant sigmoid on num_gt copies.
+        with torch.cuda.amp.autocast(enabled=False):
+            cls_sigmoid = cls_preds.float().sigmoid()
+            obj_sigmoid = obj_preds.float().sigmoid()
+
+        # Compute combined prediction score once at [num_cand, C] shape,
+        # then expand to [num_gt, num_cand, C] as a view (no allocation).
+        pred_scores_base = cls_sigmoid * obj_sigmoid
+        pred_scores = pred_scores_base.unsqueeze(0).expand(num_gt, -1, -1)
 
         if self.use_soft_labels:
             # RTMDet soft classification cost (SIMO-03)
             # Y_soft = IoU * one_hot_gt
             soft_label = gt_cls_per_image * pair_wise_ious.unsqueeze(-1)
-            # P = cls_sigmoid * obj_sigmoid (combined prediction score)
-            with torch.cuda.amp.autocast(enabled=False):
-                pred_scores = (
-                    cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid()
-                    * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid()
-                )
-                # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
-                scale_factor = (soft_label - pred_scores).abs().pow(2.0)
-                pair_wise_cls_loss = (
-                    F.binary_cross_entropy(pred_scores, soft_label, reduction="none")
-                    * scale_factor
-                ).sum(-1)
+            # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
+            scale_factor = (soft_label - pred_scores).abs().pow(2.0)
+            pair_wise_cls_loss = (
+                F.binary_cross_entropy(pred_scores, soft_label, reduction="none")
+                * scale_factor
+            ).sum(-1)
         else:
-            # Original YOLOX formulation (unchanged)
-            with torch.cuda.amp.autocast(enabled=False):
-                cls_preds_ = (
-                    cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
-                    * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
-                )
-                pair_wise_cls_loss = F.binary_cross_entropy(
-                    cls_preds_.sqrt_(), gt_cls_per_image, reduction="none"
-                ).sum(-1)
-            del cls_preds_
+            # Original YOLOX formulation
+            pair_wise_cls_loss = F.binary_cross_entropy(
+                pred_scores.sqrt(), gt_cls_per_image, reduction="none"
+            ).sum(-1)
+
+        del pred_scores_base, pred_scores
 
         cost = (
             pair_wise_cls_loss
@@ -1176,70 +1196,63 @@ class DINOXHead(nn.Module):
         expanded_strides_per_image = expanded_strides[0]
         x_shifts_per_image = x_shifts[0] * expanded_strides_per_image
         y_shifts_per_image = y_shifts[0] * expanded_strides_per_image
+        # expand() shares storage instead of allocating num_gt copies
         x_centers = (
             (x_shifts_per_image + 0.5 * expanded_strides_per_image)
             .unsqueeze(0)
-            .repeat(num_gt, 1)
+            .expand(num_gt, -1)
         )
         y_centers = (
             (y_shifts_per_image + 0.5 * expanded_strides_per_image)
             .unsqueeze(0)
-            .repeat(num_gt, 1)
+            .expand(num_gt, -1)
         )
 
         # Check 1: inside GT boxes (cxcywh)
         gt_l = (
             (gt_bboxes_per_image[:, 0] - 0.5 * gt_bboxes_per_image[:, 2])
             .unsqueeze(1)
-            .repeat(1, total_num_anchors)
+            .expand(-1, total_num_anchors)
         )
         gt_r = (
             (gt_bboxes_per_image[:, 0] + 0.5 * gt_bboxes_per_image[:, 2])
             .unsqueeze(1)
-            .repeat(1, total_num_anchors)
+            .expand(-1, total_num_anchors)
         )
         gt_t = (
             (gt_bboxes_per_image[:, 1] - 0.5 * gt_bboxes_per_image[:, 3])
             .unsqueeze(1)
-            .repeat(1, total_num_anchors)
+            .expand(-1, total_num_anchors)
         )
         gt_b = (
             (gt_bboxes_per_image[:, 1] + 0.5 * gt_bboxes_per_image[:, 3])
             .unsqueeze(1)
-            .repeat(1, total_num_anchors)
+            .expand(-1, total_num_anchors)
         )
 
         b_l = x_centers - gt_l
         b_r = gt_r - x_centers
         b_t = y_centers - gt_t
         b_b = gt_b - y_centers
-        bbox_deltas = torch.stack([b_l, b_t, b_r, b_b], 2)
-
-        is_in_boxes = bbox_deltas.min(dim=-1).values > 0.0
+        # Boolean & avoids allocating a stacked [N_gt, N_anchor, 4] tensor
+        is_in_boxes = (b_l > 0) & (b_r > 0) & (b_t > 0) & (b_b > 0)
         is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
 
         # Check 2: within center radius
         center_radius = 2.5
-        gt_centers_l = gt_bboxes_per_image[:, 0].unsqueeze(1).repeat(
-            1, total_num_anchors
-        ) - center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_centers_r = gt_bboxes_per_image[:, 0].unsqueeze(1).repeat(
-            1, total_num_anchors
-        ) + center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_centers_t = gt_bboxes_per_image[:, 1].unsqueeze(1).repeat(
-            1, total_num_anchors
-        ) - center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_centers_b = gt_bboxes_per_image[:, 1].unsqueeze(1).repeat(
-            1, total_num_anchors
-        ) + center_radius * expanded_strides_per_image.unsqueeze(0)
+        gt_cx = gt_bboxes_per_image[:, 0].unsqueeze(1)
+        gt_cy = gt_bboxes_per_image[:, 1].unsqueeze(1)
+        stride_row = expanded_strides_per_image.unsqueeze(0)
+        gt_centers_l = gt_cx.expand(-1, total_num_anchors) - center_radius * stride_row
+        gt_centers_r = gt_cx.expand(-1, total_num_anchors) + center_radius * stride_row
+        gt_centers_t = gt_cy.expand(-1, total_num_anchors) - center_radius * stride_row
+        gt_centers_b = gt_cy.expand(-1, total_num_anchors) + center_radius * stride_row
 
         c_l = x_centers - gt_centers_l
         c_r = gt_centers_r - x_centers
         c_t = y_centers - gt_centers_t
         c_b = gt_centers_b - y_centers
-        center_deltas = torch.stack([c_l, c_t, c_r, c_b], 2)
-
-        is_in_centers = center_deltas.min(dim=-1).values > 0.0
+        is_in_centers = (c_l > 0) & (c_r > 0) & (c_t > 0) & (c_b > 0)
         is_in_centers_all = is_in_centers.sum(dim=0) > 0
 
         is_in_boxes_anchor = is_in_boxes_all | is_in_centers_all
@@ -1263,13 +1276,18 @@ class DINOXHead(nn.Module):
         topk_ious, _ = torch.topk(pair_wise_ious, n_candidate_k, dim=1)
         dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1)
 
-        for gt_idx in range(num_gt):
-            _, pos_idx = torch.topk(
-                cost[gt_idx], k=int(dynamic_ks[gt_idx].item()), largest=False
-            )
-            matching_matrix[gt_idx][pos_idx] = 1
+        # Vectorized: topk with max(k) for all GTs, then mask by per-GT k
+        max_k = int(dynamic_ks.max().item())
+        max_k = min(max_k, cost.size(1))
+        _, topk_indices = torch.topk(cost, k=max_k, dim=1, largest=False)
+        # Build mask: position j is valid for GT i if j < dynamic_ks[i]
+        ks_mask = torch.arange(max_k, device=cost.device).unsqueeze(
+            0
+        ) < dynamic_ks.unsqueeze(1)
+        # Scatter only valid positions
+        matching_matrix.scatter_(1, topk_indices, ks_mask.to(torch.uint8))
 
-        del topk_ious, dynamic_ks, pos_idx
+        del topk_ious, dynamic_ks, topk_indices, ks_mask
 
         anchor_matching_gt = matching_matrix.sum(0)
         if (anchor_matching_gt > 1).sum() > 0:
@@ -1280,10 +1298,11 @@ class DINOXHead(nn.Module):
         fg_mask_inboxes = matching_matrix.sum(0) > 0
         num_fg_result = int(fg_mask_inboxes.sum().item())
 
-        fg_mask_new = fg_mask.clone()
+        # Clone fg_mask before modification — autograd tracks this tensor
+        # through the computation graph, so in-place ops break backward().
+        fg_mask = fg_mask.clone()
         fg_idxs = torch.nonzero(fg_mask, as_tuple=True)[0]
-        fg_mask_new[fg_idxs[~fg_mask_inboxes]] = False
-        fg_mask = fg_mask_new
+        fg_mask[fg_idxs[~fg_mask_inboxes]] = False
 
         matched_gt_inds = matching_matrix[:, fg_mask_inboxes].argmax(0)
         gt_matched_classes = gt_classes[matched_gt_inds]
