@@ -1,0 +1,25 @@
+# DINO-X Small COCO Training on 2x A100 — Matching Official YOLOX Repo
+# Target: reproduce official YOLOX-S COCO mAP (40.5% mAP@50:95)
+# 2x A100: bs=16/GPU x 2 GPUs = 32, accum=2 -> 64 effective batch size
+
+defaults:
+  - task: train
+  - models: dinox_s_baseline
+  - data: coco_dinox_a100_4x
+  - trainer: gpu_a100_2x
+  - callbacks: default
+  - logging: wandb
+  - _self_
+
+# Global Parameters
+input_height: 640
+input_width: 640
+log_level: INFO
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/dinox_s_coco_2xa100_${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/dinox_s_coco_2xa100_${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

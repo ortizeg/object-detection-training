@@ -65,3 +65,8 @@ post_mosaic_transforms:
 mosaic:
   enabled: true
   mixup_prob: 1.0
+  # RTMDet-style cached mosaic: companion images served from memory cache
+  # instead of disk, reducing I/O from 6 reads/sample to 1.
+  use_cache: true
+  max_cached_images: 40
+  random_pop: true
