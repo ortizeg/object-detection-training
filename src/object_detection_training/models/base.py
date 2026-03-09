@@ -374,6 +374,10 @@ class BaseDetectionModel(L.LightningModule):
         images, targets = batch
         outputs = self(images, targets)
 
+        batch_size = (
+            images.tensors.shape[0] if hasattr(images, "tensors") else images.shape[0]
+        )
+
         # Individual loss components for logging (scalars only)
         loss_components = {
             k: v for k, v in outputs.items() if "loss" in k.lower() and v.numel() == 1
@@ -394,9 +398,21 @@ class BaseDetectionModel(L.LightningModule):
         # Log losses
         for name, value in loss_components.items():
             self.log(
-                f"train/{name}", value, on_step=True, on_epoch=True, prog_bar=False
+                f"train/{name}",
+                value,
+                on_step=True,
+                on_epoch=True,
+                prog_bar=False,
+                batch_size=batch_size,
             )
-        self.log("train/loss", total_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(
+            "train/loss",
+            total_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
 
         return torch.as_tensor(total_loss)
 
@@ -427,14 +443,25 @@ class BaseDetectionModel(L.LightningModule):
                 sum(loss_components.values()) if loss_components else torch.tensor(0.0)
             )
 
+        batch_size = (
+            images.tensors.shape[0] if hasattr(images, "tensors") else images.shape[0]
+        )
+
         if total_loss is not None:
             self.log(
-                "val/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True
+                "val/loss",
+                total_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                batch_size=batch_size,
             )
             for name, value in loss_components.items():
                 if not name.startswith("val/"):
                     name = f"val/{name}"
-                self.log(name, value, on_step=False, on_epoch=True)
+                self.log(
+                    name, value, on_step=False, on_epoch=True, batch_size=batch_size
+                )
 
         # Convert to predictions format
         preds = self.get_predictions(outputs, confidence_threshold=0.0)

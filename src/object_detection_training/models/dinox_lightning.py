@@ -509,6 +509,10 @@ class DINOXLightningModel(BaseDetectionModel):
         images, targets = batch
         outputs = self(images, targets)
 
+        batch_size = (
+            images.tensors.shape[0] if hasattr(images, "tensors") else images.shape[0]
+        )
+
         loss = outputs["total_loss"]
         iou_loss = outputs["iou_loss"]
         obj_loss = outputs["conf_loss"]
@@ -532,20 +536,50 @@ class DINOXLightningModel(BaseDetectionModel):
                     on_step=True,
                     on_epoch=True,
                     prog_bar=False,
+                    batch_size=batch_size,
                 )
 
         # Log losses
-        self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         self.log(
-            "train/iou_loss", iou_loss, on_step=True, on_epoch=True, prog_bar=False
+            "train/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
         )
         self.log(
-            "train/obj_loss", obj_loss, on_step=True, on_epoch=True, prog_bar=False
+            "train/iou_loss",
+            iou_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=batch_size,
         )
         self.log(
-            "train/cls_loss", cls_loss, on_step=True, on_epoch=True, prog_bar=False
+            "train/obj_loss",
+            obj_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=batch_size,
         )
-        self.log("train/l1_loss", l1_loss, on_step=True, on_epoch=True, prog_bar=False)
+        self.log(
+            "train/cls_loss",
+            cls_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=batch_size,
+        )
+        self.log(
+            "train/l1_loss",
+            l1_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=batch_size,
+        )
 
         # Log DFL loss if present
         if "dfl_loss" in outputs:
@@ -555,6 +589,7 @@ class DINOXLightningModel(BaseDetectionModel):
                 on_step=True,
                 on_epoch=True,
                 prog_bar=False,
+                batch_size=batch_size,
             )
 
         # Log num_fg
@@ -563,7 +598,14 @@ class DINOXLightningModel(BaseDetectionModel):
             num_fg_val = num_fg.float().mean()
         else:
             num_fg_val = float(num_fg)
-        self.log("train/num_fg", num_fg_val, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(
+            "train/num_fg",
+            num_fg_val,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
 
         return torch.as_tensor(loss)
 
@@ -663,6 +705,10 @@ class DINOXLightningModel(BaseDetectionModel):
         images, targets = batch
         outputs = self(images, targets)
 
+        batch_size = (
+            images.tensors.shape[0] if hasattr(images, "tensors") else images.shape[0]
+        )
+
         # Log losses
         loss_components = {
             k: v for k, v in outputs.items() if "loss" in k.lower() and v.numel() == 1
@@ -677,10 +723,19 @@ class DINOXLightningModel(BaseDetectionModel):
             total_loss = (
                 sum(loss_components.values()) if loss_components else torch.tensor(0.0)
             )
-        self.log("val/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "val/loss",
+            total_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
         for name, value in loss_components.items():
             log_name = name if name.startswith("val/") else f"val/{name}"
-            self.log(log_name, value, on_step=False, on_epoch=True)
+            self.log(
+                log_name, value, on_step=False, on_epoch=True, batch_size=batch_size
+            )
 
         # Predictions normalized [0,1] XYXY
         preds = self.get_predictions(outputs, confidence_threshold=0.0)
