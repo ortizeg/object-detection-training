@@ -81,8 +81,11 @@ class COCODetectionDataset(DetectionDataset):
         ]
 
         for candidate in candidates:
-            if candidate.exists():
-                return candidate
+            try:
+                if candidate.exists():
+                    return candidate
+            except PermissionError:
+                continue
 
         raise FileNotFoundError(
             f"No COCO annotation file found in {self.root_path}. "
@@ -92,8 +95,11 @@ class COCODetectionDataset(DetectionDataset):
     def _find_img_folder(self) -> Path:
         """Locate the images folder."""
         images_dir = self.root_path / "images"
-        if images_dir.exists() and images_dir.is_dir():
-            return images_dir
+        try:
+            if images_dir.exists() and images_dir.is_dir():
+                return images_dir
+        except PermissionError:
+            pass
         return self.root_path
 
     def load_annotations(self) -> tuple[pd.DataFrame, pd.DataFrame, dict[int, str]]:

@@ -173,14 +173,24 @@ class COCODataModule(L.LightningDataModule):
             raise RuntimeError("Failed to load class_names from metadata")
         return self._class_names
 
+    def _find_annotation_file(self) -> Path | None:
+        """Find the COCO annotation file, handling GCS FUSE PermissionError."""
+        candidates = [
+            self.train_path / "_annotations.coco.json",
+            self.train_path / "annotations" / "instances_train2017.json",
+        ]
+        for candidate in candidates:
+            try:
+                if candidate.exists():
+                    return candidate
+            except PermissionError:
+                continue
+        return None
+
     def _load_metadata(self) -> None:
         """Loads metadata from training annotation file."""
-        ann_file = self.train_path / "_annotations.coco.json"
-        if not ann_file.exists():
-            # Fallback to images dir if shared structure
-            ann_file = self.train_path / "annotations" / "instances_train2017.json"
-
-        if not ann_file.exists():
+        ann_file = self._find_annotation_file()
+        if ann_file is None:
             logger.error(f"Annotation file not found in {self.train_path}")
             self._num_classes = 1  # Default fallback
             self._class_names = ["object"]
@@ -228,8 +238,11 @@ class COCODataModule(L.LightningDataModule):
     def _get_img_folder(self, path: Path) -> Path:
         """Helper to find image folder (either path itself or path/images)."""
         images_dir = path / "images"
-        if images_dir.exists() and images_dir.is_dir():
-            return images_dir
+        try:
+            if images_dir.exists() and images_dir.is_dir():
+                return images_dir
+        except PermissionError:
+            pass
         return path
 
     def _create_detection_dataset(self, path: Path, split: str) -> COCODetectionDataset:
