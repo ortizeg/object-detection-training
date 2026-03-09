@@ -370,7 +370,7 @@ class DetectionDataset(
             areas = torch.zeros((0,), dtype=torch.float32)
             iscrowd = torch.zeros((0,), dtype=torch.int64)
         else:
-            bbox = anns_df[["bbox_x", "bbox_y", "bbox_w", "bbox_h"]].values
+            bbox = anns_df[["bbox_x", "bbox_y", "bbox_w", "bbox_h"]].to_numpy()
             x1 = bbox[:, 0]
             y1 = bbox[:, 1]
             x2 = bbox[:, 0] + bbox[:, 2]
