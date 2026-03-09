@@ -279,7 +279,7 @@ class COCODataModule(L.LightningDataModule):
 
         # Optionally wrap with CacheDataset for fast IO
         if self.use_cache:
-            base_dataset = CacheDataset(  # type: ignore[assignment]
+            base_dataset = CacheDataset(
                 self._train_detection_dataset,
                 cache_type=self.cache_type,
             )
@@ -300,7 +300,7 @@ class COCODataModule(L.LightningDataModule):
             )
         elif self.use_cache:
             # Cache without mosaic: apply train transforms after cache read
-            base_dataset.transforms = self.train_transforms  # type: ignore[union-attr]
+            base_dataset.transforms = self.train_transforms
             train_dataset = base_dataset  # type: ignore[assignment]
         else:
             self._train_detection_dataset.transforms = self.train_transforms

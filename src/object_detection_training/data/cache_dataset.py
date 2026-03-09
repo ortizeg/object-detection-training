@@ -50,7 +50,9 @@ _HEADER_SIZE = 8  # two uint32 lengths
 # ---------------------------------------------------------------------------
 # Serialization helpers
 # ---------------------------------------------------------------------------
-def _serialize_sample(img: np.ndarray, target: DetectionTarget) -> tuple[bytes, bytes]:
+def _serialize_sample(
+    img: npt.NDArray[np.uint8], target: DetectionTarget
+) -> tuple[bytes, bytes]:
     """Serialize image (numpy) and target (torch) to bytes."""
     img_buf = io.BytesIO()
     np.save(img_buf, img)
@@ -65,7 +67,7 @@ def _serialize_sample(img: np.ndarray, target: DetectionTarget) -> tuple[bytes, 
 
 def _deserialize_sample(
     img_bytes: bytes, target_bytes: bytes
-) -> tuple[np.ndarray, DetectionTarget]:
+) -> tuple[npt.NDArray[np.uint8], DetectionTarget]:
     """Deserialize image and target from bytes."""
     img = np.load(io.BytesIO(img_bytes))
     target: DetectionTarget = torch.load(io.BytesIO(target_bytes), weights_only=False)
@@ -80,12 +82,12 @@ def _coerce_to_pil(img: Image.Image | torch.Tensor) -> Image.Image:
     return img
 
 
-def _pil_to_numpy(img: Image.Image) -> np.ndarray:
+def _pil_to_numpy(img: Image.Image) -> npt.NDArray[np.uint8]:
     """Convert PIL Image to numpy array (H, W, 3) uint8."""
     return np.asarray(img, dtype=np.uint8)
 
 
-def _numpy_to_pil(arr: np.ndarray) -> Image.Image:
+def _numpy_to_pil(arr: npt.NDArray[np.uint8]) -> Image.Image:
     """Convert numpy array (H, W, 3) to PIL Image."""
     return Image.fromarray(arr)
 
@@ -375,7 +377,9 @@ class CacheDataset(
             img = _coerce_to_pil(img)
             return _pil_to_numpy(img), target
 
-        results: list[tuple[np.ndarray, DetectionTarget] | None] = [None] * total
+        results: list[tuple[npt.NDArray[np.uint8], DetectionTarget] | None] = [
+            None
+        ] * total
         pool = ThreadPool(num_threads)
         loaded = pool.imap(_load_sample, range(total))
 
