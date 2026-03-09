@@ -501,9 +501,9 @@ class BaseDetectionModel(L.LightningModule):
         )
 
         # Log main metrics
-        self.log("val/mAP", result.map50_95, prog_bar=True)
-        self.log("val/mAP_50", result.map50, prog_bar=True)
-        self.log("val/mAP_75", result.map75)
+        self.log("val/mAP", result.map50_95, prog_bar=True, sync_dist=True)
+        self.log("val/mAP_50", result.map50, prog_bar=True, sync_dist=True)
+        self.log("val/mAP_75", result.map75, sync_dist=True)
 
         # Log per-class mAP if available
         class_names: list[str] | None = getattr(
@@ -518,12 +518,12 @@ class BaseDetectionModel(L.LightningModule):
             }
             for class_id, name in enumerate(class_names):
                 ap = class_ap_map.get(class_id, 0.0)
-                self.log(f"val/mAP_{name}", ap)
+                self.log(f"val/mAP_{name}", ap, sync_dist=True)
         elif result.ap_per_class is not None:
             for i, class_id in enumerate(result.matched_classes):
                 name = f"class_{class_id}"
                 ap = float(result.ap_per_class[i].mean())
-                self.log(f"val/mAP_{name}", ap)
+                self.log(f"val/mAP_{name}", ap, sync_dist=True)
 
         self.val_map.reset()
 
@@ -598,9 +598,9 @@ class BaseDetectionModel(L.LightningModule):
             "map_per_class": result.ap_per_class,
         }
 
-        self.log("test/mAP", result.map50_95)
-        self.log("test/mAP_50", result.map50)
-        self.log("test/mAP_75", result.map75)
+        self.log("test/mAP", result.map50_95, sync_dist=True)
+        self.log("test/mAP_50", result.map50, sync_dist=True)
+        self.log("test/mAP_75", result.map75, sync_dist=True)
 
         class_names: list[str] | None = getattr(
             getattr(self.trainer, "datamodule", None), "class_names", None
@@ -614,12 +614,12 @@ class BaseDetectionModel(L.LightningModule):
             }
             for class_id, name in enumerate(class_names):
                 ap = class_ap_map.get(class_id, 0.0)
-                self.log(f"test/mAP_{name}", ap)
+                self.log(f"test/mAP_{name}", ap, sync_dist=True)
         elif result.ap_per_class is not None:
             for i, class_id in enumerate(result.matched_classes):
                 name = f"class_{class_id}"
                 ap = float(result.ap_per_class[i].mean())
-                self.log(f"test/mAP_{name}", ap)
+                self.log(f"test/mAP_{name}", ap, sync_dist=True)
 
         self.test_map.reset()
 
