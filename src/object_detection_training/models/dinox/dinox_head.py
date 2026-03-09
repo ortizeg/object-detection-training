@@ -1277,13 +1277,18 @@ class DINOXHead(nn.Module):
         topk_ious, _ = torch.topk(pair_wise_ious, n_candidate_k, dim=1)
         dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1)
 
-        for gt_idx in range(num_gt):
-            _, pos_idx = torch.topk(
-                cost[gt_idx], k=int(dynamic_ks[gt_idx].item()), largest=False
-            )
-            matching_matrix[gt_idx][pos_idx] = 1
+        # Vectorized: topk with max(k) for all GTs, then mask by per-GT k
+        max_k = int(dynamic_ks.max().item())
+        max_k = min(max_k, cost.size(1))
+        _, topk_indices = torch.topk(cost, k=max_k, dim=1, largest=False)
+        # Build mask: position j is valid for GT i if j < dynamic_ks[i]
+        ks_mask = torch.arange(max_k, device=cost.device).unsqueeze(
+            0
+        ) < dynamic_ks.unsqueeze(1)
+        # Scatter only valid positions
+        matching_matrix.scatter_(1, topk_indices, ks_mask.to(torch.uint8))
 
-        del topk_ious, dynamic_ks, pos_idx
+        del topk_ious, dynamic_ks, topk_indices, ks_mask
 
         anchor_matching_gt = matching_matrix.sum(0)
         if (anchor_matching_gt > 1).sum() > 0:
