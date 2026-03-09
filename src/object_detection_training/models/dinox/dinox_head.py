@@ -392,6 +392,9 @@ class DINOXHead(nn.Module):
 
         # Grid cache (training path — _get_output_and_grid)
         self.grids: list[torch.Tensor] = [torch.zeros(1)] * len(in_channels)
+        # DFL anchor center cache (training path — _get_output_and_grid)
+        # Keyed by FPN level k → (anchor_x, anchor_y) in pixel coords
+        self._anchor_cache: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
         # Grid/stride cache (inference path — _decode_outputs)
         # Keyed by (hsize, wsize, stride) → (grid, strides) tensors
         self._decode_grid_cache: dict[
@@ -699,7 +702,8 @@ class DINOXHead(nn.Module):
         n_ch = reg_ch + 1 + self.num_classes
         hsize, wsize = output.shape[-2:]
 
-        if grid.shape[2:4] != output.shape[2:4]:
+        grid_changed = grid.shape[2:4] != output.shape[2:4]
+        if grid_changed:
             yv, xv = _meshgrid(torch.arange(hsize), torch.arange(wsize))
             grid = (
                 torch.stack((xv, yv), 2)
@@ -707,6 +711,8 @@ class DINOXHead(nn.Module):
                 .to(device=output.device, dtype=dtype)
             )
             self.grids[k] = grid
+            # Invalidate anchor cache for this level
+            self._anchor_cache.pop(k, None)
 
         output = output.view(batch_size, 1, n_ch, hsize, wsize)
         output = output.permute(0, 1, 3, 4, 2).reshape(batch_size, hsize * wsize, -1)
@@ -722,9 +728,13 @@ class DINOXHead(nn.Module):
             ltrb = self.dfl(reg_raw)
 
             # Convert LTRB (in stride units) to CXCYWH (in pixel units)
-            # grid is in grid-cell coords; anchor = (grid + 0.5) * stride
-            anchor_x = (grid[..., 0] + 0.5) * stride
-            anchor_y = (grid[..., 1] + 0.5) * stride
+            # Anchor centers only depend on grid+stride, so cache them
+            if k in self._anchor_cache:
+                anchor_x, anchor_y = self._anchor_cache[k]
+            else:
+                anchor_x = (grid[..., 0] + 0.5) * stride
+                anchor_y = (grid[..., 1] + 0.5) * stride
+                self._anchor_cache[k] = (anchor_x, anchor_y)
 
             left = ltrb[..., 0] * stride
             top = ltrb[..., 1] * stride
