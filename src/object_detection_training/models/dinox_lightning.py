@@ -740,11 +740,17 @@ class DINOXLightningModel(BaseDetectionModel):
             on_epoch=True,
             prog_bar=True,
             batch_size=batch_size,
+            sync_dist=True,
         )
         for name, value in loss_components.items():
             log_name = name if name.startswith("val/") else f"val/{name}"
             self.log(
-                log_name, value, on_step=False, on_epoch=True, batch_size=batch_size
+                log_name,
+                value,
+                on_step=False,
+                on_epoch=True,
+                batch_size=batch_size,
+                sync_dist=True,
             )
 
         # Predictions normalized [0,1] XYXY

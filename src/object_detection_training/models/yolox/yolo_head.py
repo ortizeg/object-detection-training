@@ -505,7 +505,7 @@ class YOLOXHead(nn.Module):
             .repeat(1, num_in_boxes_anchor, 1)
         )
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             cls_preds_ = (
                 cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
                 * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()

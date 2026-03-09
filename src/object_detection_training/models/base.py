@@ -455,12 +455,18 @@ class BaseDetectionModel(L.LightningModule):
                 on_epoch=True,
                 prog_bar=True,
                 batch_size=batch_size,
+                sync_dist=True,
             )
             for name, value in loss_components.items():
                 if not name.startswith("val/"):
                     name = f"val/{name}"
                 self.log(
-                    name, value, on_step=False, on_epoch=True, batch_size=batch_size
+                    name,
+                    value,
+                    on_step=False,
+                    on_epoch=True,
+                    batch_size=batch_size,
+                    sync_dist=True,
                 )
 
         # Convert to predictions format

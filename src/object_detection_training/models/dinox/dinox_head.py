@@ -1141,7 +1141,7 @@ class DINOXHead(nn.Module):
 
         # Pre-compute sigmoid once on the original tensors, then broadcast
         # via expand(). Avoids redundant sigmoid on num_gt copies.
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             cls_sigmoid = cls_preds.float().sigmoid()
             obj_sigmoid = obj_preds.float().sigmoid()
 
