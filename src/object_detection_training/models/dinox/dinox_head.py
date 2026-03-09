@@ -1104,39 +1104,43 @@ class DINOXHead(nn.Module):
             pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
 
         # Pairwise classification cost
+        # Use expand() instead of repeat() to avoid O(num_gt * num_anchors * C)
+        # memory allocation — expand() creates a view sharing the same storage.
         gt_cls_per_image = (
             F.one_hot(gt_classes.to(torch.int64), self.num_classes)
             .float()
             .unsqueeze(1)
-            .repeat(1, num_in_boxes_anchor, 1)
+            .expand(-1, num_in_boxes_anchor, -1)
         )
+
+        # Pre-compute sigmoid once on the original tensors, then broadcast
+        # via expand(). Avoids redundant sigmoid on num_gt copies.
+        with torch.cuda.amp.autocast(enabled=False):
+            cls_sigmoid = cls_preds.float().sigmoid()
+            obj_sigmoid = obj_preds.float().sigmoid()
 
         if self.use_soft_labels:
             # RTMDet soft classification cost (SIMO-03)
             # Y_soft = IoU * one_hot_gt
             soft_label = gt_cls_per_image * pair_wise_ious.unsqueeze(-1)
             # P = cls_sigmoid * obj_sigmoid (combined prediction score)
-            with torch.cuda.amp.autocast(enabled=False):
-                pred_scores = (
-                    cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid()
-                    * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid()
-                )
-                # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
-                scale_factor = (soft_label - pred_scores).abs().pow(2.0)
-                pair_wise_cls_loss = (
-                    F.binary_cross_entropy(pred_scores, soft_label, reduction="none")
-                    * scale_factor
-                ).sum(-1)
+            pred_scores = cls_sigmoid.unsqueeze(0).expand(
+                num_gt, -1, -1
+            ) * obj_sigmoid.unsqueeze(0).expand(num_gt, -1, -1)
+            # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
+            scale_factor = (soft_label - pred_scores).abs().pow(2.0)
+            pair_wise_cls_loss = (
+                F.binary_cross_entropy(pred_scores, soft_label, reduction="none")
+                * scale_factor
+            ).sum(-1)
         else:
-            # Original YOLOX formulation (unchanged)
-            with torch.cuda.amp.autocast(enabled=False):
-                cls_preds_ = (
-                    cls_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
-                    * obj_preds.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
-                )
-                pair_wise_cls_loss = F.binary_cross_entropy(
-                    cls_preds_.sqrt_(), gt_cls_per_image, reduction="none"
-                ).sum(-1)
+            # Original YOLOX formulation
+            cls_preds_ = cls_sigmoid.unsqueeze(0).expand(
+                num_gt, -1, -1
+            ) * obj_sigmoid.unsqueeze(0).expand(num_gt, -1, -1)
+            pair_wise_cls_loss = F.binary_cross_entropy(
+                cls_preds_.sqrt(), gt_cls_per_image, reduction="none"
+            ).sum(-1)
             del cls_preds_
 
         cost = (
