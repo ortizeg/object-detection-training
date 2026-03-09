@@ -262,12 +262,18 @@ class CacheDataset(
         self._cache_dir: Path | None = None
         self._shards: list[BinaryShard] = []
         self._write_shard: BinaryShard | None = None
+        # Per-worker write shards (lazily created after fork)
+        self._worker_shards: dict[int, BinaryShard] = {}
+        self._rank: int = 0
 
         if self._cache_type == "ram":
             self._build_ram_cache()
         else:
             if cache_dir is None:
-                cache_dir = dataset.root_path / ".cache" / dataset.split
+                # Use local storage for cache (not GCS FUSE mount).
+                # /tmp is local SSD on cloud VMs — fast and no cross-job
+                # contention since /tmp is per-VM.
+                cache_dir = Path("/tmp") / "dataset_cache" / dataset.split  # noqa: S108
             self._cache_dir = Path(cache_dir)
             self._cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -280,14 +286,16 @@ class CacheDataset(
     # Shard management
     # ------------------------------------------------------------------
     def _init_shards(self) -> None:
-        """Discover existing shards and set up this rank's write shard."""
+        """Discover existing shards and set up read access.
+
+        Write shards are created lazily per DataLoader worker in
+        ``_get_worker_write_shard`` to avoid cross-worker file contention.
+        Each worker gets its own shard: ``shard_{rank}_w{worker_id}.bin``.
+        """
         if self._cache_dir is None:
             return
 
-        # Determine this rank's shard ID
-        rank = int(os.environ.get("LOCAL_RANK", "0"))
-        write_bin = self._cache_dir / f"shard_{rank:03d}.bin"
-        write_idx = self._cache_dir / f"shard_{rank:03d}.idx"
+        self._rank = int(os.environ.get("LOCAL_RANK", "0"))
 
         # Discover all existing shards (from this and previous runs)
         self._shards = []
@@ -296,23 +304,35 @@ class CacheDataset(
             if shard_bin.exists():
                 shard = BinaryShard(shard_bin, idx_file)
                 self._shards.append(shard)
-                # Reuse as write shard if it matches this rank
-                if shard_bin == write_bin:
-                    self._write_shard = shard
 
-        # If this rank's shard doesn't exist yet, create it
-        if self._write_shard is None:
-            self._write_shard = BinaryShard(write_bin, write_idx)
-            self._shards.append(self._write_shard)
-
-        # Build unified index: sample_idx -> shard reference
         total_cached = sum(len(s) for s in self._shards)
         total = len(self._dataset)
         logger.info(
             f"Disk cache: {self._cache_dir} "
             f"({total_cached}/{total} samples across {len(self._shards)} shards, "
-            f"writing to {write_bin.stem})"
+            f"rank={self._rank})"
         )
+
+    def _get_worker_write_shard(self) -> BinaryShard:
+        """Get or create a write shard for the current DataLoader worker.
+
+        Each worker gets its own shard file so all workers can write in
+        parallel with zero contention. Full cache in 1 epoch.
+        """
+        worker_info = torch.utils.data.get_worker_info()
+        worker_id = worker_info.id if worker_info is not None else 0
+
+        if worker_id not in self._worker_shards:
+            if self._cache_dir is None:
+                raise RuntimeError("Cache dir not set")
+            write_bin = self._cache_dir / f"shard_{self._rank:03d}_w{worker_id:02d}.bin"
+            write_idx = self._cache_dir / f"shard_{self._rank:03d}_w{worker_id:02d}.idx"
+            shard = BinaryShard(write_bin, write_idx)
+            self._worker_shards[worker_id] = shard
+            # Also add to read shards list
+            self._shards.append(shard)
+
+        return self._worker_shards[worker_id]
 
     def _find_in_shards(self, sample_idx: int) -> BinaryShard | None:
         """Find which shard contains a given sample index."""
@@ -410,9 +430,11 @@ class CacheDataset(
     ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
         """Lazy write-through sharded disk cache.
 
-        On cache hit: seek + read from the shard that has this sample.
-        On cache miss: read from underlying dataset, write to this rank's
-        shard, return the sample. By end of epoch 1, all samples are cached.
+        On cache hit: seek + read from any shard that has this sample.
+        On cache miss: read from underlying dataset, write to this worker's
+        private shard. Each DataLoader worker writes to its own shard file
+        (``shard_{rank}_w{worker_id}.bin``), so all workers write in parallel
+        with zero contention. Full cache in 1 epoch.
         """
         shard = self._find_in_shards(idx)
 
@@ -431,10 +453,10 @@ class CacheDataset(
             finally:
                 self._dataset.transforms = saved_transforms
 
-            # Write to this rank's shard
-            if self._write_shard is not None:
-                img_bytes, target_bytes = _serialize_sample(img_arr, target)
-                self._write_shard.write(idx, img_bytes, target_bytes)
+            # Write to this worker's private shard (no contention)
+            write_shard = self._get_worker_write_shard()
+            img_bytes, target_bytes = _serialize_sample(img_arr, target)
+            write_shard.write(idx, img_bytes, target_bytes)
 
         img = _numpy_to_pil(img_arr)
         if self.transforms is not None:
