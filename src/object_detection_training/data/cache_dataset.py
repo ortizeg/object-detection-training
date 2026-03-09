@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
+import numpy.typing as npt
 import psutil  # type: ignore[import-untyped]
 import torch
 from loguru import logger
@@ -156,7 +157,9 @@ class CacheDataset(
             self.num_threads = num_threads
 
         # --- RAM cache state ---
-        self._ram_cache: list[tuple[np.ndarray, DetectionTarget] | None] | None = None
+        self._ram_cache: (
+            list[tuple[npt.NDArray[np.uint8], DetectionTarget] | None] | None
+        ) = None
 
         # --- Disk cache state ---
         self._db_path: Path | None = None
@@ -189,7 +192,7 @@ class CacheDataset(
         total = len(self._dataset)
         logger.info(f"Building RAM cache: {total} samples (threads={self.num_threads})")
 
-        def _load_sample(idx: int) -> tuple[np.ndarray, DetectionTarget]:
+        def _load_sample(idx: int) -> tuple[npt.NDArray[np.uint8], DetectionTarget]:
             img, target = self._dataset[idx]
             img = _coerce_to_pil(img)
             # Store as uint8 numpy array — contiguous memory that's trivially
