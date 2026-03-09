@@ -1287,10 +1287,9 @@ class DINOXHead(nn.Module):
         fg_mask_inboxes = matching_matrix.sum(0) > 0
         num_fg_result = int(fg_mask_inboxes.sum().item())
 
-        fg_mask_new = fg_mask.clone()
+        # Modify fg_mask in-place (no clone needed — caller doesn't reuse it)
         fg_idxs = torch.nonzero(fg_mask, as_tuple=True)[0]
-        fg_mask_new[fg_idxs[~fg_mask_inboxes]] = False
-        fg_mask = fg_mask_new
+        fg_mask[fg_idxs[~fg_mask_inboxes]] = False
 
         matched_gt_inds = matching_matrix[:, fg_mask_inboxes].argmax(0)
         gt_matched_classes = gt_classes[matched_gt_inds]
