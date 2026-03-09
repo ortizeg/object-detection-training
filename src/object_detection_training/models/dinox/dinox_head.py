@@ -390,8 +390,13 @@ class DINOXHead(nn.Module):
         self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
         self.iou_loss = _IOULoss(reduction="none", loss_type=iou_loss_type)
 
-        # Grid cache
+        # Grid cache (training path — _get_output_and_grid)
         self.grids: list[torch.Tensor] = [torch.zeros(1)] * len(in_channels)
+        # Grid/stride cache (inference path — _decode_outputs)
+        # Keyed by (hsize, wsize, stride) → (grid, strides) tensors
+        self._decode_grid_cache: dict[
+            tuple[int, int, int], tuple[torch.Tensor, torch.Tensor]
+        ] = {}
 
         logger.debug(
             f"DINOXHead: num_classes={num_classes}, use_dfl={use_dfl}, "
@@ -517,11 +522,16 @@ class DINOXHead(nn.Module):
         strides_list: list[torch.Tensor] = []
 
         for (hsize, wsize), stride_val in zip(hw_sizes, self.strides, strict=True):
-            yv, xv = _meshgrid(torch.arange(hsize), torch.arange(wsize))
-            grid = torch.stack((xv, yv), 2).view(1, -1, 2)
+            cache_key = (hsize, wsize, stride_val)
+            if cache_key in self._decode_grid_cache:
+                grid, stride_t = self._decode_grid_cache[cache_key]
+            else:
+                yv, xv = _meshgrid(torch.arange(hsize), torch.arange(wsize))
+                grid = torch.stack((xv, yv), 2).view(1, -1, 2)
+                stride_t = torch.full((*grid.shape[:2], 1), stride_val)
+                self._decode_grid_cache[cache_key] = (grid, stride_t)
             grids.append(grid)
-            shape = grid.shape[:2]
-            strides_list.append(torch.full((*shape, 1), stride_val))
+            strides_list.append(stride_t)
 
         grids_cat = torch.cat(grids, dim=1).to(device=outputs.device, dtype=dtype)
         strides_cat = torch.cat(strides_list, dim=1).to(
