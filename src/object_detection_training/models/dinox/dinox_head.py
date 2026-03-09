@@ -1235,9 +1235,8 @@ class DINOXHead(nn.Module):
         b_r = gt_r - x_centers
         b_t = y_centers - gt_t
         b_b = gt_b - y_centers
-        bbox_deltas = torch.stack([b_l, b_t, b_r, b_b], 2)
-
-        is_in_boxes = bbox_deltas.min(dim=-1).values > 0.0
+        # Boolean & avoids allocating a stacked [N_gt, N_anchor, 4] tensor
+        is_in_boxes = (b_l > 0) & (b_r > 0) & (b_t > 0) & (b_b > 0)
         is_in_boxes_all = is_in_boxes.sum(dim=0) > 0
 
         # Check 2: within center radius
@@ -1254,9 +1253,7 @@ class DINOXHead(nn.Module):
         c_r = gt_centers_r - x_centers
         c_t = y_centers - gt_centers_t
         c_b = gt_centers_b - y_centers
-        center_deltas = torch.stack([c_l, c_t, c_r, c_b], 2)
-
-        is_in_centers = center_deltas.min(dim=-1).values > 0.0
+        is_in_centers = (c_l > 0) & (c_r > 0) & (c_t > 0) & (c_b > 0)
         is_in_centers_all = is_in_centers.sum(dim=0) > 0
 
         is_in_boxes_anchor = is_in_boxes_all | is_in_centers_all
