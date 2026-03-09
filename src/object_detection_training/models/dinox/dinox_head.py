@@ -1136,14 +1136,15 @@ class DINOXHead(nn.Module):
             cls_sigmoid = cls_preds.float().sigmoid()
             obj_sigmoid = obj_preds.float().sigmoid()
 
+        # Compute combined prediction score once at [num_cand, C] shape,
+        # then expand to [num_gt, num_cand, C] as a view (no allocation).
+        pred_scores_base = cls_sigmoid * obj_sigmoid
+        pred_scores = pred_scores_base.unsqueeze(0).expand(num_gt, -1, -1)
+
         if self.use_soft_labels:
             # RTMDet soft classification cost (SIMO-03)
             # Y_soft = IoU * one_hot_gt
             soft_label = gt_cls_per_image * pair_wise_ious.unsqueeze(-1)
-            # P = cls_sigmoid * obj_sigmoid (combined prediction score)
-            pred_scores = cls_sigmoid.unsqueeze(0).expand(
-                num_gt, -1, -1
-            ) * obj_sigmoid.unsqueeze(0).expand(num_gt, -1, -1)
             # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
             scale_factor = (soft_label - pred_scores).abs().pow(2.0)
             pair_wise_cls_loss = (
@@ -1152,13 +1153,11 @@ class DINOXHead(nn.Module):
             ).sum(-1)
         else:
             # Original YOLOX formulation
-            cls_preds_ = cls_sigmoid.unsqueeze(0).expand(
-                num_gt, -1, -1
-            ) * obj_sigmoid.unsqueeze(0).expand(num_gt, -1, -1)
             pair_wise_cls_loss = F.binary_cross_entropy(
-                cls_preds_.sqrt(), gt_cls_per_image, reduction="none"
+                pred_scores.sqrt(), gt_cls_per_image, reduction="none"
             ).sum(-1)
-            del cls_preds_
+
+        del pred_scores_base, pred_scores
 
         cost = (
             pair_wise_cls_loss
