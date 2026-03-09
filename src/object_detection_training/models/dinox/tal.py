@@ -265,10 +265,9 @@ class TaskAlignedAssigner:
         topk = min(self.topk, num_candidates)
         _, topk_idxs = align_metric.topk(topk, dim=1)
 
-        # Build matching matrix
+        # Build matching matrix (vectorized scatter replaces Python loop)
         matching_matrix = torch.zeros_like(align_metric, dtype=torch.uint8)
-        for gt_idx in range(num_gt):
-            matching_matrix[gt_idx, topk_idxs[gt_idx]] = 1
+        matching_matrix.scatter_(1, topk_idxs, 1)
 
         # Apply spatial constraint
         matching_matrix *= is_in_boxes_and_center.to(matching_matrix.dtype)

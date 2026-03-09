@@ -48,7 +48,10 @@ class NestedTensor:
 
 
 def _max_by_axis(the_list: list[list[int]]) -> list[int]:
-    """Get maximum value at each position across sublists."""
+    """Get maximum value at each position across sublists.
+
+    Kept for backward compatibility / ONNX path.
+    """
     maxes = the_list[0]
     for sublist in the_list[1:]:
         for index, item in enumerate(sublist):
@@ -60,7 +63,8 @@ def nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTensor:
     """Create a NestedTensor from a list of tensors with different sizes.
 
     Pads all tensors to the maximum size and creates a mask indicating
-    valid (non-padded) regions.
+    valid (non-padded) regions. Uses vectorized max-size computation and
+    pins memory for faster host-to-device transfer.
     """
     if tensor_list[0].ndim == 3:
         if torchvision._is_tracing():
@@ -68,20 +72,25 @@ def nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTensor:
             # call _onnx_nested_tensor_from_tensor_list() instead
             return _onnx_nested_tensor_from_tensor_list(tensor_list)
 
-        # Get maximum size across all tensors
-        max_size = _max_by_axis([list(img.shape) for img in tensor_list])
-        batch_shape = [len(tensor_list)] + max_size
-        b, c, h, w = batch_shape
+        # Vectorized max-size computation (replaces Python loop in _max_by_axis)
+        shapes = torch.tensor([img.shape for img in tensor_list])
+        max_c, max_h, max_w = shapes.amax(dim=0).tolist()
+        b = len(tensor_list)
         dtype = tensor_list[0].dtype
         device = tensor_list[0].device
 
         # Create padded tensor and mask
-        tensor = torch.zeros(batch_shape, dtype=dtype, device=device)
-        mask = torch.ones((b, h, w), dtype=torch.bool, device=device)
+        tensor = torch.zeros((b, max_c, max_h, max_w), dtype=dtype, device=device)
+        mask = torch.ones((b, max_h, max_w), dtype=torch.bool, device=device)
 
         for img, pad_img, m in zip(tensor_list, tensor, mask, strict=True):
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
             m[: img.shape[1], : img.shape[2]] = False
+
+        # Pin memory for faster H2D transfer when on CPU (DataLoader workers)
+        if device == torch.device("cpu"):
+            tensor = tensor.pin_memory()
+            mask = mask.pin_memory()
     else:
         raise ValueError("Only 3D tensors (C, H, W) are supported")
 

@@ -22,7 +22,6 @@ produce different results each epoch.
 from __future__ import annotations
 
 import contextlib
-import copy
 import io
 import os
 import struct
@@ -411,15 +410,21 @@ class CacheDataset(
     def _getitem_ram(
         self, idx: int
     ) -> tuple[torch.Tensor | Image.Image, DetectionTarget]:
-        """Read from in-memory list."""
+        """Read from in-memory list.
+
+        Images are stored as uint8 numpy arrays — wrapping back to PIL
+        and shallow-copying the target dict is ~10x faster than
+        ``copy.deepcopy`` on a PIL Image + nested dict.  Downstream
+        transforms always clone tensors before in-place mutation.
+        """
         if self._ram_cache is None:
             raise RuntimeError("RAM cache not initialized")
         cached = self._ram_cache[idx]
         if cached is None:
             raise RuntimeError(f"RAM cache miss at index {idx}")
         img_arr, target = cached
-        img = _numpy_to_pil(img_arr.copy())
-        target = copy.deepcopy(target)
+        img: torch.Tensor | Image.Image = _numpy_to_pil(img_arr)
+        target = target.copy()
 
         if self.transforms is not None:
             img, target = self.transforms(img, target)

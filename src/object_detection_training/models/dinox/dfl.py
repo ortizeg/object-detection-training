@@ -75,7 +75,10 @@ def distribution_focal_loss(
     weight_left = target_right.float() - target
     weight_right = target - target_left.float()
 
-    loss_left = F.cross_entropy(pred, target_left, reduction="none")
-    loss_right = F.cross_entropy(pred, target_right, reduction="none")
+    # Compute log_softmax once (cross_entropy = log_softmax + nll_loss,
+    # so two cross_entropy calls redundantly compute softmax twice).
+    log_probs = F.log_softmax(pred, dim=-1)
+    loss_left = F.nll_loss(log_probs, target_left, reduction="none")
+    loss_right = F.nll_loss(log_probs, target_right, reduction="none")
 
     return weight_left * loss_left + weight_right * loss_right

@@ -13,7 +13,6 @@ accuracy impact when the cache is large enough (default 40).
 
 from __future__ import annotations
 
-import copy
 import random
 from collections import deque
 from typing import Any
@@ -29,6 +28,12 @@ from object_detection_training.types import DetectionTarget
 
 # Type alias for a cached sample (raw PIL image + target dict).
 _CachedSample = tuple[Image.Image, DetectionTarget]
+
+# Internal cache stores images as uint8 numpy arrays to avoid expensive
+# copy.deepcopy on PIL Images.  On retrieval we wrap back into PIL (cheap)
+# and shallow-copy the target dict — downstream code already clones tensors
+# before mutation, so deep-copy is unnecessary.
+_CachedArraySample = tuple[np.ndarray, DetectionTarget]
 
 
 class MosaicMixupDataset(
@@ -96,7 +101,7 @@ class MosaicMixupDataset(
         self.use_cache = use_cache
         self.max_cached_images = max(max_cached_images, 4)
         self.random_pop = random_pop
-        self._cache: deque[_CachedSample] = deque(maxlen=self.max_cached_images)
+        self._cache: deque[_CachedArraySample] = deque(maxlen=self.max_cached_images)
         self._cache_logged = False
 
     def __len__(self) -> int:
@@ -121,19 +126,30 @@ class MosaicMixupDataset(
     # ------------------------------------------------------------------
 
     def _push_cache(self, img: Image.Image, target: DetectionTarget) -> None:
-        """Add a sample to the cache, evicting if full."""
+        """Add a sample to the cache, evicting if full.
+
+        Converts PIL Image to a uint8 numpy array for storage — numpy arrays
+        are contiguous memory and trivially cheap to copy compared to the
+        Python object-graph traversal that ``copy.deepcopy`` performs on PIL
+        Images.
+        """
         if len(self._cache) >= self.max_cached_images and self.random_pop:
             # Random eviction — approximates uniform sampling over dataset
             pop_idx = random.randint(0, len(self._cache) - 1)  # noqa: S311
             del self._cache[pop_idx]
         # When random_pop=False, deque(maxlen=...) auto-evicts oldest (FIFO)
-        self._cache.append((img, target))
+        self._cache.append((np.asarray(img, dtype=np.uint8).copy(), target))
 
     def _sample_from_cache(self) -> _CachedSample:
-        """Return a deep-copied sample from the cache."""
-        sample = random.choice(self._cache)  # noqa: S311
-        # Deep-copy to avoid mutating cached data
-        return copy.deepcopy(sample)
+        """Return a sample from the cache, converting back to PIL.
+
+        Instead of ``copy.deepcopy`` (which traverses the full Python object
+        graph of a PIL Image — slow), we store uint8 numpy arrays and wrap
+        them back into PIL on retrieval.  The target dict gets a shallow copy;
+        downstream code already ``.clone()``s tensors before in-place mutation.
+        """
+        arr, target = random.choice(self._cache)  # noqa: S311
+        return Image.fromarray(arr), target.copy()
 
     def _cache_ready(self) -> bool:
         """Cache needs at least 4 entries for mosaic."""
