@@ -374,6 +374,10 @@ class BaseDetectionModel(L.LightningModule):
         images, targets = batch
         outputs = self(images, targets)
 
+        batch_size = (
+            images.tensors.shape[0] if hasattr(images, "tensors") else images.shape[0]
+        )
+
         # Individual loss components for logging (scalars only)
         loss_components = {
             k: v for k, v in outputs.items() if "loss" in k.lower() and v.numel() == 1
@@ -394,9 +398,21 @@ class BaseDetectionModel(L.LightningModule):
         # Log losses
         for name, value in loss_components.items():
             self.log(
-                f"train/{name}", value, on_step=True, on_epoch=True, prog_bar=False
+                f"train/{name}",
+                value,
+                on_step=True,
+                on_epoch=True,
+                prog_bar=False,
+                batch_size=batch_size,
             )
-        self.log("train/loss", total_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(
+            "train/loss",
+            total_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
 
         return torch.as_tensor(total_loss)
 
@@ -427,14 +443,25 @@ class BaseDetectionModel(L.LightningModule):
                 sum(loss_components.values()) if loss_components else torch.tensor(0.0)
             )
 
+        batch_size = (
+            images.tensors.shape[0] if hasattr(images, "tensors") else images.shape[0]
+        )
+
         if total_loss is not None:
             self.log(
-                "val/loss", total_loss, on_step=False, on_epoch=True, prog_bar=True
+                "val/loss",
+                total_loss,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                batch_size=batch_size,
             )
             for name, value in loss_components.items():
                 if not name.startswith("val/"):
                     name = f"val/{name}"
-                self.log(name, value, on_step=False, on_epoch=True)
+                self.log(
+                    name, value, on_step=False, on_epoch=True, batch_size=batch_size
+                )
 
         # Convert to predictions format
         preds = self.get_predictions(outputs, confidence_threshold=0.0)
@@ -474,9 +501,9 @@ class BaseDetectionModel(L.LightningModule):
         )
 
         # Log main metrics
-        self.log("val/mAP", result.map50_95, prog_bar=True)
-        self.log("val/mAP_50", result.map50, prog_bar=True)
-        self.log("val/mAP_75", result.map75)
+        self.log("val/mAP", result.map50_95, prog_bar=True, sync_dist=True)
+        self.log("val/mAP_50", result.map50, prog_bar=True, sync_dist=True)
+        self.log("val/mAP_75", result.map75, sync_dist=True)
 
         # Log per-class mAP if available
         class_names: list[str] | None = getattr(
@@ -491,12 +518,12 @@ class BaseDetectionModel(L.LightningModule):
             }
             for class_id, name in enumerate(class_names):
                 ap = class_ap_map.get(class_id, 0.0)
-                self.log(f"val/mAP_{name}", ap)
+                self.log(f"val/mAP_{name}", ap, sync_dist=True)
         elif result.ap_per_class is not None:
             for i, class_id in enumerate(result.matched_classes):
                 name = f"class_{class_id}"
                 ap = float(result.ap_per_class[i].mean())
-                self.log(f"val/mAP_{name}", ap)
+                self.log(f"val/mAP_{name}", ap, sync_dist=True)
 
         self.val_map.reset()
 
@@ -571,9 +598,9 @@ class BaseDetectionModel(L.LightningModule):
             "map_per_class": result.ap_per_class,
         }
 
-        self.log("test/mAP", result.map50_95)
-        self.log("test/mAP_50", result.map50)
-        self.log("test/mAP_75", result.map75)
+        self.log("test/mAP", result.map50_95, sync_dist=True)
+        self.log("test/mAP_50", result.map50, sync_dist=True)
+        self.log("test/mAP_75", result.map75, sync_dist=True)
 
         class_names: list[str] | None = getattr(
             getattr(self.trainer, "datamodule", None), "class_names", None
@@ -587,12 +614,12 @@ class BaseDetectionModel(L.LightningModule):
             }
             for class_id, name in enumerate(class_names):
                 ap = class_ap_map.get(class_id, 0.0)
-                self.log(f"test/mAP_{name}", ap)
+                self.log(f"test/mAP_{name}", ap, sync_dist=True)
         elif result.ap_per_class is not None:
             for i, class_id in enumerate(result.matched_classes):
                 name = f"class_{class_id}"
                 ap = float(result.ap_per_class[i].mean())
-                self.log(f"test/mAP_{name}", ap)
+                self.log(f"test/mAP_{name}", ap, sync_dist=True)
 
         self.test_map.reset()
 
