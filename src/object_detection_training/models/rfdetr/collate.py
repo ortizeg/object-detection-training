@@ -63,8 +63,7 @@ def nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTensor:
     """Create a NestedTensor from a list of tensors with different sizes.
 
     Pads all tensors to the maximum size and creates a mask indicating
-    valid (non-padded) regions. Uses vectorized max-size computation and
-    pins memory for faster host-to-device transfer.
+    valid (non-padded) regions. Uses vectorized max-size computation.
     """
     if tensor_list[0].ndim == 3:
         if torchvision._is_tracing():
@@ -86,11 +85,6 @@ def nested_tensor_from_tensor_list(tensor_list: list[Tensor]) -> NestedTensor:
         for img, pad_img, m in zip(tensor_list, tensor, mask, strict=True):
             pad_img[: img.shape[0], : img.shape[1], : img.shape[2]].copy_(img)
             m[: img.shape[1], : img.shape[2]] = False
-
-        # Pin memory for faster H2D transfer when on CPU (DataLoader workers)
-        if device == torch.device("cpu"):
-            tensor = tensor.pin_memory()
-            mask = mask.pin_memory()
     else:
         raise ValueError("Only 3D tensors (C, H, W) are supported")
 
