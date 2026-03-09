@@ -1180,37 +1180,38 @@ class DINOXHead(nn.Module):
         expanded_strides_per_image = expanded_strides[0]
         x_shifts_per_image = x_shifts[0] * expanded_strides_per_image
         y_shifts_per_image = y_shifts[0] * expanded_strides_per_image
+        # expand() shares storage instead of allocating num_gt copies
         x_centers = (
             (x_shifts_per_image + 0.5 * expanded_strides_per_image)
             .unsqueeze(0)
-            .repeat(num_gt, 1)
+            .expand(num_gt, -1)
         )
         y_centers = (
             (y_shifts_per_image + 0.5 * expanded_strides_per_image)
             .unsqueeze(0)
-            .repeat(num_gt, 1)
+            .expand(num_gt, -1)
         )
 
         # Check 1: inside GT boxes (cxcywh)
         gt_l = (
             (gt_bboxes_per_image[:, 0] - 0.5 * gt_bboxes_per_image[:, 2])
             .unsqueeze(1)
-            .repeat(1, total_num_anchors)
+            .expand(-1, total_num_anchors)
         )
         gt_r = (
             (gt_bboxes_per_image[:, 0] + 0.5 * gt_bboxes_per_image[:, 2])
             .unsqueeze(1)
-            .repeat(1, total_num_anchors)
+            .expand(-1, total_num_anchors)
         )
         gt_t = (
             (gt_bboxes_per_image[:, 1] - 0.5 * gt_bboxes_per_image[:, 3])
             .unsqueeze(1)
-            .repeat(1, total_num_anchors)
+            .expand(-1, total_num_anchors)
         )
         gt_b = (
             (gt_bboxes_per_image[:, 1] + 0.5 * gt_bboxes_per_image[:, 3])
             .unsqueeze(1)
-            .repeat(1, total_num_anchors)
+            .expand(-1, total_num_anchors)
         )
 
         b_l = x_centers - gt_l
@@ -1224,18 +1225,13 @@ class DINOXHead(nn.Module):
 
         # Check 2: within center radius
         center_radius = 2.5
-        gt_centers_l = gt_bboxes_per_image[:, 0].unsqueeze(1).repeat(
-            1, total_num_anchors
-        ) - center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_centers_r = gt_bboxes_per_image[:, 0].unsqueeze(1).repeat(
-            1, total_num_anchors
-        ) + center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_centers_t = gt_bboxes_per_image[:, 1].unsqueeze(1).repeat(
-            1, total_num_anchors
-        ) - center_radius * expanded_strides_per_image.unsqueeze(0)
-        gt_centers_b = gt_bboxes_per_image[:, 1].unsqueeze(1).repeat(
-            1, total_num_anchors
-        ) + center_radius * expanded_strides_per_image.unsqueeze(0)
+        gt_cx = gt_bboxes_per_image[:, 0].unsqueeze(1)
+        gt_cy = gt_bboxes_per_image[:, 1].unsqueeze(1)
+        stride_row = expanded_strides_per_image.unsqueeze(0)
+        gt_centers_l = gt_cx.expand(-1, total_num_anchors) - center_radius * stride_row
+        gt_centers_r = gt_cx.expand(-1, total_num_anchors) + center_radius * stride_row
+        gt_centers_t = gt_cy.expand(-1, total_num_anchors) - center_radius * stride_row
+        gt_centers_b = gt_cy.expand(-1, total_num_anchors) + center_radius * stride_row
 
         c_l = x_centers - gt_centers_l
         c_r = gt_centers_r - x_centers
