@@ -1,0 +1,29 @@
+# DINO-X Small COCO Training on 8x L4 — Matching Official YOLOX Repo
+# Target: reproduce official YOLOX-S COCO mAP (40.5% mAP@50:95)
+# DINO-X Small baseline = YOLOX-S (no DFL, no soft labels, no MAL)
+#
+# Official recipe: SGD, lr=0.01 (scaled by bs/64), cosine LR, mosaic+mixup,
+# EMA decay=0.9998, no-aug last 15 epochs with L1 loss, 300 epochs.
+# L4 24GB: bs=8/GPU x 8 GPUs = 64 effective batch (no grad accum needed).
+
+defaults:
+  - task: train
+  - models: dinox_s_baseline
+  - data: coco_dinox_l4_8x
+  - trainer: gpu_l4_8x
+  - callbacks: default
+  - logging: wandb
+  - _self_
+
+# Global Parameters
+input_height: 640
+input_width: 640
+log_level: INFO
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/dinox_s_coco_l4_${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/dinox_s_coco_l4_${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
