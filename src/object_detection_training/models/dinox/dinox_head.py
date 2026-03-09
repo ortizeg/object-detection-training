@@ -1294,7 +1294,9 @@ class DINOXHead(nn.Module):
         fg_mask_inboxes = matching_matrix.sum(0) > 0
         num_fg_result = int(fg_mask_inboxes.sum().item())
 
-        # Modify fg_mask in-place (no clone needed — caller doesn't reuse it)
+        # Clone fg_mask before modification — autograd tracks this tensor
+        # through the computation graph, so in-place ops break backward().
+        fg_mask = fg_mask.clone()
         fg_idxs = torch.nonzero(fg_mask, as_tuple=True)[0]
         fg_mask[fg_idxs[~fg_mask_inboxes]] = False
 
