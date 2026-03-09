@@ -794,6 +794,9 @@ class DINOXHead(nn.Module):
 
         num_fg = 0.0
 
+        # Pre-allocate objectness target (reused per-image, zeroed in-place)
+        tgt_obj = torch.zeros(total_num_anchors, 1, device=outputs.device, dtype=dtype)
+
         for batch_idx in range(outputs.shape[0]):
             num_gt = 0
             if targets is not None and len(targets) > batch_idx:
@@ -815,9 +818,7 @@ class DINOXHead(nn.Module):
                 gt_classes = torch.zeros(0, device=outputs.device)
 
             if num_gt == 0:
-                tgt_obj = torch.zeros(
-                    total_num_anchors, 1, device=outputs.device, dtype=dtype
-                )
+                tgt_obj.zero_()
                 obj_loss += self.bcewithlog_loss(obj_preds[batch_idx], tgt_obj).sum()
                 continue
 
@@ -852,9 +853,7 @@ class DINOXHead(nn.Module):
                         num_fg_img,
                     ) = self._get_assignments(*assigner_args)
             except Exception:
-                tgt_obj = torch.zeros(
-                    total_num_anchors, 1, device=outputs.device, dtype=dtype
-                )
+                tgt_obj.zero_()
                 obj_loss += self.bcewithlog_loss(obj_preds[batch_idx], tgt_obj).sum()
                 continue
 
@@ -935,10 +934,8 @@ class DINOXHead(nn.Module):
                         origin_preds_cat[batch_idx][fg_mask], l1_target
                     ).sum()
 
-            # Objectness loss
-            tgt_obj = torch.zeros(
-                total_num_anchors, 1, device=outputs.device, dtype=dtype
-            )
+            # Objectness loss (reuse pre-allocated tgt_obj)
+            tgt_obj.zero_()
             if num_fg_img > 0:
                 tgt_obj[fg_mask] = 1.0
             obj_loss += self.bcewithlog_loss(obj_preds[batch_idx], tgt_obj).sum()
