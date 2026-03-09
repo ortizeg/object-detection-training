@@ -255,18 +255,36 @@ class RFDETRLightningModel(BaseDetectionModel):
         """Custom training step to handle RFDETR weighted losses."""
         images, targets = batch
 
+        batch_size = (
+            images.tensors.shape[0] if hasattr(images, "tensors") else images.shape[0]
+        )
+
         # self(images, targets) returns dict with 'loss' and 'train/...' keys
         outputs = self(images, targets)
         # Individual loss components for logging (scalars only)
         total_loss: torch.Tensor = outputs["loss"]
 
         # Log total loss
-        self.log("train/loss", total_loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(
+            "train/loss",
+            total_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
 
         # Log other components (ensure they are scalars)
         for k, v in outputs.items():
             if k not in ["loss", ""] and isinstance(v, torch.Tensor) and v.numel() == 1:
-                self.log(k, v, on_step=True, on_epoch=True, prog_bar=False)
+                self.log(
+                    k,
+                    v,
+                    on_step=True,
+                    on_epoch=True,
+                    prog_bar=False,
+                    batch_size=batch_size,
+                )
 
         return total_loss
 
