@@ -190,26 +190,24 @@ submit_job() {
           - \"${arg}\""
     done
 
-    # Create job spec
+    # Create job spec (gcloud --config expects jobSpec content, not outer wrapper)
     local job_spec=$(cat <<YAML
-displayName: ${job_name}
-jobSpec:
-  serviceAccount: ${SERVICE_ACCOUNT}
-  scheduling:
-    strategy: SPOT
-  workerPoolSpecs:
-    - machineSpec:
-        machineType: ${MACHINE_TYPE}
-        acceleratorType: ${GPU_TYPE}
-        acceleratorCount: ${GPU_COUNT}
-      replicaCount: 1
-      diskSpec:
-        bootDiskType: pd-ssd
-        bootDiskSizeGb: ${DISK_SIZE_GB}
-      containerSpec:
-        imageUri: ${IMAGE_URI}
-        command: [pixi, run, task_manager]
-        args:${args_yaml}${env_section}
+serviceAccount: ${SERVICE_ACCOUNT}
+scheduling:
+  strategy: SPOT
+workerPoolSpecs:
+  - machineSpec:
+      machineType: ${MACHINE_TYPE}
+      acceleratorType: ${GPU_TYPE}
+      acceleratorCount: ${GPU_COUNT}
+    replicaCount: 1
+    diskSpec:
+      bootDiskType: pd-ssd
+      bootDiskSizeGb: ${DISK_SIZE_GB}
+    containerSpec:
+      imageUri: ${IMAGE_URI}
+      command: [pixi, run, task_manager]
+      args:${args_yaml}${env_section}
 YAML
 )
 
@@ -227,6 +225,7 @@ YAML
     log "Submitting job: ${job_name}"
     local output
     output=$(gcloud ai custom-jobs create \
+        --display-name="$job_name" \
         --region="$REGION" \
         --project="$PROJECT_ID" \
         --config="$spec_file" \
