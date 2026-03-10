@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Install curl and other basics needed for pixi install
 # libgl1 and libglib2.0-0 are often needed for OpenCV and other ML libraries
-RUN apt-get update && apt-get install -y curl libgl1 libglib2.0-0 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl libgl1 libglib2.0-0 gcc && rm -rf /var/lib/apt/lists/*
 
 # Install pixi
 RUN curl -fsSL https://pixi.sh/install.sh | bash
