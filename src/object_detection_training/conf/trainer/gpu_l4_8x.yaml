@@ -5,7 +5,11 @@ max_epochs: 300
 precision: bf16-mixed
 accelerator: gpu
 devices: 8
-strategy: ddp
+strategy:
+  _target_: lightning.pytorch.strategies.DDPStrategy
+  timeout:
+    _target_: datetime.timedelta
+    seconds: 7200
 check_val_every_n_epoch: 10
 log_every_n_steps: 50
 enable_checkpointing: true
