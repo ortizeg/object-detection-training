@@ -62,8 +62,9 @@ distill_teacher: dinov2_vitb14
 # Scheduler-free optimizer (off by default = SGD + cosine)
 use_scheduler_free: false
 
-# torch.compile backbone for 10-15% forward pass speedup (off by default)
-compile_backbone: false
+# torch.compile backbone for 10-15% forward pass speedup
+# ~3 batch warmup cost, then consistent speedup on forward+backward
+compile_backbone: true
 
 # YOLOX-style: raw 0-255 float values, no normalization
 image_mean: null
