@@ -53,9 +53,14 @@ _HEADER_SIZE = 8  # two uint32 lengths
 def _serialize_sample(
     img: npt.NDArray[np.uint8], target: DetectionTarget
 ) -> tuple[bytes, bytes]:
-    """Serialize image (numpy) and target (torch) to bytes."""
+    """Serialize image as JPEG bytes and target via torch.save.
+
+    JPEG compression reduces disk write volume ~5-10x vs raw numpy,
+    drastically cutting IO contention during cache warmup.
+    """
+    pil_img = Image.fromarray(img)
     img_buf = io.BytesIO()
-    np.save(img_buf, img)
+    pil_img.save(img_buf, format="JPEG", quality=95)
     img_bytes = img_buf.getvalue()
 
     target_buf = io.BytesIO()
@@ -68,8 +73,8 @@ def _serialize_sample(
 def _deserialize_sample(
     img_bytes: bytes, target_bytes: bytes
 ) -> tuple[npt.NDArray[np.uint8], DetectionTarget]:
-    """Deserialize image and target from bytes."""
-    img = np.load(io.BytesIO(img_bytes))
+    """Deserialize JPEG image and target from bytes."""
+    img = np.asarray(Image.open(io.BytesIO(img_bytes)), dtype=np.uint8)
     target: DetectionTarget = torch.load(io.BytesIO(target_bytes), weights_only=False)
     return img, target
 
