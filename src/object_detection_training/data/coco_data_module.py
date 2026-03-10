@@ -41,6 +41,7 @@ class COCODataModule(L.LightningDataModule):
         test_path: str | None = None,
         batch_size: int = 8,
         num_workers: int = 4,
+        prefetch_factor: int = 4,
         input_height: int = 640,
         input_width: int = 640,
         pin_memory: bool = True,
@@ -73,6 +74,7 @@ class COCODataModule(L.LightningDataModule):
             test_path: Optional path to test data directory.
             batch_size: Batch size for data loaders.
             num_workers: Number of workers for data loading.
+            prefetch_factor: Batches to prefetch per worker (default 4).
             input_height: Base input height (must be divisible by 64 for RFDETR).
             input_width: Base input width (must be divisible by 64 for RFDETR).
             pin_memory: Whether to pin memory for faster GPU transfer.
@@ -107,6 +109,7 @@ class COCODataModule(L.LightningDataModule):
 
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.prefetch_factor = prefetch_factor if num_workers > 0 else None
         self.pin_memory = pin_memory
         self.persistent_workers = persistent_workers if num_workers > 0 else False
 
@@ -333,6 +336,7 @@ class COCODataModule(L.LightningDataModule):
             shuffle=train_sampler is None,
             sampler=train_sampler,
             num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
             collate_fn=collate_fn,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers,
@@ -352,6 +356,7 @@ class COCODataModule(L.LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
             collate_fn=collate_fn,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers,
@@ -371,6 +376,7 @@ class COCODataModule(L.LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
+            prefetch_factor=self.prefetch_factor,
             collate_fn=collate_fn,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers,
