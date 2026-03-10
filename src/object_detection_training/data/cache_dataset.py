@@ -527,16 +527,19 @@ class CacheDataset(
             world_size = int(os.environ.get("WORLD_SIZE", "1"))
             per_process_available = available_bytes // max(world_size, 1)
             threshold = per_process_available * 0.5
+            # Each DDP rank only caches its shard, not the full dataset
+            per_rank_bytes = estimated_bytes // max(world_size, 1)
 
             logger.info(
                 f"Auto-cache: Est. dataset size={estimated_bytes / 1e9:.2f}GB, "
+                f"Per-rank shard={per_rank_bytes / 1e9:.2f}GB, "
                 f"Available RAM={available_bytes / 1e9:.2f}GB, "
                 f"World size={world_size}, "
                 f"Per-process budget={per_process_available / 1e9:.2f}GB, "
                 f"Threshold={threshold / 1e9:.2f}GB"
             )
 
-            if estimated_bytes < threshold:
+            if per_rank_bytes < threshold:
                 logger.info("Auto-cache: Selected 'ram' mode")
                 return "ram"
             else:
