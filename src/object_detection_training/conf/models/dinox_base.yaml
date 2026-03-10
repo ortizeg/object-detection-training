@@ -63,8 +63,9 @@ distill_teacher: dinov2_vitb14
 use_scheduler_free: false
 
 # torch.compile backbone for 10-15% forward pass speedup
-# ~3 batch warmup cost, then consistent speedup on forward+backward
-compile_backbone: true
+# Requires C compiler (gcc) in container — disabled for runtime images.
+# Enable when using devel base image or after adding gcc to Dockerfile.
+compile_backbone: false
 
 # YOLOX-style: raw 0-255 float values, no normalization
 image_mean: null
