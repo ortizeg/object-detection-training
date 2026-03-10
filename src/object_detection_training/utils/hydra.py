@@ -196,6 +196,11 @@ def instantiate_trainer(
     # Remove _target_ if present (we instantiate Trainer directly)
     trainer_kwargs.pop("_target_", None)
 
+    # Instantiate nested _target_ entries (e.g. strategy: DDPStrategy)
+    strategy = trainer_kwargs.get("strategy")
+    if isinstance(strategy, (dict, DictConfig)) and "_target_" in strategy:
+        trainer_kwargs["strategy"] = hydra.utils.instantiate(strategy)
+
     trainer = L.Trainer(**trainer_kwargs)  # type: ignore[misc]
     logger.info(f"Trainer instantiated with {len(callbacks or [])} callbacks")
 
