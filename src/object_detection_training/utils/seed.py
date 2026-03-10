@@ -29,3 +29,8 @@ def seed_everything(seed: int, *, deterministic: bool = False) -> None:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = deterministic
     torch.backends.cudnn.benchmark = not deterministic
+
+    # Enable TF32 on Ampere+ GPUs (A100, H100) for ~5-10% matmul speedup
+    # with negligible accuracy impact (10-bit mantissa vs 23-bit FP32).
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
