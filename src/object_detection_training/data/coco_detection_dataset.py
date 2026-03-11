@@ -87,6 +87,20 @@ class COCODetectionDataset(DetectionDataset):
             except PermissionError:
                 continue
 
+        # Fallback: try any instances_*2017.json (handles split mismatch,
+        # e.g. using val2017 directory as train data for benchmarking).
+        for search_dir in [self.root_path, self.root_path / "annotations"]:
+            try:
+                matches = sorted(search_dir.glob("instances_*2017.json"))
+                if matches:
+                    logger.warning(
+                        f"Split '{self.split}' annotation not found, "
+                        f"falling back to {matches[0]}"
+                    )
+                    return matches[0]
+            except (PermissionError, OSError):
+                continue
+
         raise FileNotFoundError(
             f"No COCO annotation file found in {self.root_path}. "
             f"Tried: {[str(c) for c in candidates]}"

@@ -127,7 +127,10 @@ YAML
         return
     fi
 
-    local spec_file=$(mktemp /tmp/cache-bench-XXXXXX.yaml)
+    local spec_file
+    spec_file=$(mktemp /tmp/cache-bench-XXXXXXXX)
+    mv "$spec_file" "${spec_file}.yaml"
+    spec_file="${spec_file}.yaml"
     echo "$job_spec" > "$spec_file"
 
     log "Submitting ${cache_type} job: ${run_name}"
