@@ -1,0 +1,12 @@
+# Lightweight callbacks for cache benchmark — no ONNX, no vis, no checkpoints
+throughput:
+  _target_: object_detection_training.callbacks.throughput.ThroughputCallback
+  batch_size: ${data.batch_size}
+  world_size: 2
+
+lr_monitor:
+  _target_: lightning.pytorch.callbacks.LearningRateMonitor
+  logging_interval: step
+
+rich_progress:
+  _target_: lightning.pytorch.callbacks.RichProgressBar

@@ -1,0 +1,35 @@
+# COCO Dataset Configuration for Cache Benchmark (2x T4)
+# Uses val2017 as "train" data — small enough (~0.8GB) for quick tests.
+# cache_type is overridden per-run via Hydra CLI.
+defaults:
+  - /transforms@_here_: yolox
+  - _self_
+
+_target_: object_detection_training.data.coco_data_module.COCODataModule
+_convert_: all
+
+train_path: ??? # Required - path to training data
+val_path: ??? # Required - path to validation data
+test_path: null
+
+batch_size: 8
+num_workers: 4
+
+input_height: ${models.input_height}
+input_width: ${models.input_width}
+
+multi_scale: true
+expanded_scales: true
+skip_random_resize: false
+patch_size: 16
+num_windows: 2
+
+pin_memory: true
+persistent_workers: true
+
+# Cache — overridden per-run
+use_cache: true
+cache_type: disk
+
+sampler:
+  mode: disabled

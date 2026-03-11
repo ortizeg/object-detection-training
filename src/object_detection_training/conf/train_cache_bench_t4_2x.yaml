@@ -1,0 +1,25 @@
+# Cache Benchmark on 2x T4 — measures dataloader throughput in disk/ram/auto modes
+# Uses val2017 as "train" data for cheapness. 3 epochs x 100 batches each.
+# Override data.cache_type=disk|ram|auto per run.
+
+defaults:
+  - task: train
+  - models: dinox_s_baseline
+  - data: coco_dinox_cache_bench
+  - trainer: gpu_t4_2x
+  - callbacks: cache_bench
+  - logging: wandb
+  - _self_
+
+# Global Parameters
+input_height: 640
+input_width: 640
+log_level: INFO
+
+# Hydra configuration
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/cache_bench_${now:%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d}/cache_bench_${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
