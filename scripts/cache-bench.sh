@@ -66,13 +66,13 @@ fi
 WANDB_ENV=""
 if [ -n "$WANDB_API_KEY" ]; then
     WANDB_ENV="
-          - name: WANDB_API_KEY
-            value: \"${WANDB_API_KEY}\""
+        - name: WANDB_API_KEY
+          value: \"${WANDB_API_KEY}\""
 else
     echo "Warning: WANDB_API_KEY not set. W&B logging disabled."
     WANDB_ENV="
-          - name: WANDB_MODE
-            value: \"disabled\""
+        - name: WANDB_MODE
+          value: \"disabled\""
 fi
 
 # ── Functions ─────────────────────────────────────────────────────────────────
