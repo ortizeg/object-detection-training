@@ -82,9 +82,20 @@ log() {
 }
 
 submit_cache_job() {
-    local cache_type="$1"
-    local run_name="cache-bench-${cache_type}-${TIMESTAMP}"
+    local label="$1"        # e.g. "disk", "ram", "auto", "staged"
+    local cache_type="$2"   # Hydra data.cache_type value
+    local extra_args="$3"   # Additional Hydra overrides (space-separated)
+    local run_name="cache-bench-${label}-${TIMESTAMP}"
     local output_dir="/gcs/deep-ego-model-training/training-outputs/${run_name}"
+
+    # Build extra args YAML entries
+    local extra_yaml=""
+    if [ -n "$extra_args" ]; then
+        for arg in $extra_args; do
+            extra_yaml="${extra_yaml}
+        - \"${arg}\""
+        done
+    fi
 
     local job_spec=$(cat <<YAML
 serviceAccount: ${SERVICE_ACCOUNT}
@@ -111,7 +122,7 @@ workerPoolSpecs:
         - "data.test_path=${VAL_PATH}"
         - "data.num_workers=4"
         - "models.download_pretrained=false"
-        - "hydra.run.dir=${output_dir}"
+        - "hydra.run.dir=${output_dir}"${extra_yaml}
       env:
         - name: NCCL_IB_DISABLE
           value: "1"
@@ -121,7 +132,7 @@ YAML
 )
 
     if [ "$DRY_RUN" = true ]; then
-        log "DRY RUN — ${cache_type} job spec:"
+        log "DRY RUN — ${label} job spec:"
         echo "$job_spec"
         echo "---"
         return
@@ -133,7 +144,7 @@ YAML
     spec_file="${spec_file}.yaml"
     echo "$job_spec" > "$spec_file"
 
-    log "Submitting ${cache_type} job: ${run_name}"
+    log "Submitting ${label} job: ${run_name}"
     local output
     output=$(gcloud ai custom-jobs create \
         --display-name="${run_name}" \
@@ -165,23 +176,27 @@ YAML
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 log "═══════════════════════════════════════════════════════════"
-log "Cache Benchmark — 3 jobs on 2x T4"
+log "Cache Benchmark — 4 jobs on 2x T4"
 log "═══════════════════════════════════════════════════════════"
 log "  Image:    ${IMAGE_URI}"
 log "  Machine:  ${MACHINE_TYPE} (${GPU_COUNT}x ${GPU_TYPE})"
 log "  Region:   ${REGION}"
 log "  Data:     val2017 as train (~0.8GB)"
 log "  Epochs:   3 x 100 batches"
-log "  Modes:    disk, ram, auto"
+log "  Modes:    disk, ram, auto, staged+disk"
 log "═══════════════════════════════════════════════════════════"
 echo ""
 
-for mode in disk ram auto; do
-    submit_cache_job "$mode"
-done
+# Cache-only modes
+submit_cache_job "disk"   "disk" ""
+submit_cache_job "ram"    "ram"  ""
+submit_cache_job "auto"   "auto" ""
+
+# Staged: bulk-copy to local SSD first, then disk cache on top
+submit_cache_job "staged" "disk" "data.stage_data=true"
 
 log "═══════════════════════════════════════════════════════════"
-log "All 3 jobs submitted. Check W&B or logs for throughput."
+log "All 4 jobs submitted. Check W&B or logs for throughput."
 log "  Search W&B: project=DINOX, name contains 'cache-bench'"
 log "  Or check GCS: gs://deep-ego-model-training/training-outputs/cache-bench-*"
 log "═══════════════════════════════════════════════════════════"

@@ -31,5 +31,8 @@ persistent_workers: true
 use_cache: true
 cache_type: disk
 
+# Data staging — overridden per-run
+stage_data: false
+
 sampler:
   mode: disabled

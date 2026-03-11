@@ -13,6 +13,7 @@ from object_detection_training.data.cache_dataset import CacheDataset
 from object_detection_training.data.coco_detection_dataset import COCODetectionDataset
 from object_detection_training.data.detection_dataset import DetectionDataset
 from object_detection_training.data.sampler import SamplerConfig, build_weighted_sampler
+from object_detection_training.data.stage import stage_paths
 from object_detection_training.models.rfdetr.collate import collate_fn
 from object_detection_training.types import DetectionTarget
 from object_detection_training.utils.hydra import register
@@ -65,6 +66,7 @@ class COCODataModule(L.LightningDataModule):
         num_windows: int = 4,
         use_cache: bool = False,
         cache_type: Literal["ram", "disk", "auto"] = "disk",
+        stage_data: bool = False,
     ):
         """Initialize COCO data module.
 
@@ -94,6 +96,7 @@ class COCODataModule(L.LightningDataModule):
             num_windows: Windows for multi-scale (transform YAML refs).
             use_cache: Cache decoded images for faster loading.
             cache_type: Cache backend - 'ram', 'disk', or 'auto'.
+            stage_data: Bulk-copy cloud data to local SSD before training.
         """
         super().__init__()
         self.train_path = Path(train_path)
@@ -154,6 +157,9 @@ class COCODataModule(L.LightningDataModule):
         # Caching
         self.use_cache = use_cache
         self.cache_type = cache_type
+
+        # Data staging (bulk-copy cloud → local SSD)
+        self.stage_data = stage_data
 
         # Lazy-loaded detection dataset for DataFrame access
         self._train_detection_dataset: COCODetectionDataset | None = None
@@ -273,6 +279,22 @@ class COCODataModule(L.LightningDataModule):
         # Apply transforms directly to the same dataset object
         self._train_detection_dataset.transforms = self.train_transforms
         return self._train_detection_dataset
+
+    def prepare_data(self) -> None:
+        """Stage cloud data to local SSD (runs on rank 0 only).
+
+        Lightning calls this once before ``setup()`` / ``train_dataloader()``.
+        Other ranks wait at a barrier until rank 0 finishes.
+        """
+        if not self.stage_data:
+            return
+
+        staged_train, staged_val, staged_test = stage_paths(
+            self.train_path, self.val_path, self.test_path
+        )
+        self.train_path = staged_train
+        self.val_path = staged_val
+        self.test_path = staged_test
 
     def train_dataloader(
         self,
