@@ -265,7 +265,10 @@ class TaskAlignedAssigner:
         bbox_scores = bbox_scores.T  # [num_gt, num_candidates]
 
         # Alignment metric: m = cls_score^alpha * IoU^beta
-        align_metric = bbox_scores.pow(self.alpha) * pair_wise_ious.pow(self.beta)
+        # Cast to float32 — pow(beta=6.0) underflows in bf16 for small IoU values
+        align_metric = bbox_scores.float().pow(self.alpha) * pair_wise_ious.float().pow(
+            self.beta
+        )
 
         # Top-k selection per GT
         topk = min(self.topk, num_candidates)
