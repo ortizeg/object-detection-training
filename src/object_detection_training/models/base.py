@@ -517,19 +517,23 @@ class BaseDetectionModel(L.LightningModule):
         )
 
         if class_names and result.ap_per_class is not None:
-            # Create a mapping from class_id to AP (average across IoU thresholds)
+            # Build full AP vector and log as single dict to avoid N separate
+            # AllGather ops in DDP (one per class).
             class_ap_map = {
                 class_id: float(result.ap_per_class[i].mean())
                 for i, class_id in enumerate(result.matched_classes)
             }
-            for class_id, name in enumerate(class_names):
-                ap = class_ap_map.get(class_id, 0.0)
-                self.log(f"val/mAP_{name}", ap, sync_dist=True)
+            ap_dict = {
+                f"val/mAP_{name}": class_ap_map.get(class_id, 0.0)
+                for class_id, name in enumerate(class_names)
+            }
+            self.log_dict(ap_dict, sync_dist=True)
         elif result.ap_per_class is not None:
-            for i, class_id in enumerate(result.matched_classes):
-                name = f"class_{class_id}"
-                ap = float(result.ap_per_class[i].mean())
-                self.log(f"val/mAP_{name}", ap, sync_dist=True)
+            ap_dict = {
+                f"val/mAP_class_{class_id}": float(result.ap_per_class[i].mean())
+                for i, class_id in enumerate(result.matched_classes)
+            }
+            self.log_dict(ap_dict, sync_dist=True)
 
         self.val_map.reset()
 
