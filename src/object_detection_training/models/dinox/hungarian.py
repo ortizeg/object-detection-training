@@ -20,9 +20,15 @@ def _bboxes_iou(
     """Compute pairwise IoU between two sets of boxes.
 
     Duplicated from dinox_head/tal to avoid circular import.
+
+    Always runs in float32 to avoid bf16 overflow on area products
+    (e.g. 640*640 = 409600 exceeds bf16 max of 65504).
     """
     if bboxes_a.shape[1] != 4 or bboxes_b.shape[1] != 4:
         raise IndexError("Boxes must have 4 columns")
+
+    bboxes_a = bboxes_a.float()
+    bboxes_b = bboxes_b.float()
 
     if xyxy:
         tl = torch.max(bboxes_a[:, None, :2], bboxes_b[:, :2])
@@ -43,7 +49,7 @@ def _bboxes_iou(
 
     en = (tl < br).to(tl.dtype).prod(dim=2)
     area_i = torch.prod(br - tl, 2) * en
-    return area_i / (area_a[:, None] + area_b - area_i)
+    return area_i / (area_a[:, None] + area_b - area_i + 1e-8)
 
 
 def _get_in_boxes_info(
