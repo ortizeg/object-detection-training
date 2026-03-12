@@ -892,8 +892,11 @@ class DINOXHead(nn.Module):
 
                 # Classification loss
                 if self.use_soft_labels:
-                    iou_weight = pred_ious_this_matching.clamp(0, 1).pow(
-                        self.soft_label_gamma
+                    # Cast to float32 — pow() with fractional gamma underflows in bf16
+                    iou_weight = (
+                        pred_ious_this_matching.float()
+                        .clamp(0, 1)
+                        .pow(self.soft_label_gamma)
                     )
                 else:
                     iou_weight = pred_ious_this_matching.clamp(0, 1)
@@ -1039,7 +1042,8 @@ class DINOXHead(nn.Module):
                 if o2o_num_fg_img > 0:
                     # O2O classification loss (same soft label pattern)
                     if self.use_soft_labels:
-                        o2o_iou_w = o2o_pred_ious.pow(self.soft_label_gamma)
+                        # float32: pow() with fractional gamma underflows in bf16
+                        o2o_iou_w = o2o_pred_ious.float().pow(self.soft_label_gamma)
                     else:
                         o2o_iou_w = o2o_pred_ious
                     o2o_cls_target = F.one_hot(
