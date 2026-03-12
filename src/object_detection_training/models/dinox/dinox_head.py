@@ -1079,8 +1079,6 @@ class DINOXHead(nn.Module):
     # SimOTA assignment (self-contained copy from YOLOXHead)
     # ------------------------------------------------------------------
 
-    _assignment_debug_logged: bool = False
-
     def _get_assignments(
         self,
         batch_idx: int,
@@ -1096,30 +1094,6 @@ class DINOXHead(nn.Module):
         y_shifts: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
         """SimOTA label assignment."""
-        # Debug: log first assignment call to verify GT box values
-        if not DINOXHead._assignment_debug_logged:
-            import logging as _logging
-
-            _log = _logging.getLogger(__name__)
-            _log.warning(
-                "DEBUG _get_assignments: batch_idx=%d, num_gt=%d, "
-                "total_anchors=%d, gt_boxes shape=%s, "
-                "gt_boxes[:3]=%s, gt_classes[:3]=%s, "
-                "bbox_preds range=[%.2f, %.2f], "
-                "strides range=[%.0f, %.0f]",
-                batch_idx,
-                num_gt,
-                total_num_anchors,
-                gt_bboxes_per_image.shape,
-                gt_bboxes_per_image[:3].tolist(),
-                gt_classes[:3].tolist(),
-                bbox_preds.min().item(),
-                bbox_preds.max().item(),
-                expanded_strides.min().item(),
-                expanded_strides.max().item(),
-            )
-            DINOXHead._assignment_debug_logged = True
-
         gt_bboxes_per_image = gt_bboxes_per_image.to(bbox_preds.device)
         gt_classes = gt_classes.to(bbox_preds.device)
 
@@ -1173,38 +1147,37 @@ class DINOXHead(nn.Module):
             .expand(-1, num_in_boxes_anchor, -1)
         )
 
-        # Pre-compute sigmoid once on the original tensors, then broadcast
-        # via expand(). Avoids redundant sigmoid on num_gt copies.
+        # Disable autocast for BCE (unsafe with bf16) — matches YOLOX head.
         with torch.amp.autocast("cuda", enabled=False):
             cls_sigmoid = cls_preds.float().sigmoid()
             obj_sigmoid = obj_preds.float().sigmoid()
 
-        # Compute combined prediction score once at [num_cand, C] shape,
-        # then expand to [num_gt, num_cand, C] as a view (no allocation).
-        pred_scores_base = cls_sigmoid * obj_sigmoid
-        pred_scores = pred_scores_base.unsqueeze(0).expand(num_gt, -1, -1)
+            # Compute combined prediction score once at [num_cand, C] shape,
+            # then expand to [num_gt, num_cand, C] as a view (no allocation).
+            pred_scores_base = cls_sigmoid * obj_sigmoid
+            pred_scores = pred_scores_base.unsqueeze(0).expand(num_gt, -1, -1)
 
-        if self.use_soft_labels:
-            # RTMDet soft classification cost (SIMO-03)
-            # Y_soft = IoU * one_hot_gt
-            soft_label = (
-                gt_cls_per_image * pair_wise_ious.clamp(0, 1).unsqueeze(-1)
-            ).clamp(0, 1)
-            # Clamp pred_scores to valid BCE range
-            pred_scores = pred_scores.clamp(1e-7, 1.0 - 1e-7)
-            # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
-            scale_factor = (soft_label - pred_scores).abs().pow(2.0)
-            pair_wise_cls_loss = (
-                F.binary_cross_entropy(pred_scores, soft_label, reduction="none")
-                * scale_factor
-            ).sum(-1)
-        else:
-            # Original YOLOX formulation
-            pair_wise_cls_loss = F.binary_cross_entropy(
-                pred_scores.sqrt(), gt_cls_per_image, reduction="none"
-            ).sum(-1)
+            if self.use_soft_labels:
+                # RTMDet soft classification cost (SIMO-03)
+                # Y_soft = IoU * one_hot_gt
+                soft_label = (
+                    gt_cls_per_image * pair_wise_ious.clamp(0, 1).unsqueeze(-1)
+                ).clamp(0, 1)
+                # Clamp pred_scores to valid BCE range
+                pred_scores = pred_scores.clamp(1e-7, 1.0 - 1e-7)
+                # Cost = BCE(P, Y_soft) * |Y_soft - P|^2
+                scale_factor = (soft_label - pred_scores).abs().pow(2.0)
+                pair_wise_cls_loss = (
+                    F.binary_cross_entropy(pred_scores, soft_label, reduction="none")
+                    * scale_factor
+                ).sum(-1)
+            else:
+                # Original YOLOX formulation
+                pair_wise_cls_loss = F.binary_cross_entropy(
+                    pred_scores.sqrt(), gt_cls_per_image, reduction="none"
+                ).sum(-1)
 
-        del pred_scores_base, pred_scores
+            del pred_scores_base, pred_scores
 
         cost = (
             pair_wise_cls_loss
