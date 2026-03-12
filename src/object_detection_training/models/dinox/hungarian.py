@@ -271,16 +271,20 @@ class HungarianAssigner:
         bbox_scores = bbox_scores.T  # [num_gt, num_candidates]
 
         # Alignment metric: m = cls_score^alpha * IoU^beta
-        align_metric = bbox_scores.pow(self.alpha) * pair_wise_ious.pow(self.beta)
+        # Cast to float32 — pow(beta=6.0) underflows in bf16 for small IoU values
+        align_metric = bbox_scores.float().pow(self.alpha) * pair_wise_ious.float().pow(
+            self.beta
+        )
 
         # Cost matrix: negative alignment + large penalty for out-of-box
-        cost = -align_metric + 1e6 * (~is_in_boxes_and_center).float()
+        # Use 1e4 instead of 1e6 — bf16 max is ~65504, so 1e6 overflows to inf
+        cost = -align_metric + 1e4 * (~is_in_boxes_and_center).float()
 
         # Solve with Hungarian algorithm
         row_ind, col_ind = linear_sum_assignment(cost.detach().cpu().numpy())
 
         # Filter out matches with infinite cost (no valid candidate for a GT)
-        valid = cost[row_ind, col_ind] < 1e5
+        valid = cost[row_ind, col_ind] < 1e3
         row_ind_t = torch.tensor(row_ind, device=device, dtype=torch.long)
         col_ind_t = torch.tensor(col_ind, device=device, dtype=torch.long)
         valid_t = torch.tensor(valid, device=device, dtype=torch.bool)
