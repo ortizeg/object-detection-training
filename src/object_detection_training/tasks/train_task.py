@@ -113,9 +113,18 @@ class TrainTask(BaseTask):
         logger.info(f"Model: {type(self.model).__name__}")
         logger.info(f"DataModule: {type(self.data).__name__}")
 
-        # Run training
+        if self.ckpt_path is not None:
+            logger.info(f"Resuming from checkpoint: {self.ckpt_path}")
+
+        # Run training — weights_only=False needed for PyTorch 2.6+ because
+        # Lightning checkpoints contain omegaconf objects from Hydra config.
         logger.info("Starting training...")
-        trainer.fit(self.model, datamodule=self.data, ckpt_path=self.ckpt_path)
+        trainer.fit(
+            self.model,
+            datamodule=self.data,
+            ckpt_path=self.ckpt_path,
+            weights_only=False if self.ckpt_path is not None else None,
+        )
 
         # Run test if test dataloader is available
         # We need to manually setup 'test' stage first to ensure test_dataset
