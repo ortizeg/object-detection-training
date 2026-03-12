@@ -37,7 +37,8 @@ def matchability_score(
     Returns:
         Matchability scores, shape ``[num_fg]``, values in [0, 1].
     """
-    return ious.pow(gamma) * cls_scores.pow(1.0 - gamma)
+    # Cast to float32 — pow() with fractional exponents underflows in bf16
+    return ious.float().pow(gamma) * cls_scores.float().pow(1.0 - gamma)
 
 
 def mal_weight(
@@ -61,5 +62,6 @@ def mal_weight(
     Returns:
         Per-anchor loss weights, shape ``[num_fg]``, values in [1.0, 2.0].
     """
-    result: torch.Tensor = (1.0 - matchability).pow(2) + 1.0
+    # Cast to float32 — pow(2) on near-zero values can underflow in bf16
+    result: torch.Tensor = (1.0 - matchability.float()).pow(2) + 1.0
     return result
