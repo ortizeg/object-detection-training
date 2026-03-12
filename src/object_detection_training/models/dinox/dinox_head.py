@@ -862,7 +862,15 @@ class DINOXHead(nn.Module):
                         matched_gt_inds,
                         num_fg_img,
                     ) = self._get_assignments(*assigner_args)
-            except Exception:
+            except RuntimeError as e:
+                import logging as _logging
+
+                _logging.getLogger(__name__).error(
+                    "SimOTA assignment failed for batch_idx=%d, num_gt=%d: %s",
+                    batch_idx,
+                    num_gt,
+                    e,
+                )
                 tgt_obj.zero_()
                 obj_loss += self.bcewithlog_loss(obj_preds[batch_idx], tgt_obj).sum()
                 continue
@@ -1071,6 +1079,8 @@ class DINOXHead(nn.Module):
     # SimOTA assignment (self-contained copy from YOLOXHead)
     # ------------------------------------------------------------------
 
+    _assignment_debug_logged: bool = False
+
     def _get_assignments(
         self,
         batch_idx: int,
@@ -1086,6 +1096,30 @@ class DINOXHead(nn.Module):
         y_shifts: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, int]:
         """SimOTA label assignment."""
+        # Debug: log first assignment call to verify GT box values
+        if not DINOXHead._assignment_debug_logged:
+            import logging as _logging
+
+            _log = _logging.getLogger(__name__)
+            _log.warning(
+                "DEBUG _get_assignments: batch_idx=%d, num_gt=%d, "
+                "total_anchors=%d, gt_boxes shape=%s, "
+                "gt_boxes[:3]=%s, gt_classes[:3]=%s, "
+                "bbox_preds range=[%.2f, %.2f], "
+                "strides range=[%.0f, %.0f]",
+                batch_idx,
+                num_gt,
+                total_num_anchors,
+                gt_bboxes_per_image.shape,
+                gt_bboxes_per_image[:3].tolist(),
+                gt_classes[:3].tolist(),
+                bbox_preds.min().item(),
+                bbox_preds.max().item(),
+                expanded_strides.min().item(),
+                expanded_strides.max().item(),
+            )
+            DINOXHead._assignment_debug_logged = True
+
         gt_bboxes_per_image = gt_bboxes_per_image.to(bbox_preds.device)
         gt_classes = gt_classes.to(bbox_preds.device)
 
