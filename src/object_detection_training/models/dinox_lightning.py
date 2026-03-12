@@ -544,57 +544,47 @@ class DINOXLightningModel(BaseDetectionModel):
                     "train/distill_loss",
                     distill_loss,
                     on_step=True,
-                    on_epoch=True,
-                    prog_bar=False,
+                    on_epoch=False,
                     batch_size=batch_size,
-                    sync_dist=True,
                 )
 
-        # Log losses (sync_dist=True for correct epoch-level DDP aggregation)
+        # Log per-step losses (no sync_dist — per-device values are fine for
+        # step-level monitoring and avoids NCCL AllGather every step).
         self.log(
             "train/loss",
             loss,
             on_step=True,
-            on_epoch=True,
+            on_epoch=False,
             prog_bar=True,
             batch_size=batch_size,
-            sync_dist=True,
         )
         self.log(
             "train/iou_loss",
             iou_loss,
             on_step=True,
-            on_epoch=True,
-            prog_bar=False,
+            on_epoch=False,
             batch_size=batch_size,
-            sync_dist=True,
         )
         self.log(
             "train/obj_loss",
             obj_loss,
             on_step=True,
-            on_epoch=True,
-            prog_bar=False,
+            on_epoch=False,
             batch_size=batch_size,
-            sync_dist=True,
         )
         self.log(
             "train/cls_loss",
             cls_loss,
             on_step=True,
-            on_epoch=True,
-            prog_bar=False,
+            on_epoch=False,
             batch_size=batch_size,
-            sync_dist=True,
         )
         self.log(
             "train/l1_loss",
             l1_loss,
             on_step=True,
-            on_epoch=True,
-            prog_bar=False,
+            on_epoch=False,
             batch_size=batch_size,
-            sync_dist=True,
         )
 
         # Log DFL loss if present
@@ -603,11 +593,43 @@ class DINOXLightningModel(BaseDetectionModel):
                 "train/dfl_loss",
                 outputs["dfl_loss"],
                 on_step=True,
-                on_epoch=True,
-                prog_bar=False,
+                on_epoch=False,
                 batch_size=batch_size,
-                sync_dist=True,
             )
+
+        # Log epoch-level aggregated losses (sync_dist=True for DDP).
+        self.log(
+            "train/loss_epoch",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            batch_size=batch_size,
+            sync_dist=True,
+        )
+        self.log(
+            "train/iou_loss_epoch",
+            iou_loss,
+            on_step=False,
+            on_epoch=True,
+            batch_size=batch_size,
+            sync_dist=True,
+        )
+        self.log(
+            "train/obj_loss_epoch",
+            obj_loss,
+            on_step=False,
+            on_epoch=True,
+            batch_size=batch_size,
+            sync_dist=True,
+        )
+        self.log(
+            "train/cls_loss_epoch",
+            cls_loss,
+            on_step=False,
+            on_epoch=True,
+            batch_size=batch_size,
+            sync_dist=True,
+        )
 
         # Log num_fg
         num_fg_val: float | torch.Tensor
@@ -619,10 +641,9 @@ class DINOXLightningModel(BaseDetectionModel):
             "train/num_fg",
             num_fg_val,
             on_step=True,
-            on_epoch=True,
+            on_epoch=False,
             prog_bar=True,
             batch_size=batch_size,
-            sync_dist=True,
         )
 
         return torch.as_tensor(loss)
