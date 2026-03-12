@@ -82,6 +82,7 @@ class DINOXLightningModel(BaseDetectionModel):
         distill_teacher: str = "dinov2_vitb14",
         use_scheduler_free: bool = False,
         compile_backbone: bool = False,
+        channels_last: str = "auto",
     ):
         """Initialize DINO-X Lightning model.
 
@@ -127,6 +128,8 @@ class DINOXLightningModel(BaseDetectionModel):
                 instead of SGD+cosine.
             compile_backbone: Apply torch.compile to the YOLOPAFPN backbone
                 for 10-15% forward pass speedup. Has ~3 batch warmup cost.
+            channels_last: Memory format for model weights. 'auto' enables
+                NHWC on Ampere+ GPUs (SM 80+), 'true'/'false' to force.
         """
         super().__init__(
             num_classes=num_classes,
@@ -293,6 +296,20 @@ class DINOXLightningModel(BaseDetectionModel):
             self.model.backbone = torch.compile(  # type: ignore[assignment]
                 self.model.backbone, mode="reduce-overhead"
             )
+
+        # channels_last (NHWC) memory format for optimized conv kernels on
+        # Ampere+ GPUs. 'auto' checks GPU compute capability at runtime.
+        use_nhwc = False
+        if channels_last == "auto":
+            if torch.cuda.is_available():
+                capability = torch.cuda.get_device_capability()
+                use_nhwc = capability[0] >= 8  # SM 80+ (A100, H100, L4)
+        else:
+            use_nhwc = channels_last.lower() == "true"
+
+        if use_nhwc:
+            self.model = self.model.to(memory_format=torch.channels_last)  # type: ignore[call-overload]
+            logger.info("Enabled channels_last (NHWC) memory format")
 
         self.save_hyperparameters()
 
