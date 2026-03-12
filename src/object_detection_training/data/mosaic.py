@@ -138,7 +138,15 @@ class MosaicMixupDataset(
             pop_idx = random.randint(0, len(self._cache) - 1)  # noqa: S311
             del self._cache[pop_idx]
         # When random_pop=False, deque(maxlen=...) auto-evicts oldest (FIFO)
-        self._cache.append((np.asarray(img, dtype=np.uint8).copy(), target))
+        # Deep-clone all tensors so cached entries are fully detached from the
+        # dataset's memory.  Without this, forked dataloader workers that read
+        # from the cache trigger copy-on-write page faults on shared tensor
+        # pages, causing cumulative RAM growth that eventually OOMs.
+        target_cloned: DetectionTarget = {
+            k: v.clone() if isinstance(v, torch.Tensor) else v
+            for k, v in target.items()
+        }
+        self._cache.append((np.asarray(img, dtype=np.uint8).copy(), target_cloned))
 
     def _sample_from_cache(self) -> _CachedSample:
         """Return a sample from the cache, converting back to PIL.
@@ -149,7 +157,13 @@ class MosaicMixupDataset(
         downstream code already ``.clone()``s tensors before in-place mutation.
         """
         arr, target = random.choice(self._cache)  # noqa: S311
-        return Image.fromarray(arr), target.copy()
+        # Clone tensors on retrieval so each consumer gets independent memory,
+        # preventing COW page faults in forked dataloader workers.
+        target_out: DetectionTarget = {
+            k: v.clone() if isinstance(v, torch.Tensor) else v
+            for k, v in target.items()
+        }
+        return Image.fromarray(arr), target_out
 
     def _cache_ready(self) -> bool:
         """Cache needs at least 4 entries for mosaic."""
