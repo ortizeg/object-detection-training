@@ -36,14 +36,22 @@ def _meshgrid(*tensors: torch.Tensor) -> tuple[torch.Tensor, ...]:
     return torch.meshgrid(*tensors, indexing="ij")
 
 
+@torch.no_grad()
 def _bboxes_iou(
     bboxes_a: torch.Tensor,
     bboxes_b: torch.Tensor,
     xyxy: bool = True,
 ) -> torch.Tensor:
-    """Compute pairwise IoU between two sets of boxes."""
+    """Compute pairwise IoU between two sets of boxes.
+
+    Always runs in float32 to avoid bf16 overflow on area products
+    (e.g. 640*640 = 409600 exceeds bf16 max of 65504).
+    """
     if bboxes_a.shape[1] != 4 or bboxes_b.shape[1] != 4:
         raise IndexError("Boxes must have 4 columns")
+
+    bboxes_a = bboxes_a.float()
+    bboxes_b = bboxes_b.float()
 
     if xyxy:
         tl = torch.max(bboxes_a[:, None, :2], bboxes_b[:, :2])
@@ -64,7 +72,7 @@ def _bboxes_iou(
 
     en = (tl < br).to(tl.dtype).prod(dim=2)
     area_i = torch.prod(br - tl, 2) * en
-    return area_i / (area_a[:, None] + area_b - area_i)
+    return area_i / (area_a[:, None] + area_b - area_i + 1e-8)
 
 
 # ---------------------------------------------------------------------------
@@ -91,8 +99,9 @@ class _IOULoss(nn.Module):
                 f"{pred.shape[0]} vs {target.shape[0]}"
             )
             raise ValueError(msg)
-        pred = pred.view(-1, 4)
-        target = target.view(-1, 4)
+        # Run in float32 — area products overflow bf16 for large boxes.
+        pred = pred.float().view(-1, 4)
+        target = target.float().view(-1, 4)
 
         tl = torch.max(
             (pred[:, :2] - pred[:, 2:] / 2),
@@ -887,7 +896,7 @@ class DINOXHead(nn.Module):
                         self.soft_label_gamma
                     )
                 else:
-                    iou_weight = pred_ious_this_matching
+                    iou_weight = pred_ious_this_matching.clamp(0, 1)
                 cls_target = F.one_hot(
                     gt_matched_classes.to(torch.int64), self.num_classes
                 ) * iou_weight.unsqueeze(-1)
@@ -1124,8 +1133,12 @@ class DINOXHead(nn.Module):
                 0,
             )
 
-        # Pairwise IoU
+        # Pairwise IoU — clamp to [0,1] and sanitise NaN/Inf that can arise
+        # from degenerate (zero-area) boxes under bf16.
         pair_wise_ious = _bboxes_iou(gt_bboxes_per_image, bbox_preds, xyxy=False)
+        pair_wise_ious = torch.nan_to_num(
+            pair_wise_ious, nan=0.0, posinf=1.0, neginf=0.0
+        ).clamp(0.0, 1.0)
         # Regression cost: -log(IoU) is the existing formulation.
         # The use_log_iou_cost flag exists for ablation explicitness and
         # future GIoU cost alternative; both branches are currently identical.
@@ -1172,20 +1185,26 @@ class DINOXHead(nn.Module):
                     * scale_factor
                 ).sum(-1)
             else:
-                # Original YOLOX formulation
+                # Original YOLOX formulation — clamp to valid BCE range
                 pair_wise_cls_loss = F.binary_cross_entropy(
-                    pred_scores.sqrt(), gt_cls_per_image, reduction="none"
+                    pred_scores.sqrt().clamp(1e-7, 1.0 - 1e-7),
+                    gt_cls_per_image,
+                    reduction="none",
                 ).sum(-1)
 
             del pred_scores_base, pred_scores
 
+        # bf16 max is ~65504; use 1e4 as penalty to stay safely within range.
+        _inf_cost = 1e4
         cost = (
             pair_wise_cls_loss
             + 3.0 * pair_wise_ious_loss
-            + 1e6 * (~is_in_boxes_and_center)
+            + float(_inf_cost) * (~is_in_boxes_and_center)
         )
         # Replace NaN/Inf in cost to prevent CUDA asserts in topk
-        cost = torch.nan_to_num(cost, nan=1e6, posinf=1e6, neginf=-1e6)
+        cost = torch.nan_to_num(
+            cost, nan=_inf_cost, posinf=_inf_cost, neginf=-_inf_cost
+        )
 
         (
             num_fg_result,
@@ -1291,25 +1310,26 @@ class DINOXHead(nn.Module):
         num_gt: int,
         fg_mask: torch.Tensor,
     ) -> tuple[int, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Dynamic K matching for SimOTA."""
+        """Dynamic K matching for SimOTA.
+
+        Uses the same per-GT loop as the reference YOLOX implementation
+        to avoid edge cases with vectorised topk on large/dense batches.
+        """
         matching_matrix = torch.zeros_like(cost, dtype=torch.uint8)
 
         n_candidate_k = min(10, pair_wise_ious.size(1))
         topk_ious, _ = torch.topk(pair_wise_ious, n_candidate_k, dim=1)
-        dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1, max=cost.size(1))
+        dynamic_ks = torch.clamp(
+            topk_ious.sum(1).int(), min=1, max=pair_wise_ious.size(1)
+        )
 
-        # Vectorized: topk with max(k) for all GTs, then mask by per-GT k
-        max_k = int(dynamic_ks.max().item())
-        max_k = min(max_k, cost.size(1))
-        _, topk_indices = torch.topk(cost, k=max_k, dim=1, largest=False)
-        # Build mask: position j is valid for GT i if j < dynamic_ks[i]
-        ks_mask = torch.arange(max_k, device=cost.device).unsqueeze(
-            0
-        ) < dynamic_ks.unsqueeze(1)
-        # Scatter only valid positions
-        matching_matrix.scatter_(1, topk_indices, ks_mask.to(torch.uint8))
+        for gt_idx in range(num_gt):
+            _, pos_idx = torch.topk(
+                cost[gt_idx], k=dynamic_ks[gt_idx].item(), largest=False
+            )
+            matching_matrix[gt_idx][pos_idx] = 1
 
-        del topk_ious, dynamic_ks, topk_indices, ks_mask
+        del topk_ious, dynamic_ks, pos_idx
 
         anchor_matching_gt = matching_matrix.sum(0)
         if (anchor_matching_gt > 1).sum() > 0:
