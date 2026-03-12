@@ -46,9 +46,9 @@ visualization:
   output_dir: ${hydra:runtime.output_dir}/outputs
   confidence_threshold: 0.3
 
-history_plotter:
-  _target_: object_detection_training.callbacks.plotting.TrainingHistoryPlotter
-  output_dir: ${hydra:runtime.output_dir}/plots
+# history_plotter:
+#   _target_: object_detection_training.callbacks.plotting.TrainingHistoryPlotter
+#   output_dir: ${hydra:runtime.output_dir}/plots
 
 dataset_statistics:
   _target_: object_detection_training.callbacks.statistics.DatasetStatisticsCallback
