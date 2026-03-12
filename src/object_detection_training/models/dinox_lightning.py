@@ -547,6 +547,7 @@ class DINOXLightningModel(BaseDetectionModel):
                     on_epoch=True,
                     prog_bar=False,
                     batch_size=batch_size,
+                    sync_dist=True,
                 )
 
         # Log losses (sync_dist=True for correct epoch-level DDP aggregation)

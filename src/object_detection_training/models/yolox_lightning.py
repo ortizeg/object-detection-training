@@ -421,7 +421,7 @@ class YOLOXLightningModel(BaseDetectionModel):
         l1_loss = outputs["l1_loss"]
         num_fg = outputs["num_fg"]
 
-        # Log losses
+        # Log losses (sync_dist=True for correct epoch-level DDP aggregation)
         self.log(
             "train/loss",
             loss,
@@ -429,6 +429,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             on_epoch=True,
             prog_bar=True,
             batch_size=batch_size,
+            sync_dist=True,
         )
         self.log(
             "train/iou_loss",
@@ -437,6 +438,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             on_epoch=True,
             prog_bar=False,
             batch_size=batch_size,
+            sync_dist=True,
         )
         self.log(
             "train/obj_loss",
@@ -445,6 +447,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             on_epoch=True,
             prog_bar=False,
             batch_size=batch_size,
+            sync_dist=True,
         )
         self.log(
             "train/cls_loss",
@@ -453,6 +456,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             on_epoch=True,
             prog_bar=False,
             batch_size=batch_size,
+            sync_dist=True,
         )
         self.log(
             "train/l1_loss",
@@ -461,6 +465,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             on_epoch=True,
             prog_bar=False,
             batch_size=batch_size,
+            sync_dist=True,
         )
 
         # Log num_fg
@@ -476,6 +481,7 @@ class YOLOXLightningModel(BaseDetectionModel):
             on_epoch=True,
             prog_bar=True,
             batch_size=batch_size,
+            sync_dist=True,
         )
 
         return torch.as_tensor(loss)

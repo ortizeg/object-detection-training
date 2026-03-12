@@ -264,7 +264,7 @@ class RFDETRLightningModel(BaseDetectionModel):
         # Individual loss components for logging (scalars only)
         total_loss: torch.Tensor = outputs["loss"]
 
-        # Log total loss
+        # Log total loss (sync_dist=True for correct epoch-level DDP aggregation)
         self.log(
             "train/loss",
             total_loss,
@@ -272,6 +272,7 @@ class RFDETRLightningModel(BaseDetectionModel):
             on_epoch=True,
             prog_bar=True,
             batch_size=batch_size,
+            sync_dist=True,
         )
 
         # Log other components (ensure they are scalars)
@@ -284,6 +285,7 @@ class RFDETRLightningModel(BaseDetectionModel):
                     on_epoch=True,
                     prog_bar=False,
                     batch_size=batch_size,
+                    sync_dist=True,
                 )
 
         return total_loss
