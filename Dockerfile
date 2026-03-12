@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
 
 LABEL org.opencontainers.image.source="https://github.com/ortizeg/object-detection-training"
 LABEL org.opencontainers.image.license="Apache-2.0"
