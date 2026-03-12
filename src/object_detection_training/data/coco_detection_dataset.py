@@ -93,7 +93,7 @@ class COCODetectionDataset(DetectionDataset):
             try:
                 matches = sorted(search_dir.glob("instances_*2017.json"))
                 if matches:
-                    logger.warning(
+                    logger.info(
                         f"Split '{self.split}' annotation not found, "
                         f"falling back to {matches[0]}"
                     )

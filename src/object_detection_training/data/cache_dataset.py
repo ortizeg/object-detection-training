@@ -88,8 +88,8 @@ def _coerce_to_pil(img: Image.Image | torch.Tensor) -> Image.Image:
 
 
 def _pil_to_numpy(img: Image.Image) -> npt.NDArray[np.uint8]:
-    """Convert PIL Image to numpy array (H, W, 3) uint8."""
-    return np.asarray(img, dtype=np.uint8)
+    """Convert PIL Image to writable numpy array (H, W, 3) uint8."""
+    return np.array(img, dtype=np.uint8)
 
 
 def _numpy_to_pil(arr: npt.NDArray[np.uint8]) -> Image.Image:
