@@ -10,11 +10,10 @@ train_transforms:
       size:
         - ${data.input_height}
         - ${data.input_width}
-    - _target_: torchvision.transforms.v2.ColorJitter
-      brightness: 0.4
-      contrast: 0.4
-      saturation: 0.4
-      hue: 0.1
+    - _target_: object_detection_training.transforms.HSVRandomAug
+      hue_delta: 5
+      saturation_delta: 30
+      value_delta: 30
     - _target_: object_detection_training.transforms.ToFloat32Tensor
       scale: false
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
@@ -60,11 +59,10 @@ post_mosaic_transforms:
       pad_val: 114
     - _target_: torchvision.transforms.v2.RandomHorizontalFlip
       p: 0.5
-    - _target_: torchvision.transforms.v2.ColorJitter
-      brightness: 0.4
-      contrast: 0.4
-      saturation: 0.4
-      hue: 0.1
+    - _target_: object_detection_training.transforms.HSVRandomAug
+      hue_delta: 5
+      saturation_delta: 30
+      value_delta: 30
     - _target_: object_detection_training.transforms.ToFloat32Tensor
       scale: false
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat

@@ -12,6 +12,7 @@ from object_detection_training.transforms.conversion import (
     NormalizeBoxCoords,
     ToFloat32Tensor,
 )
+from object_detection_training.transforms.hsv_augment import HSVRandomAug
 from object_detection_training.transforms.multi_scale_resize import (
     MultiScaleRandomResize,
     MultiScaleResize,
@@ -22,6 +23,7 @@ from object_detection_training.transforms.random_resize_crop import RandomResize
 from object_detection_training.transforms.random_size_crop import RandomSizeCrop
 
 __all__ = [
+    "HSVRandomAug",
     "MultiScaleRandomResize",
     "MultiScaleResize",
     "NormalizeBoxCoords",
