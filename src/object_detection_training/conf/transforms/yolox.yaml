@@ -77,6 +77,12 @@ mosaic:
   center_ratio_range:
     - 0.5
     - 1.5
+  # MixUp blend ratio — Beta(a, b) distribution parameters.
+  # RTMDet: (1.0, 1.0) = uniform = fixed 0.5 blend.
+  # Official YOLOX: (0.8, 1.6) = slightly mosaic-dominant.
+  mixup_ratio:
+    - 1.0
+    - 1.0
   # RTMDet-style cached mosaic: companion images served from memory cache
   # instead of disk, reducing I/O from 6 reads/sample to 1.
   use_cache: true

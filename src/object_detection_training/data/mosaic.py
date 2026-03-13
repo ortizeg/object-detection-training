@@ -66,6 +66,7 @@ class MosaicMixupDataset(
         mosaic_prob: float = 1.0,
         mixup_prob: float = 0.3,
         center_ratio_range: tuple[float, float] = (0.5, 1.5),
+        mixup_ratio: tuple[float, float] = (1.0, 1.0),
         post_transforms: Any | None = None,
         *,
         use_cache: bool = True,
@@ -82,6 +83,9 @@ class MosaicMixupDataset(
             mixup_prob: Probability of applying MixUp after mosaic.
             center_ratio_range: Range for the random mosaic center point as
                 a fraction of (width, height).  Official YOLOX uses (0.5, 1.5).
+            mixup_ratio: Beta distribution parameters (alpha, beta) for the
+                MixUp blend ratio.  (1.0, 1.0) = uniform = fixed 0.5 blend
+                (RTMDet default).  Official YOLOX uses (0.8, 1.6).
             post_transforms: Transforms to apply after mosaic/mixup
                 (e.g. HFlip, ColorJitter, PILToTensor, RandomErasing).
             use_cache: When True, companion images for mosaic/mixup are
@@ -98,6 +102,7 @@ class MosaicMixupDataset(
         self.mosaic_prob = mosaic_prob
         self.mixup_prob = mixup_prob
         self.center_ratio_range = center_ratio_range
+        self.mixup_ratio = mixup_ratio
         self.post_transforms = post_transforms
         self.enabled = True
 
@@ -386,9 +391,12 @@ class MosaicMixupDataset(
         mix_resized = mix_img.resize((canvas_w, canvas_h), Image.BILINEAR)
         mix_arr = np.array(mix_resized)
 
-        # Beta distribution — keep mosaic dominant (alpha >= 0.5)
-        alpha = float(np.random.beta(1.5, 1.5))
-        alpha = max(alpha, 1.0 - alpha)
+        # Sample blend ratio from Beta distribution.
+        # RTMDet uses (1.0, 1.0) → uniform → E[alpha]=0.5 (fixed 50/50 blend).
+        # Official YOLOX uses (0.8, 1.6) → slightly mosaic-dominant.
+        a, b = self.mixup_ratio
+        alpha = float(np.random.beta(a, b))
+        alpha = max(alpha, 1.0 - alpha)  # Ensure mosaic-dominant
 
         canvas = canvas.astype(np.float32) * alpha + mix_arr.astype(np.float32) * (
             1.0 - alpha
