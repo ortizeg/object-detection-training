@@ -141,6 +141,8 @@ class COCODataModule(L.LightningDataModule):
         self._mosaic_use_cache: bool = bool(mosaic.get("use_cache", True))
         self._mosaic_max_cached: int = int(mosaic.get("max_cached_images", 40))
         self._mosaic_random_pop: bool = bool(mosaic.get("random_pop", True))
+        _cr = mosaic.get("center_ratio_range", [0.5, 1.5])
+        self._mosaic_center_ratio: tuple[float, float] = (float(_cr[0]), float(_cr[1]))
 
         # Sampler config
         self._sampler_config = SamplerConfig(**(sampler or {}))
@@ -338,6 +340,7 @@ class COCODataModule(L.LightningDataModule):
                 input_height=self.input_height,
                 input_width=self.input_width,
                 mixup_prob=self._mixup_prob,
+                center_ratio_range=self._mosaic_center_ratio,
                 post_transforms=self.post_mosaic_transforms,
                 use_cache=self._mosaic_use_cache,
                 max_cached_images=self._mosaic_max_cached,

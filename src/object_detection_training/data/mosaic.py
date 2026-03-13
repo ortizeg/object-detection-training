@@ -65,6 +65,7 @@ class MosaicMixupDataset(
         input_width: int = 640,
         mosaic_prob: float = 1.0,
         mixup_prob: float = 0.3,
+        center_ratio_range: tuple[float, float] = (0.5, 1.5),
         post_transforms: Any | None = None,
         *,
         use_cache: bool = True,
@@ -79,6 +80,8 @@ class MosaicMixupDataset(
             input_width: Target canvas width.
             mosaic_prob: Probability of applying mosaic (vs single image).
             mixup_prob: Probability of applying MixUp after mosaic.
+            center_ratio_range: Range for the random mosaic center point as
+                a fraction of (width, height).  Official YOLOX uses (0.5, 1.5).
             post_transforms: Transforms to apply after mosaic/mixup
                 (e.g. HFlip, ColorJitter, PILToTensor, RandomErasing).
             use_cache: When True, companion images for mosaic/mixup are
@@ -94,6 +97,7 @@ class MosaicMixupDataset(
         self.input_width = input_width
         self.mosaic_prob = mosaic_prob
         self.mixup_prob = mixup_prob
+        self.center_ratio_range = center_ratio_range
         self.post_transforms = post_transforms
         self.enabled = True
 
@@ -241,56 +245,71 @@ class MosaicMixupDataset(
             *companions,
         ]
 
-        # Random center point with margin so each quadrant is meaningful
-        cx = int(
-            random.uniform(  # noqa: S311
-                self.input_width * 0.25, self.input_width * 0.75
-            )
-        )
-        cy = int(
-            random.uniform(  # noqa: S311
-                self.input_height * 0.25, self.input_height * 0.75
-            )
-        )
+        # Random center point on a 2x canvas — official YOLOX uses (0.5, 1.5)
+        lo, hi = self.center_ratio_range
+        cx = int(random.uniform(self.input_width * lo, self.input_width * hi))  # noqa: S311
+        cy = int(random.uniform(self.input_height * lo, self.input_height * hi))  # noqa: S311
 
-        # Gray fill (YOLOX default)
-        canvas = np.full((self.input_height, self.input_width, 3), 114, dtype=np.uint8)
+        # 2x canvas — matches official YOLOX mosaic implementation.
+        # Images are placed around (cx, cy); downstream RandomResize + RandomCrop
+        # brings the result back to input_size.
+        canvas_h = self.input_height * 2
+        canvas_w = self.input_width * 2
+        canvas = np.full((canvas_h, canvas_w, 3), 114, dtype=np.uint8)
 
         all_boxes: list[torch.Tensor] = []
         all_labels: list[torch.Tensor] = []
 
-        # Quadrant definitions: (x_offset, y_offset, quad_width, quad_height)
-        quadrants = [
-            (0, 0, cx, cy),
-            (cx, 0, self.input_width - cx, cy),
-            (0, cy, cx, self.input_height - cy),
-            (cx, cy, self.input_width - cx, self.input_height - cy),
-        ]
-
         first_target: DetectionTarget | None = None
-        for i, ((img, target), (x_off, y_off, qw, qh)) in enumerate(
-            zip(images_and_targets, quadrants, strict=True)
-        ):
-            if qw <= 0 or qh <= 0:
-                continue
-
+        for i, (img, target) in enumerate(images_and_targets):
             if i == 0:
                 first_target = target
 
             orig_w, orig_h = img.size
 
-            # Resize image to fill its quadrant
-            resized = img.resize((qw, qh), Image.BILINEAR)
-            canvas[y_off : y_off + qh, x_off : x_off + qw] = np.array(resized)
+            # Resize to input_size maintaining aspect ratio (letterbox-style)
+            scale = min(self.input_width / orig_w, self.input_height / orig_h)
+            rw = int(orig_w * scale)
+            rh = int(orig_h * scale)
+            resized = np.array(img.resize((rw, rh), Image.BILINEAR))
 
-            # Scale and offset boxes to canvas coordinates
+            # Place image in its quadrant relative to center (cx, cy)
+            if i == 0:  # top-left: bottom-right corner at (cx, cy)
+                x1 = max(cx - rw, 0)
+                y1 = max(cy - rh, 0)
+                x2, y2 = cx, cy
+                sx = rw - (x2 - x1)
+                sy = rh - (y2 - y1)
+            elif i == 1:  # top-right: bottom-left corner at (cx, cy)
+                x1, y1 = cx, max(cy - rh, 0)
+                x2 = min(cx + rw, canvas_w)
+                y2 = cy
+                sx = 0
+                sy = rh - (y2 - y1)
+            elif i == 2:  # bottom-left: top-right corner at (cx, cy)
+                x1 = max(cx - rw, 0)
+                y1 = cy
+                x2 = cx
+                y2 = min(cy + rh, canvas_h)
+                sx = rw - (x2 - x1)
+                sy = 0
+            else:  # bottom-right: top-left corner at (cx, cy)
+                x1, y1 = cx, cy
+                x2 = min(cx + rw, canvas_w)
+                y2 = min(cy + rh, canvas_h)
+                sx, sy = 0, 0
+
+            pw = x2 - x1
+            ph = y2 - y1
+            if pw > 0 and ph > 0:
+                canvas[y1:y2, x1:x2] = resized[sy : sy + ph, sx : sx + pw]
+
+            # Transform boxes to canvas coordinates
             boxes = target["boxes"]
             if boxes.numel() > 0:
-                scale_x = qw / orig_w
-                scale_y = qh / orig_h
                 boxes = boxes.clone()
-                boxes[:, [0, 2]] = boxes[:, [0, 2]] * scale_x + x_off
-                boxes[:, [1, 3]] = boxes[:, [1, 3]] * scale_y + y_off
+                boxes[:, [0, 2]] = boxes[:, [0, 2]] * scale + x1 - sx * 1.0
+                boxes[:, [1, 3]] = boxes[:, [1, 3]] * scale + y1 - sy * 1.0
                 all_boxes.append(boxes)
                 all_labels.append(target["labels"])
 
@@ -300,10 +319,10 @@ class MosaicMixupDataset(
             labels = torch.cat(all_labels, dim=0)
 
             # Clip to canvas boundaries
-            boxes[:, 0].clamp_(0, self.input_width)
-            boxes[:, 1].clamp_(0, self.input_height)
-            boxes[:, 2].clamp_(0, self.input_width)
-            boxes[:, 3].clamp_(0, self.input_height)
+            boxes[:, 0].clamp_(0, canvas_w)
+            boxes[:, 1].clamp_(0, canvas_h)
+            boxes[:, 2].clamp_(0, canvas_w)
+            boxes[:, 3].clamp_(0, canvas_h)
 
             # Filter degenerate boxes (< 2px)
             keep = (boxes[:, 2] > boxes[:, 0] + 1) & (boxes[:, 3] > boxes[:, 1] + 1)
@@ -324,7 +343,7 @@ class MosaicMixupDataset(
             "boxes": tv_tensors.BoundingBoxes(
                 boxes,
                 format="XYXY",
-                canvas_size=(self.input_height, self.input_width),
+                canvas_size=(canvas_h, canvas_w),
             ),
             "labels": labels,
             "image_id": (
@@ -338,8 +357,8 @@ class MosaicMixupDataset(
                 else torch.zeros(0, dtype=torch.float32)
             ),
             "iscrowd": torch.zeros(len(labels), dtype=torch.int64),
-            "orig_size": torch.tensor([self.input_height, self.input_width]),
-            "size": torch.tensor([self.input_height, self.input_width]),
+            "orig_size": torch.tensor([canvas_h, canvas_w]),
+            "size": torch.tensor([canvas_h, canvas_w]),
         }
 
         # Apply post-mosaic transforms (HFlip, ColorJitter, ToTensor, etc.)
@@ -354,13 +373,17 @@ class MosaicMixupDataset(
         boxes: torch.Tensor,
         labels: torch.Tensor,
     ) -> tuple[np.ndarray, torch.Tensor, torch.Tensor]:
-        """Apply MixUp: alpha-blend canvas with a companion image."""
+        """Apply MixUp: alpha-blend canvas with a companion image.
+
+        The companion is resized to match the canvas dimensions (2x input_size
+        when called from mosaic) so the blend operates at full resolution.
+        """
+        canvas_h, canvas_w = canvas.shape[:2]
         mix_img, mix_target = self._get_companion()
         orig_w, orig_h = mix_img.size
 
-        mix_resized = mix_img.resize(
-            (self.input_width, self.input_height), Image.BILINEAR
-        )
+        # Resize companion to match the canvas (2x input_size for mosaic)
+        mix_resized = mix_img.resize((canvas_w, canvas_h), Image.BILINEAR)
         mix_arr = np.array(mix_resized)
 
         # Beta distribution — keep mosaic dominant (alpha >= 0.5)
@@ -376,8 +399,8 @@ class MosaicMixupDataset(
         mix_boxes = mix_target["boxes"]
         if mix_boxes.numel() > 0:
             mix_boxes = mix_boxes.clone()
-            mix_boxes[:, [0, 2]] *= self.input_width / orig_w
-            mix_boxes[:, [1, 3]] *= self.input_height / orig_h
+            mix_boxes[:, [0, 2]] *= canvas_w / orig_w
+            mix_boxes[:, [1, 3]] *= canvas_h / orig_h
             boxes = torch.cat([boxes, mix_boxes], dim=0)
             labels = torch.cat([labels, mix_target["labels"]], dim=0)
 

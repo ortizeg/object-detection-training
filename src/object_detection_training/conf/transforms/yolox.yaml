@@ -44,10 +44,16 @@ test_transforms:
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
       format: CXCYWH
 
-# Post-mosaic transforms: skip Resize since mosaic canvas is already at target size
+# Post-mosaic transforms: mosaic outputs a 2x canvas (1280x1280) so we resize
+# back to input_size.  Commit 2 will replace this simple Resize with
+# RandomResize(0.1, 2.0) + RandomCrop(640) matching RTMDet.
 post_mosaic_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
+    - _target_: torchvision.transforms.v2.Resize
+      size:
+        - ${data.input_height}
+        - ${data.input_width}
     - _target_: torchvision.transforms.v2.RandomHorizontalFlip
       p: 0.5
     - _target_: torchvision.transforms.v2.ColorJitter
@@ -65,6 +71,10 @@ post_mosaic_transforms:
 mosaic:
   enabled: true
   mixup_prob: 1.0
+  # Official YOLOX center range: (0.5, 1.5) on a 2x canvas
+  center_ratio_range:
+    - 0.5
+    - 1.5
   # RTMDet-style cached mosaic: companion images served from memory cache
   # instead of disk, reducing I/O from 6 reads/sample to 1.
   use_cache: true
