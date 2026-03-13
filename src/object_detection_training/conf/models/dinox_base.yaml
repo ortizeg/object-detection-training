@@ -12,8 +12,9 @@ download_pretrained: true
 pretrain_weights: null
 freeze_backbone_epochs: 0
 
-# No-augmentation refinement period (official YOLOX: last 15 epochs)
-no_aug_epochs: 15
+# No-augmentation refinement period: disable mosaic/mixup, enable L1 loss.
+# Official YOLOX: 15, RTMDet: 20.  Using 20 for stronger refinement.
+no_aug_epochs: 20
 
 iou_loss_type: iou
 
