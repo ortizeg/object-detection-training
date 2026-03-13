@@ -67,6 +67,7 @@ class MosaicMixupDataset(
         mixup_prob: float = 0.3,
         center_ratio_range: tuple[float, float] = (0.5, 1.5),
         mixup_ratio: tuple[float, float] = (1.0, 1.0),
+        resize_transform: Any | None = None,
         post_transforms: Any | None = None,
         *,
         use_cache: bool = True,
@@ -86,8 +87,11 @@ class MosaicMixupDataset(
             mixup_ratio: Beta distribution parameters (alpha, beta) for the
                 MixUp blend ratio.  (1.0, 1.0) = uniform = fixed 0.5 blend
                 (RTMDet default).  Official YOLOX uses (0.8, 1.6).
-            post_transforms: Transforms to apply after mosaic/mixup
-                (e.g. HFlip, ColorJitter, PILToTensor, RandomErasing).
+            resize_transform: Transform to resize the 2x mosaic canvas back
+                to input_size (e.g. RandomResizeCrop).  Applied BEFORE MixUp,
+                matching RTMDet pipeline ordering.
+            post_transforms: Transforms to apply after MixUp
+                (e.g. HFlip, HSVRandomAug, ToFloat32Tensor).
             use_cache: When True, companion images for mosaic/mixup are
                 sampled from an in-memory cache instead of the dataset.
             max_cached_images: Maximum number of samples kept in the cache.
@@ -103,6 +107,7 @@ class MosaicMixupDataset(
         self.mixup_prob = mixup_prob
         self.center_ratio_range = center_ratio_range
         self.mixup_ratio = mixup_ratio
+        self.resize_transform = resize_transform
         self.post_transforms = post_transforms
         self.enabled = True
 
@@ -337,12 +342,8 @@ class MosaicMixupDataset(
             boxes = torch.zeros((0, 4), dtype=torch.float32)
             labels = torch.zeros((0,), dtype=torch.int64)
 
-        # Optional MixUp blending
-        if self.mixup_prob > 0 and random.random() < self.mixup_prob:  # noqa: S311
-            canvas, boxes, labels = self._apply_mixup(canvas, boxes, labels)
-
-        # Build result
-        result_img = Image.fromarray(canvas)
+        # Build result (2x canvas)
+        result_img: Image.Image | torch.Tensor = Image.fromarray(canvas)
 
         result_target: DetectionTarget = {
             "boxes": tv_tensors.BoundingBoxes(
@@ -366,7 +367,16 @@ class MosaicMixupDataset(
             "size": torch.tensor([canvas_h, canvas_w]),
         }
 
-        # Apply post-mosaic transforms (HFlip, ColorJitter, ToTensor, etc.)
+        # RTMDet pipeline ordering: Mosaic → Resize → MixUp → Augmentations
+        # 1. Resize 2x canvas back to input_size (RandomResizeCrop)
+        if self.resize_transform is not None:
+            result_img, result_target = self.resize_transform(result_img, result_target)
+
+        # 2. Optional MixUp blending (on input_size image, not 2x canvas)
+        if self.mixup_prob > 0 and random.random() < self.mixup_prob:  # noqa: S311
+            result_img, result_target = self._apply_mixup(result_img, result_target)
+
+        # 3. Post-transforms (HFlip, HSV, ToTensor, etc.)
         if self.post_transforms is not None:
             result_img, result_target = self.post_transforms(result_img, result_target)
 
@@ -374,21 +384,28 @@ class MosaicMixupDataset(
 
     def _apply_mixup(
         self,
-        canvas: np.ndarray,
-        boxes: torch.Tensor,
-        labels: torch.Tensor,
-    ) -> tuple[np.ndarray, torch.Tensor, torch.Tensor]:
-        """Apply MixUp: alpha-blend canvas with a companion image.
+        img: Image.Image | torch.Tensor,
+        target: DetectionTarget,
+    ) -> tuple[Image.Image | torch.Tensor, DetectionTarget]:
+        """Apply MixUp: alpha-blend image with a companion.
 
-        The companion is resized to match the canvas dimensions (2x input_size
-        when called from mosaic) so the blend operates at full resolution.
+        Called after resize_transform, so the image is at input_size (not 2x).
+        This matches RTMDet's pipeline ordering:
+        Mosaic → RandomResizeCrop → **MixUp** → HFlip/HSV/ToTensor.
         """
-        canvas_h, canvas_w = canvas.shape[:2]
         mix_img, mix_target = self._get_companion()
         orig_w, orig_h = mix_img.size
 
-        # Resize companion to match the canvas (2x input_size for mosaic)
-        mix_resized = mix_img.resize((canvas_w, canvas_h), Image.BILINEAR)
+        # Get current image dimensions
+        if isinstance(img, Image.Image):
+            cur_w, cur_h = img.size
+            img_arr = np.array(img)
+        else:
+            cur_h, cur_w = img.shape[-2], img.shape[-1]
+            img_arr = img.permute(1, 2, 0).numpy().astype(np.uint8)
+
+        # Resize companion to current image size
+        mix_resized = mix_img.resize((cur_w, cur_h), Image.BILINEAR)
         mix_arr = np.array(mix_resized)
 
         # Sample blend ratio from Beta distribution.
@@ -398,18 +415,38 @@ class MosaicMixupDataset(
         alpha = float(np.random.beta(a, b))
         alpha = max(alpha, 1.0 - alpha)  # Ensure mosaic-dominant
 
-        canvas = canvas.astype(np.float32) * alpha + mix_arr.astype(np.float32) * (
+        blended = img_arr.astype(np.float32) * alpha + mix_arr.astype(np.float32) * (
             1.0 - alpha
         )
-        canvas = canvas.clip(0, 255).astype(np.uint8)
+        blended = blended.clip(0, 255).astype(np.uint8)
+        result_img: Image.Image | torch.Tensor = Image.fromarray(blended)
 
-        # Add MixUp image's boxes (scaled to canvas size)
+        # Merge boxes from both images
+        target = target.copy()
+        boxes = target["boxes"]
+        labels = target["labels"]
+
         mix_boxes = mix_target["boxes"]
         if mix_boxes.numel() > 0:
             mix_boxes = mix_boxes.clone()
-            mix_boxes[:, [0, 2]] *= canvas_w / orig_w
-            mix_boxes[:, [1, 3]] *= canvas_h / orig_h
-            boxes = torch.cat([boxes, mix_boxes], dim=0)
+            mix_boxes[:, [0, 2]] *= cur_w / orig_w
+            mix_boxes[:, [1, 3]] *= cur_h / orig_h
+
+            if boxes.numel() > 0:
+                boxes = torch.cat([boxes, mix_boxes], dim=0)
+            else:
+                boxes = mix_boxes
             labels = torch.cat([labels, mix_target["labels"]], dim=0)
 
-        return canvas, boxes, labels
+        target["boxes"] = tv_tensors.BoundingBoxes(
+            boxes, format="XYXY", canvas_size=(cur_h, cur_w)
+        )
+        target["labels"] = labels
+        target["area"] = (
+            (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+            if boxes.numel() > 0
+            else torch.zeros(0, dtype=torch.float32)
+        )
+        target["iscrowd"] = torch.zeros(len(labels), dtype=torch.int64)
+
+        return result_img, target

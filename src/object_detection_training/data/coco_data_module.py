@@ -55,6 +55,7 @@ class COCODataModule(L.LightningDataModule):
         val_transforms: v2.Compose | None = None,
         test_transforms: v2.Compose | None = None,
         post_mosaic_transforms: v2.Compose | None = None,
+        mosaic_resize_transform: v2.Transform | None = None,
         # -- Mosaic / MixUp config (DataModule-level) --
         mosaic: dict[str, bool | float] | None = None,
         # -- Online class-balanced sampling --
@@ -90,7 +91,9 @@ class COCODataModule(L.LightningDataModule):
             train_transforms: v2.Compose pipeline for training augmentation.
             val_transforms: v2.Compose pipeline for validation preprocessing.
             test_transforms: v2.Compose pipeline for test preprocessing.
-            post_mosaic_transforms: v2.Compose pipeline applied after mosaic/mixup.
+            post_mosaic_transforms: v2.Compose pipeline applied after MixUp.
+            mosaic_resize_transform: Transform to resize 2x mosaic canvas to
+                input_size.  Applied before MixUp (RTMDet ordering).
             mosaic: Mosaic/MixUp config dict with ``enabled`` and ``mixup_prob``.
             sampler: Online class-balanced sampler config dict.
             multi_scale: Enable multi-scale augmentation (used by transform YAML refs).
@@ -133,6 +136,7 @@ class COCODataModule(L.LightningDataModule):
         self.val_transforms = val_transforms
         self.test_transforms = test_transforms
         self.post_mosaic_transforms = post_mosaic_transforms
+        self.mosaic_resize_transform = mosaic_resize_transform
 
         # Mosaic config
         mosaic = mosaic or {}
@@ -344,6 +348,7 @@ class COCODataModule(L.LightningDataModule):
                 mixup_prob=self._mixup_prob,
                 center_ratio_range=self._mosaic_center_ratio,
                 mixup_ratio=self._mosaic_mixup_ratio,
+                resize_transform=self.mosaic_resize_transform,
                 post_transforms=self.post_mosaic_transforms,
                 use_cache=self._mosaic_use_cache,
                 max_cached_images=self._mosaic_max_cached,

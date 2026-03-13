@@ -43,20 +43,24 @@ test_transforms:
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
       format: CXCYWH
 
-# Post-mosaic transforms: mosaic outputs a 2x canvas (1280x1280).
-# RTMDet-style RandomResizeCrop brings it back to input_size with random
-# scale augmentation (ratio_range 0.1-2.0), replacing YOLOX RandomAffine.
+# Mosaic resize: brings the 2x mosaic canvas (1280x1280) back to input_size.
+# Applied BEFORE MixUp, matching RTMDet pipeline ordering:
+# Mosaic → RandomResizeCrop → MixUp → HFlip/HSV/ToTensor
+mosaic_resize_transform:
+  _target_: object_detection_training.transforms.RandomResizeCrop
+  crop_size:
+    - ${data.input_height}
+    - ${data.input_width}
+  ratio_range:
+    - 0.1
+    - 2.0
+  pad_val: 114
+
+# Post-mosaic transforms: applied AFTER MixUp (RTMDet ordering).
+# Mosaic → resize → MixUp → **these transforms**
 post_mosaic_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
-    - _target_: object_detection_training.transforms.RandomResizeCrop
-      crop_size:
-        - ${data.input_height}
-        - ${data.input_width}
-      ratio_range:
-        - 0.1
-        - 2.0
-      pad_val: 114
     - _target_: torchvision.transforms.v2.RandomHorizontalFlip
       p: 0.5
     - _target_: object_detection_training.transforms.HSVRandomAug
