@@ -44,16 +44,20 @@ test_transforms:
     - _target_: torchvision.transforms.v2.ConvertBoundingBoxFormat
       format: CXCYWH
 
-# Post-mosaic transforms: mosaic outputs a 2x canvas (1280x1280) so we resize
-# back to input_size.  Commit 2 will replace this simple Resize with
-# RandomResize(0.1, 2.0) + RandomCrop(640) matching RTMDet.
+# Post-mosaic transforms: mosaic outputs a 2x canvas (1280x1280).
+# RTMDet-style RandomResizeCrop brings it back to input_size with random
+# scale augmentation (ratio_range 0.1-2.0), replacing YOLOX RandomAffine.
 post_mosaic_transforms:
   _target_: torchvision.transforms.v2.Compose
   transforms:
-    - _target_: torchvision.transforms.v2.Resize
-      size:
+    - _target_: object_detection_training.transforms.RandomResizeCrop
+      crop_size:
         - ${data.input_height}
         - ${data.input_width}
+      ratio_range:
+        - 0.1
+        - 2.0
+      pad_val: 114
     - _target_: torchvision.transforms.v2.RandomHorizontalFlip
       p: 0.5
     - _target_: torchvision.transforms.v2.ColorJitter
