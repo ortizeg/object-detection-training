@@ -47,6 +47,7 @@ class COCODataModule(L.LightningDataModule):
         input_width: int = 640,
         pin_memory: bool = True,
         persistent_workers: bool = True,
+        multiprocessing_context: str | None = None,
         selected_categories: list[str] | None = None,
         size_thresholds: dict[str, float] | None = None,
         # -- v2 transform pipelines (from Hydra conf/transforms/*.yaml) --
@@ -81,6 +82,9 @@ class COCODataModule(L.LightningDataModule):
             input_width: Base input width (must be divisible by 64 for RFDETR).
             pin_memory: Whether to pin memory for faster GPU transfer.
             persistent_workers: Whether to keep workers alive between epochs.
+            multiprocessing_context: Worker start method — "spawn", "fork", or
+                "forkserver". Default None uses fork. Use "spawn" to avoid
+                GIL deadlocks in long-lived forked workers.
             selected_categories: Optional category names to keep.
             size_thresholds: Box size classification thresholds.
             train_transforms: v2.Compose pipeline for training augmentation.
@@ -115,6 +119,9 @@ class COCODataModule(L.LightningDataModule):
         self.prefetch_factor = prefetch_factor if num_workers > 0 else None
         self.pin_memory = pin_memory
         self.persistent_workers = persistent_workers if num_workers > 0 else False
+        self.multiprocessing_context = (
+            multiprocessing_context if num_workers > 0 else None
+        )
 
         self.test_path = Path(test_path) if test_path else None
 
@@ -362,6 +369,7 @@ class COCODataModule(L.LightningDataModule):
             collate_fn=collate_fn,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers,
+            multiprocessing_context=self.multiprocessing_context,
         )
 
     def val_dataloader(
@@ -382,6 +390,7 @@ class COCODataModule(L.LightningDataModule):
             collate_fn=collate_fn,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers,
+            multiprocessing_context=self.multiprocessing_context,
         )
 
     def test_dataloader(
@@ -402,6 +411,7 @@ class COCODataModule(L.LightningDataModule):
             collate_fn=collate_fn,
             pin_memory=self.pin_memory,
             persistent_workers=self.persistent_workers,
+            multiprocessing_context=self.multiprocessing_context,
         )
 
     @property

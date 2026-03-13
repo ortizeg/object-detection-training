@@ -29,6 +29,7 @@ num_windows: 2
 
 pin_memory: true
 persistent_workers: true
+multiprocessing_context: spawn
 
 # Cache decoded images for fast loading (eliminates GCS FUSE IO bottleneck)
 use_cache: true
