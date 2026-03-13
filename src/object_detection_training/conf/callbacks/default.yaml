@@ -11,7 +11,7 @@ model_checkpoint:
 
 ema:
   _target_: object_detection_training.callbacks.ema.EMACallback
-  decay: 0.9998
+  decay: 0.9999
   warmup_steps: 2000
 
 onnx_export:
